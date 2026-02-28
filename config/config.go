@@ -18,6 +18,7 @@ type Config struct {
 	Postgres   Postgres   `yaml:"postgres"`
 	Redis      Redis      `yaml:"redis"`
 	Queue      Queue      `yaml:"queue"`
+	SMTP       SMTP       `yaml:"smtp"`
 	Encryption Encryption `yaml:"encryption"`
 	RateLimit  RateLimit  `yaml:"rate_limit"`
 	Worker     Worker     `yaml:"worker"`
@@ -84,7 +85,19 @@ func (r Redis) Addr() string {
 }
 
 type Queue struct {
-	Backend string `yaml:"backend" env:"QUEUE_BACKEND" env-default:"pgqueue"`
+	Backend      string `yaml:"backend" env:"QUEUE_BACKEND" env-default:"pgqueue"`
+	RabbitURL    string `yaml:"rabbit_url" env:"QUEUE_RABBIT_URL"`
+	NatsURL      string `yaml:"nats_url" env:"QUEUE_NATS_URL"`
+	KafkaBrokers string `yaml:"kafka_brokers" env:"QUEUE_KAFKA_BROKERS"`
+}
+
+type SMTP struct {
+	Enabled  bool   `yaml:"enabled" env:"SMTP_ENABLED" env-default:"false"`
+	Host     string `yaml:"host" env:"SMTP_HOST"`
+	Port     int    `yaml:"port" env:"SMTP_PORT" env-default:"587"`
+	Username string `yaml:"username" env:"SMTP_USERNAME"`
+	Password string `yaml:"password" env:"SMTP_PASSWORD"`
+	FromAddr string `yaml:"from_addr" env:"SMTP_FROM_ADDR"`
 }
 
 type Encryption struct {
