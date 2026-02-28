@@ -1,0 +1,47 @@
+app:
+  env: local
+  log_level: debug
+
+http:
+  host: localhost
+  port: 8080
+  read_timeout: 10s
+  write_timeout: 30s
+  idle_timeout: 60s
+
+grpc:
+  host: localhost
+  port: 9090
+
+postgres:
+  host: localhost
+  port: 5432
+  user: postgres
+  password:
+  database: mail_os
+  ssl_mode: disable
+  max_conns: 25
+  min_conns: 5
+
+redis:
+  host: localhost
+  port: 6379
+  password:
+  db: 0
+
+queue:
+  backend: pgqueue
+
+encryption:
+  key:
+  hmac_secret:
+
+rate_limit:
+  per_org: 100
+  burst: 20
+
+worker:
+  email_concurrency: 10
+  campaign_concurrency: 5
+  stats_flush_interval: 10s
+  scheduler_interval: 30s
