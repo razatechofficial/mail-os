@@ -9,6 +9,7 @@ import (
 type Service interface {
 	Create(ctx context.Context, input CreateInput) (*domain.Webhook, error)
 	GetByID(ctx context.Context, orgID domain.OrganizationID, id domain.WebhookID) (*domain.Webhook, error)
+	GetByIDForDelivery(ctx context.Context, id domain.WebhookID) (*domain.Webhook, error)
 	Update(ctx context.Context, orgID domain.OrganizationID, id domain.WebhookID, input UpdateInput) (*domain.Webhook, error)
 	Delete(ctx context.Context, orgID domain.OrganizationID, id domain.WebhookID) error
 	List(ctx context.Context, orgID domain.OrganizationID, params ListParams) ([]*domain.Webhook, int, error)

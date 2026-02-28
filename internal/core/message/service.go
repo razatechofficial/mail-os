@@ -48,8 +48,9 @@ type messageCreatedEvent struct {
 	msg *domain.Message
 }
 
-func (e *messageCreatedEvent) EventType() string { return "message.created" }
+func (e *messageCreatedEvent) EventType() string   { return "message.created" }
 func (e *messageCreatedEvent) OccurredAt() time.Time { return e.msg.CreatedAt }
+func (e *messageCreatedEvent) OrgID() string       { return string(e.msg.OrgID) }
 
 func (s *service) Send(ctx context.Context, input SendEmailInput) (*SendEmailOutput, error) {
 	if input.IdempotencyKey != "" {
@@ -189,6 +190,10 @@ func (s *service) Process(ctx context.Context, input ProcessEmailInput) error {
 	return nil
 }
 
+func (s *service) GetByIDForProcessing(ctx context.Context, id domain.MessageID) (*domain.Message, error) {
+	return s.repo.FindByID(ctx, id)
+}
+
 func (s *service) GetByID(ctx context.Context, orgID domain.OrganizationID, id domain.MessageID) (*domain.Message, error) {
 	msg, err := s.repo.FindByID(ctx, id)
 	if err != nil {
@@ -198,6 +203,10 @@ func (s *service) GetByID(ctx context.Context, orgID domain.OrganizationID, id d
 		return nil, errors.ErrNotFound
 	}
 	return msg, nil
+}
+
+func (s *service) ListScheduledDue(ctx context.Context, limit int) ([]*domain.Message, error) {
+	return s.repo.FindScheduledDue(ctx, limit)
 }
 
 func (s *service) List(ctx context.Context, params MessageListParams) ([]*domain.Message, int, error) {

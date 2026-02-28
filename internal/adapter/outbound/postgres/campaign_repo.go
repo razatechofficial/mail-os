@@ -114,6 +114,34 @@ func (r *campaignRepo) FindAll(ctx context.Context, orgID domain.OrganizationID,
 	return campaigns, total, rows.Err()
 }
 
+func (r *campaignRepo) FindScheduledDue(ctx context.Context, limit int) ([]*domain.Campaign, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	q := QuerierFromContext(ctx, r.pool)
+	rows, err := q.Query(ctx, `
+		SELECT id, org_id, name, subject, from_name, from_email, template_id, contact_list_id, type, status,
+			scheduled_at, started_at, completed_at, total_recipients, sent_count, failed_count, metadata, created_at, updated_at, deleted_at
+		FROM campaigns
+		WHERE status = $1 AND scheduled_at IS NOT NULL AND scheduled_at <= NOW() AND deleted_at IS NULL
+		ORDER BY scheduled_at ASC
+		LIMIT $2
+	`, string(domain.CampaignStatusScheduled), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var campaigns []*domain.Campaign
+	for rows.Next() {
+		camp, err := scanCampaign(rows)
+		if err != nil {
+			return nil, err
+		}
+		campaigns = append(campaigns, camp)
+	}
+	return campaigns, rows.Err()
+}
+
 func (r *campaignRepo) UpdateStatus(ctx context.Context, id domain.CampaignID, status domain.CampaignStatus) error {
 	q := QuerierFromContext(ctx, r.pool)
 	now := time.Now()

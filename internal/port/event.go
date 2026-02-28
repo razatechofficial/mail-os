@@ -10,6 +10,11 @@ type DomainEvent interface {
 	OccurredAt() time.Time
 }
 
+type EventWithOrg interface {
+	DomainEvent
+	OrgID() string
+}
+
 type EventPublisher interface {
 	Publish(ctx context.Context, event DomainEvent) error
 }

@@ -114,6 +114,35 @@ func (r *messageRepo) FindAll(ctx context.Context, params message.MessageListPar
 	return messages, total, rows.Err()
 }
 
+func (r *messageRepo) FindScheduledDue(ctx context.Context, limit int) ([]*domain.Message, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	q := QuerierFromContext(ctx, r.pool)
+	rows, err := q.Query(ctx, `
+		SELECT id, org_id, campaign_id, provider_id, from_name, from_email, to_email, to_name, subject, html_body, text_body,
+			type, status, priority, tags, metadata, idempotency_key, provider_msg_id, attempts, last_attempt_at, sent_at, delivered_at,
+			opened_at, clicked_at, bounced_at, scheduled_at, created_at, updated_at
+		FROM messages
+		WHERE status = $1 AND scheduled_at IS NOT NULL AND scheduled_at <= NOW()
+		ORDER BY scheduled_at ASC
+		LIMIT $2
+	`, string(domain.MessageStatusScheduled), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var messages []*domain.Message
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, m)
+	}
+	return messages, rows.Err()
+}
+
 func (r *messageRepo) UpdateStatus(ctx context.Context, id domain.MessageID, status domain.MessageStatus, fields map[string]any) error {
 	q := QuerierFromContext(ctx, r.pool)
 	updates := []string{"status = $2", "updated_at = NOW()"}

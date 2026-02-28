@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/razatechofficial/mail-os/config"
+	"github.com/razatechofficial/mail-os/internal/app"
 	"github.com/razatechofficial/mail-os/pkg/logger"
 )
 
@@ -20,12 +21,12 @@ func main() {
 	logger.Init(cfg.App.LogLevel)
 	defer logger.Sync()
 
-	logger.Info("starting mailOS server",
-		logger.String("env", cfg.App.Env),
-		logger.String("http_addr", cfg.HTTP.Addr()),
-		logger.String("grpc_addr", cfg.GRPC.Addr()),
-	)
+	application, err := app.New(cfg)
+	if err != nil {
+		logger.Fatal("failed to initialize app", logger.Err(err))
+	}
 
-	// TODO: app.New(cfg) -> app.Start(ctx) will be wired in app-bootstrap phase
-	_ = cfg
+	if err := application.Start(); err != nil {
+		logger.Fatal("app failed", logger.Err(err))
+	}
 }

@@ -118,6 +118,10 @@ func (s *service) Delete(ctx context.Context, orgID domain.OrganizationID, id do
 	return nil
 }
 
+func (s *service) ListScheduledDue(ctx context.Context, limit int) ([]*domain.Campaign, error) {
+	return s.repo.FindScheduledDue(ctx, limit)
+}
+
 func (s *service) List(ctx context.Context, orgID domain.OrganizationID, params ListParams) ([]*domain.Campaign, int, error) {
 	campaigns, total, err := s.repo.FindAll(ctx, orgID, params)
 	if err != nil {

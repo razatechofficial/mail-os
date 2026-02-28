@@ -48,6 +48,10 @@ func (s *service) GetByID(ctx context.Context, orgID domain.OrganizationID, id d
 	return w, nil
 }
 
+func (s *service) GetByIDForDelivery(ctx context.Context, id domain.WebhookID) (*domain.Webhook, error) {
+	return s.repo.FindByID(ctx, id)
+}
+
 func (s *service) Update(ctx context.Context, orgID domain.OrganizationID, id domain.WebhookID, input UpdateInput) (*domain.Webhook, error) {
 	w, err := s.repo.FindByID(ctx, id)
 	if err != nil {

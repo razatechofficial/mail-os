@@ -13,6 +13,7 @@ type Service interface {
 	Update(ctx context.Context, orgID domain.OrganizationID, id domain.CampaignID, input UpdateInput) (*domain.Campaign, error)
 	Delete(ctx context.Context, orgID domain.OrganizationID, id domain.CampaignID) error
 	List(ctx context.Context, orgID domain.OrganizationID, params ListParams) ([]*domain.Campaign, int, error)
+	ListScheduledDue(ctx context.Context, limit int) ([]*domain.Campaign, error)
 	Launch(ctx context.Context, orgID domain.OrganizationID, id domain.CampaignID) error
 	Pause(ctx context.Context, orgID domain.OrganizationID, id domain.CampaignID) error
 	Resume(ctx context.Context, orgID domain.OrganizationID, id domain.CampaignID) error
@@ -29,6 +30,7 @@ type Repository interface {
 	Update(ctx context.Context, c *domain.Campaign) error
 	SoftDelete(ctx context.Context, id domain.CampaignID) error
 	FindAll(ctx context.Context, orgID domain.OrganizationID, params ListParams) ([]*domain.Campaign, int, error)
+	FindScheduledDue(ctx context.Context, limit int) ([]*domain.Campaign, error)
 	UpdateStatus(ctx context.Context, id domain.CampaignID, status domain.CampaignStatus) error
 	UpdateCounts(ctx context.Context, id domain.CampaignID, sent, failed int) error
 }
