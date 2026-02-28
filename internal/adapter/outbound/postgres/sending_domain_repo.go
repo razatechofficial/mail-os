@@ -101,25 +101,35 @@ func (r *sendingDomainRepo) FindAll(ctx context.Context, orgID domain.Organizati
 }
 
 func scanSendingDomain(row pgx.Row) (*domain.SendingDomain, error) {
-	var id, orgID, domainVal, dkimPub, dkimPriv, spf, dmarc, status string
+	var id, orgID, domainVal, status string
+	var dkimPub, dkimPriv, spf, dmarc *string
 	var verifiedAt, deletedAt *time.Time
 	var createdAt, updatedAt time.Time
 	err := row.Scan(&id, &orgID, &domainVal, &dkimPub, &dkimPriv, &spf, &dmarc, &status, &verifiedAt, &createdAt, &updatedAt, &deletedAt)
 	if err != nil {
 		return nil, err
 	}
-	return &domain.SendingDomain{
-		ID:             domain.SendingDomainID(id),
-		OrgID:          domain.OrganizationID(orgID),
-		Domain:         domainVal,
-		DKIMPublicKey:  dkimPub,
-		DKIMPrivateKey: dkimPriv,
-		SPFRecord:      spf,
-		DMARCRecord:    dmarc,
-		Status:         domain.DomainStatus(status),
-		VerifiedAt:     verifiedAt,
-		CreatedAt:      createdAt,
-		UpdatedAt:      updatedAt,
-		DeletedAt:      deletedAt,
-	}, nil
+	sd := &domain.SendingDomain{
+		ID:         domain.SendingDomainID(id),
+		OrgID:      domain.OrganizationID(orgID),
+		Domain:     domainVal,
+		Status:     domain.DomainStatus(status),
+		VerifiedAt: verifiedAt,
+		CreatedAt:  createdAt,
+		UpdatedAt:  updatedAt,
+		DeletedAt:  deletedAt,
+	}
+	if dkimPub != nil {
+		sd.DKIMPublicKey = *dkimPub
+	}
+	if dkimPriv != nil {
+		sd.DKIMPrivateKey = *dkimPriv
+	}
+	if spf != nil {
+		sd.SPFRecord = *spf
+	}
+	if dmarc != nil {
+		sd.DMARCRecord = *dmarc
+	}
+	return sd, nil
 }

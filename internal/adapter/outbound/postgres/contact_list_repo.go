@@ -195,28 +195,35 @@ func (r *contactListRepo) FindMembers(ctx context.Context, listID domain.Contact
 }
 
 func scanContactList(row pgx.Row) (*domain.ContactList, error) {
-	var id, orgID, name, description, listType, query string
+	var id, orgID, name, listType string
+	var description, query *string
 	var createdAt, updatedAt time.Time
 	var deletedAt *time.Time
 	err := row.Scan(&id, &orgID, &name, &description, &listType, &query, &createdAt, &updatedAt, &deletedAt)
 	if err != nil {
 		return nil, err
 	}
-	return &domain.ContactList{
-		ID:          domain.ContactListID(id),
-		OrgID:       domain.OrganizationID(orgID),
-		Name:        name,
-		Description: description,
-		Type:        domain.ListType(listType),
-		Query:       query,
-		CreatedAt:   createdAt,
-		UpdatedAt:   updatedAt,
-		DeletedAt:   deletedAt,
-	}, nil
+	cl := &domain.ContactList{
+		ID:        domain.ContactListID(id),
+		OrgID:     domain.OrganizationID(orgID),
+		Name:      name,
+		Type:      domain.ListType(listType),
+		CreatedAt: createdAt,
+		UpdatedAt: updatedAt,
+		DeletedAt: deletedAt,
+	}
+	if description != nil {
+		cl.Description = *description
+	}
+	if query != nil {
+		cl.Query = *query
+	}
+	return cl, nil
 }
 
 func scanContact(row pgx.Row) (*domain.Contact, error) {
-	var id, orgID, email, firstName, lastName, status string
+	var id, orgID, email, status string
+	var firstName, lastName *string
 	var metadata []byte
 	var createdAt, updatedAt time.Time
 	var deletedAt *time.Time
@@ -228,16 +235,21 @@ func scanContact(row pgx.Row) (*domain.Contact, error) {
 	if len(metadata) > 0 {
 		_ = json.Unmarshal(metadata, &metadataMap)
 	}
-	return &domain.Contact{
+	c := &domain.Contact{
 		ID:        domain.ContactID(id),
 		OrgID:     domain.OrganizationID(orgID),
 		Email:     email,
-		FirstName: firstName,
-		LastName:  lastName,
 		Metadata:  metadataMap,
 		Status:    domain.ContactStatus(status),
 		CreatedAt: createdAt,
 		UpdatedAt: updatedAt,
 		DeletedAt: deletedAt,
-	}, nil
+	}
+	if firstName != nil {
+		c.FirstName = *firstName
+	}
+	if lastName != nil {
+		c.LastName = *lastName
+	}
+	return c, nil
 }

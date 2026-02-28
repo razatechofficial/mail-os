@@ -178,7 +178,8 @@ func (r *templateRepo) FindLatestVersionNumber(ctx context.Context, templateID d
 }
 
 func scanTemplate(row pgx.Row) (*domain.Template, error) {
-	var id, orgID, name, slug, category, description string
+	var id, orgID, name, slug, category string
+	var description *string
 	var isActive bool
 	var createdAt, updatedAt time.Time
 	var deletedAt *time.Time
@@ -186,18 +187,21 @@ func scanTemplate(row pgx.Row) (*domain.Template, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &domain.Template{
-		ID:          domain.TemplateID(id),
-		OrgID:       domain.OrganizationID(orgID),
-		Name:        name,
-		Slug:        slug,
-		Category:    domain.TemplateCategory(category),
-		Description: description,
-		IsActive:    isActive,
-		CreatedAt:   createdAt,
-		UpdatedAt:   updatedAt,
-		DeletedAt:   deletedAt,
-	}, nil
+	tpl := &domain.Template{
+		ID:        domain.TemplateID(id),
+		OrgID:     domain.OrganizationID(orgID),
+		Name:      name,
+		Slug:      slug,
+		Category:  domain.TemplateCategory(category),
+		IsActive:  isActive,
+		CreatedAt: createdAt,
+		UpdatedAt: updatedAt,
+		DeletedAt: deletedAt,
+	}
+	if description != nil {
+		tpl.Description = *description
+	}
+	return tpl, nil
 }
 
 func scanTemplateVersion(row pgx.Row) (*domain.TemplateVersion, error) {

@@ -54,7 +54,8 @@ func (r *messageEventRepo) FindByMessageID(ctx context.Context, messageID domain
 }
 
 func scanMessageEvent(row pgx.Row) (*domain.MessageEvent, error) {
-	var id, messageID, orgID, evType, provider string
+	var id, messageID, orgID, evType string
+	var provider *string
 	var metadata []byte
 	var createdAt time.Time
 	err := row.Scan(&id, &messageID, &orgID, &evType, &provider, &metadata, &createdAt)
@@ -65,13 +66,16 @@ func scanMessageEvent(row pgx.Row) (*domain.MessageEvent, error) {
 	if len(metadata) > 0 {
 		_ = json.Unmarshal(metadata, &metadataMap)
 	}
-	return &domain.MessageEvent{
+	ev := &domain.MessageEvent{
 		ID:        id,
 		MessageID: domain.MessageID(messageID),
 		OrgID:     domain.OrganizationID(orgID),
 		Type:      domain.EventType(evType),
-		Provider:  provider,
 		Metadata:  metadataMap,
 		CreatedAt: createdAt,
-	}, nil
+	}
+	if provider != nil {
+		ev.Provider = *provider
+	}
+	return ev, nil
 }

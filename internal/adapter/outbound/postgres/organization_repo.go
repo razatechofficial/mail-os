@@ -120,7 +120,8 @@ func (r *organizationRepo) FindAll(ctx context.Context, params organization.List
 }
 
 func scanOrganization(row pgx.Row) (*domain.Organization, error) {
-	var id, name, slug, webhookURL, webhookSecret string
+	var id, name, slug string
+	var webhookURL, webhookSecret *string
 	var settings []byte
 	var isActive bool
 	var createdAt, updatedAt time.Time
@@ -133,16 +134,21 @@ func scanOrganization(row pgx.Row) (*domain.Organization, error) {
 	if len(settings) > 0 {
 		_ = json.Unmarshal(settings, &settingsMap)
 	}
-	return &domain.Organization{
-		ID:            domain.OrganizationID(id),
-		Name:          name,
-		Slug:          slug,
-		WebhookURL:    webhookURL,
-		WebhookSecret: webhookSecret,
-		Settings:      settingsMap,
-		IsActive:      isActive,
-		CreatedAt:     createdAt,
-		UpdatedAt:     updatedAt,
-		DeletedAt:     deletedAt,
-	}, nil
+	org := &domain.Organization{
+		ID:        domain.OrganizationID(id),
+		Name:      name,
+		Slug:      slug,
+		Settings:  settingsMap,
+		IsActive:  isActive,
+		CreatedAt: createdAt,
+		UpdatedAt: updatedAt,
+		DeletedAt: deletedAt,
+	}
+	if webhookURL != nil {
+		org.WebhookURL = *webhookURL
+	}
+	if webhookSecret != nil {
+		org.WebhookSecret = *webhookSecret
+	}
+	return org, nil
 }

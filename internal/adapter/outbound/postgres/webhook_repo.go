@@ -199,7 +199,8 @@ func scanWebhook(row pgx.Row) (*domain.Webhook, error) {
 }
 
 func scanWebhookDelivery(row pgx.Row) (*domain.WebhookDelivery, error) {
-	var id, webhookID, eventType, payload, status, lastError string
+	var id, webhookID, eventType, payload, status string
+	var lastError *string
 	var statusCode *int
 	var attempts int
 	var nextRetryAt *time.Time
@@ -212,7 +213,7 @@ func scanWebhookDelivery(row pgx.Row) (*domain.WebhookDelivery, error) {
 	if statusCode != nil {
 		statusCodeVal = *statusCode
 	}
-	return &domain.WebhookDelivery{
+	d := &domain.WebhookDelivery{
 		ID:          id,
 		WebhookID:   domain.WebhookID(webhookID),
 		EventType:   eventType,
@@ -220,11 +221,14 @@ func scanWebhookDelivery(row pgx.Row) (*domain.WebhookDelivery, error) {
 		Status:      domain.DeliveryStatus(status),
 		StatusCode:  statusCodeVal,
 		Attempts:    attempts,
-		LastError:   lastError,
 		NextRetryAt: nextRetryAt,
 		CreatedAt:   createdAt,
 		UpdatedAt:   updatedAt,
-	}, nil
+	}
+	if lastError != nil {
+		d.LastError = *lastError
+	}
+	return d, nil
 }
 
 func nullInt(i int) interface{} {

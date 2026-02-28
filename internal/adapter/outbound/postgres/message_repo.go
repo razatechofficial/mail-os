@@ -213,8 +213,8 @@ func (r *messageRepo) FindByIdempotencyKey(ctx context.Context, orgID domain.Org
 }
 
 func scanMessage(row pgx.Row) (*domain.Message, error) {
-	var id, orgID, fromName, fromEmail, toEmail, toName, subject, htmlBody, textBody, msgType, status, idempotencyKey, providerMsgID string
-	var campaignID, providerID *string
+	var id, orgID, fromName, fromEmail, toEmail, msgType, status string
+	var toName, subject, htmlBody, textBody, idempotencyKey, providerMsgID, campaignID, providerID *string
 	var metadata []byte
 	var tags []string
 	var priority, attempts int
@@ -241,17 +241,17 @@ func scanMessage(row pgx.Row) (*domain.Message, error) {
 		FromName:       fromName,
 		FromEmail:      fromEmail,
 		ToEmail:        toEmail,
-		ToName:         toName,
-		Subject:        subject,
-		HTMLBody:       htmlBody,
-		TextBody:       textBody,
+		ToName:         strVal(toName),
+		Subject:        strVal(subject),
+		HTMLBody:       strVal(htmlBody),
+		TextBody:       strVal(textBody),
 		Type:           domain.MessageType(msgType),
 		Status:         domain.MessageStatus(status),
 		Priority:       domain.MessagePriority(priority),
 		Tags:           tags,
 		Metadata:       metadataMap,
-		IdempotencyKey: idempotencyKey,
-		ProviderMsgID:  providerMsgID,
+		IdempotencyKey: strVal(idempotencyKey),
+		ProviderMsgID:  strVal(providerMsgID),
 		Attempts:       attempts,
 		LastAttemptAt:  lastAttemptAt,
 		SentAt:         sentAt,

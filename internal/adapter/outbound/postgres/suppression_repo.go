@@ -93,19 +93,25 @@ func (r *suppressionRepo) FindAll(ctx context.Context, orgID domain.Organization
 }
 
 func scanSuppression(row pgx.Row) (*domain.Suppression, error) {
-	var id, orgID, email, supType, reason, source string
+	var id, orgID, email, supType string
+	var reason, source *string
 	var createdAt time.Time
 	err := row.Scan(&id, &orgID, &email, &supType, &reason, &source, &createdAt)
 	if err != nil {
 		return nil, err
 	}
-	return &domain.Suppression{
+	s := &domain.Suppression{
 		ID:        id,
 		OrgID:     domain.OrganizationID(orgID),
 		Email:     email,
 		Type:      domain.SuppressionType(supType),
-		Reason:    reason,
-		Source:    source,
 		CreatedAt: createdAt,
-	}, nil
+	}
+	if reason != nil {
+		s.Reason = *reason
+	}
+	if source != nil {
+		s.Source = *source
+	}
+	return s, nil
 }
