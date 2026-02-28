@@ -1,0 +1,32 @@
+package ses
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/razatechofficial/mail-os/internal/port"
+)
+
+var _ port.EmailSender = (*sender)(nil)
+
+type Config struct {
+	Region    string
+	AccessKey string
+	SecretKey string
+}
+
+type sender struct {
+	cfg Config
+}
+
+func New(cfg Config) port.EmailSender {
+	return &sender{cfg: cfg}
+}
+
+func (s *sender) Name() string {
+	return "ses"
+}
+
+func (s *sender) Send(ctx context.Context, req port.SendRequest) (*port.SendResult, error) {
+	return nil, fmt.Errorf("ses: not implemented")
+}
