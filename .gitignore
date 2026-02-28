@@ -5,6 +5,9 @@
 *.so
 *.dylib
 bin/
+server
+worker
+migrate
 
 # Test artifacts
 *.test
