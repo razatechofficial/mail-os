@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package mailos.v1;
+
+option go_package = "github.com/razatechofficial/mail-os/api/proto/v1;v1";
+
+service CampaignService {
+  rpc CreateCampaign(CreateCampaignRequest) returns (Campaign);
+  rpc GetCampaign(GetCampaignRequest) returns (Campaign);
+  rpc UpdateCampaign(UpdateCampaignRequest) returns (Campaign);
+  rpc DeleteCampaign(DeleteCampaignRequest) returns (DeleteCampaignResponse);
+  rpc ListCampaigns(ListCampaignsRequest) returns (ListCampaignsResponse);
+  rpc LaunchCampaign(LaunchCampaignRequest) returns (Campaign);
+  rpc PauseCampaign(PauseCampaignRequest) returns (Campaign);
+  rpc ResumeCampaign(ResumeCampaignRequest) returns (Campaign);
+  rpc CancelCampaign(CancelCampaignRequest) returns (Campaign);
+}
+
+message CreateCampaignRequest {
+  string name = 1;
+  string subject = 2;
+  string from_name = 3;
+  string from_email = 4;
+  string template_id = 5;
+  string contact_list_id = 6;
+  string type = 7;
+  string scheduled_at = 8;
+}
+
+message GetCampaignRequest {
+  string id = 1;
+}
+
+message UpdateCampaignRequest {
+  string id = 1;
+  string name = 2;
+  string subject = 3;
+  string from_name = 4;
+  string from_email = 5;
+}
+
+message DeleteCampaignRequest {
+  string id = 1;
+}
+
+message DeleteCampaignResponse {}
+
+message ListCampaignsRequest {
+  string status = 1;
+  Pagination pagination = 2;
+}
+
+message ListCampaignsResponse {
+  repeated Campaign campaigns = 1;
+  PaginationMeta meta = 2;
+}
+
+message LaunchCampaignRequest {
+  string id = 1;
+}
+
+message PauseCampaignRequest {
+  string id = 1;
+}
+
+message ResumeCampaignRequest {
+  string id = 1;
+}
+
+message CancelCampaignRequest {
+  string id = 1;
+}
+
+message Campaign {
+  string id = 1;
+  string org_id = 2;
+  string name = 3;
+  string subject = 4;
+  string from_name = 5;
+  string from_email = 6;
+  string type = 7;
+  string status = 8;
+  int32 total_recipients = 9;
+  int32 sent_count = 10;
+  int32 failed_count = 11;
+  string created_at = 12;
+  string updated_at = 13;
+}

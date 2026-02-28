@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package mailos.v1;
+
+option go_package = "github.com/razatechofficial/mail-os/api/proto/v1;v1";
+
+service MailService {
+  rpc SendEmail(SendEmailRequest) returns (SendEmailResponse);
+  rpc BatchSend(BatchSendRequest) returns (BatchSendResponse);
+  rpc GetMessage(GetMessageRequest) returns (Message);
+  rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
+}
+
+message SendEmailRequest {
+  string from_name = 1;
+  string from_email = 2;
+  string to_email = 3;
+  string to_name = 4;
+  string subject = 5;
+  string html_body = 6;
+  string text_body = 7;
+  string template_slug = 8;
+  map<string, string> template_vars = 9;
+  repeated string tags = 10;
+  int32 priority = 11;
+  string idempotency_key = 12;
+}
+
+message SendEmailResponse {
+  string message_id = 1;
+  string status = 2;
+}
+
+message BatchSendRequest {
+  repeated SendEmailRequest messages = 1;
+}
+
+message BatchSendResponse {
+  repeated SendEmailResponse results = 1;
+  int32 success_count = 2;
+  int32 fail_count = 3;
+}
+
+message GetMessageRequest {
+  string id = 1;
+}
+
+message ListMessagesRequest {
+  string status = 1;
+  string type = 2;
+  Pagination pagination = 3;
+}
+
+message ListMessagesResponse {
+  repeated Message messages = 1;
+  PaginationMeta meta = 2;
+}
+
+message Message {
+  string id = 1;
+  string org_id = 2;
+  string from_name = 3;
+  string from_email = 4;
+  string to_email = 5;
+  string to_name = 6;
+  string subject = 7;
+  string type = 8;
+  string status = 9;
+  int32 priority = 10;
+  repeated string tags = 11;
+  string created_at = 12;
+  string updated_at = 13;
+}
