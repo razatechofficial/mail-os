@@ -52,7 +52,13 @@ func New(cfg *config.Config) (*App, error) {
 	}
 
 	pub, con, err := queue.NewFromConfig(cfg.Queue.Backend, map[string]any{
-		"dsn": cfg.Postgres.DSN(),
+		"dsn":           cfg.Postgres.DSN(),
+		"addr":          cfg.Redis.Addr(),
+		"password":      cfg.Redis.Password,
+		"db":            cfg.Redis.DB,
+		"rabbit_url":    cfg.Queue.RabbitURL,
+		"nats_url":      cfg.Queue.NatsURL,
+		"kafka_brokers": cfg.Queue.KafkaBrokers,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("app.New: queue: %w", err)

@@ -20,21 +20,23 @@ func NewFromConfig(backend string, opts map[string]any) (port.Publisher, port.Co
 		return pub, con, nil
 	case "redis":
 		addr, _ := opts["addr"].(string)
-		pub := redisqueue.NewPublisher(addr)
-		con := redisqueue.NewConsumer(addr)
+		password, _ := opts["password"].(string)
+		db, _ := opts["db"].(int)
+		pub := redisqueue.NewPublisher(addr, password, db)
+		con := redisqueue.NewConsumer(addr, password, db)
 		return pub, con, nil
 	case "rabbitmq":
-		url, _ := opts["url"].(string)
+		url, _ := opts["rabbit_url"].(string)
 		pub := rabbitmq.NewPublisher(url)
 		con := rabbitmq.NewConsumer(url)
 		return pub, con, nil
 	case "nats":
-		url, _ := opts["url"].(string)
+		url, _ := opts["nats_url"].(string)
 		pub := natsqueue.NewPublisher(url)
 		con := natsqueue.NewConsumer(url)
 		return pub, con, nil
 	case "kafka":
-		brokers, _ := opts["brokers"].(string)
+		brokers, _ := opts["kafka_brokers"].(string)
 		pub := kafkaqueue.NewPublisher(brokers)
 		con := kafkaqueue.NewConsumer(brokers)
 		return pub, con, nil
