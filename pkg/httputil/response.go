@@ -1,3 +1,5 @@
+// Package httputil provides Gin-specific helpers for JSON responses,
+// error mapping, and request binding.
 package httputil
 
 import (

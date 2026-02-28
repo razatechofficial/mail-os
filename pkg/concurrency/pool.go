@@ -1,3 +1,6 @@
+// Package concurrency provides reusable primitives for parallel work:
+// worker pools, fan-out/fan-in, batch processing, circuit breakers,
+// token-bucket rate limiters, and single-flight deduplication.
 package concurrency
 
 import (

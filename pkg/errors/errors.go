@@ -1,3 +1,5 @@
+// Package errors defines sentinel errors and the AppError type used
+// throughout the application for structured, domain-aware error handling.
 package errors
 
 import (

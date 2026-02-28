@@ -1,3 +1,6 @@
+// Package port declares the hexagonal architecture port interfaces that
+// decouple core business logic from infrastructure adapters (database,
+// cache, queue, mailer, crypto, rendering, and eventing).
 package port
 
 import (

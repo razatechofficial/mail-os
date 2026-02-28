@@ -1,3 +1,6 @@
+// Package app wires infrastructure, DI container, and transport servers
+// into a single application lifecycle with concurrent startup and
+// graceful shutdown.
 package app
 
 import (

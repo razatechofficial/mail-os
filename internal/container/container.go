@@ -1,3 +1,5 @@
+// Package container is the composition root that assembles repositories,
+// adapters, core services, and transport handlers via constructor injection.
 package container
 
 import (

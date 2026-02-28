@@ -1,3 +1,5 @@
+// Package pagination provides protocol-agnostic cursor and offset-based
+// pagination parameters and response metadata.
 package pagination
 
 const (

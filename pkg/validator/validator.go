@@ -1,3 +1,5 @@
+// Package validator wraps go-playground/validator to provide a shared,
+// reusable validation instance with custom tag registrations.
 package validator
 
 import (

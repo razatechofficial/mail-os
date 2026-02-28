@@ -1,3 +1,5 @@
+// Package logger provides a thin wrapper around zap for structured,
+// leveled logging with a package-level singleton.
 package logger
 
 import (

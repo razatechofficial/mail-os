@@ -1,3 +1,6 @@
+// Package domain contains pure value types and entity structs that
+// represent the mail-service business model. Domain types have no
+// infrastructure dependencies.
 package domain
 
 import "time"

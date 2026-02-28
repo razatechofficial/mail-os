@@ -1,3 +1,6 @@
+// Package config defines the application configuration structures and
+// loading logic. Configuration is read from YAML files with environment
+// variable overrides via cleanenv.
 package config
 
 import (
@@ -23,6 +26,11 @@ type Config struct {
 type App struct {
 	Env      string `yaml:"env" env:"APP_ENV" env-default:"local"`
 	LogLevel string `yaml:"log_level" env:"APP_LOG_LEVEL" env-default:"debug"`
+}
+
+// IsProduction returns true when the application is running in a production environment.
+func (a App) IsProduction() bool {
+	return a.Env == "production"
 }
 
 type HTTP struct {

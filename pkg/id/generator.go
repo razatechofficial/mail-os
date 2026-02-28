@@ -1,3 +1,4 @@
+// Package id provides UUID generation helpers for domain entity identifiers.
 package id
 
 import "github.com/google/uuid"
