@@ -5,6 +5,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ilyakaznacheev/cleanenv"
@@ -15,6 +16,7 @@ type Config struct {
 	App        App        `yaml:"app"`
 	HTTP       HTTP       `yaml:"http"`
 	GRPC       GRPC       `yaml:"grpc"`
+	CORS       CORS       `yaml:"cors"`
 	Postgres   Postgres   `yaml:"postgres"`
 	Redis      Redis      `yaml:"redis"`
 	Queue      Queue      `yaml:"queue"`
@@ -22,6 +24,30 @@ type Config struct {
 	Encryption Encryption `yaml:"encryption"`
 	RateLimit  RateLimit  `yaml:"rate_limit"`
 	Worker     Worker     `yaml:"worker"`
+}
+
+// CORS holds allowed origins (comma-separated in env).
+type CORS struct {
+	Origins string `yaml:"origins" env:"CORS_ORIGINS" env-default:"http://localhost:3000,http://127.0.0.1:3000"`
+}
+
+// Origins returns the list of allowed origins, split by comma.
+func (c CORS) OriginsList() []string {
+	if c.Origins == "" {
+		return []string{"*"}
+	}
+	parts := strings.Split(c.Origins, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return []string{"*"}
+	}
+	return out
 }
 
 type App struct {
@@ -35,11 +61,12 @@ func (a App) IsProduction() bool {
 }
 
 type HTTP struct {
-	Host         string        `yaml:"host" env:"HTTP_HOST" env-default:"0.0.0.0"`
-	Port         int           `yaml:"port" env:"HTTP_PORT" env-default:"8080"`
-	ReadTimeout  time.Duration `yaml:"read_timeout" env:"HTTP_READ_TIMEOUT" env-default:"10s"`
-	WriteTimeout time.Duration `yaml:"write_timeout" env:"HTTP_WRITE_TIMEOUT" env-default:"30s"`
-	IdleTimeout  time.Duration `yaml:"idle_timeout" env:"HTTP_IDLE_TIMEOUT" env-default:"60s"`
+	Host                 string        `yaml:"host" env:"HTTP_HOST" env-default:"0.0.0.0"`
+	Port                 int           `yaml:"port" env:"HTTP_PORT" env-default:"8080"`
+	ReadTimeout          time.Duration `yaml:"read_timeout" env:"HTTP_READ_TIMEOUT" env-default:"10s"`
+	WriteTimeout         time.Duration `yaml:"write_timeout" env:"HTTP_WRITE_TIMEOUT" env-default:"30s"`
+	IdleTimeout          time.Duration `yaml:"idle_timeout" env:"HTTP_IDLE_TIMEOUT" env-default:"60s"`
+	BatchSendConcurrency int           `yaml:"batch_send_concurrency" env:"HTTP_BATCH_SEND_CONCURRENCY" env-default:"20"`
 }
 
 func (h HTTP) Addr() string {
