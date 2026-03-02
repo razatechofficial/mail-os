@@ -122,6 +122,9 @@ func (r *templateRepo) CreateVersion(ctx context.Context, v *domain.TemplateVers
 	if variables == nil {
 		variables = []string{}
 	}
+	if _, err := q.Exec(ctx, `UPDATE template_versions SET is_active = false WHERE template_id = $1`, string(v.TemplateID)); err != nil {
+		return err
+	}
 	_, err := q.Exec(ctx, `
 		INSERT INTO template_versions (id, template_id, version, subject, html_body, text_body, variables, is_active, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
