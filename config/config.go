@@ -64,7 +64,7 @@ type HTTP struct {
 	Host                 string        `yaml:"host" env:"HTTP_HOST" env-default:"0.0.0.0"`
 	Port                 int           `yaml:"port" env:"HTTP_PORT" env-default:"8080"`
 	ReadTimeout          time.Duration `yaml:"read_timeout" env:"HTTP_READ_TIMEOUT" env-default:"10s"`
-	WriteTimeout         time.Duration `yaml:"write_timeout" env:"HTTP_WRITE_TIMEOUT" env-default:"30s"`
+	WriteTimeout         time.Duration `yaml:"write_timeout" env:"HTTP_WRITE_TIMEOUT" env-default:"5m"`
 	IdleTimeout          time.Duration `yaml:"idle_timeout" env:"HTTP_IDLE_TIMEOUT" env-default:"60s"`
 	BatchSendConcurrency int           `yaml:"batch_send_concurrency" env:"HTTP_BATCH_SEND_CONCURRENCY" env-default:"20"`
 }

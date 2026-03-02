@@ -6,7 +6,7 @@ http:
   host: 0.0.0.0
   port: ${HTTP_PORT}
   read_timeout: 10s
-  write_timeout: 30s
+  write_timeout: 5m
   idle_timeout: 120s
   batch_send_concurrency: 50
 
