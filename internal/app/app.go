@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	v1 "github.com/razatechofficial/mail-os/api/proto/v1"
 	"github.com/razatechofficial/mail-os/config"
 	"github.com/razatechofficial/mail-os/internal/adapter/inbound/grpc"
 	grpcinterceptor "github.com/razatechofficial/mail-os/internal/adapter/inbound/grpc/interceptor"
@@ -24,6 +25,7 @@ import (
 	"github.com/razatechofficial/mail-os/internal/container"
 	"github.com/razatechofficial/mail-os/pkg/logger"
 	grpclib "google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 type App struct {
@@ -74,12 +76,12 @@ func New(cfg *config.Config) (*App, error) {
 		cfg.HTTP.IdleTimeout,
 	)
 
-	handlers := inhttp.Handlers(*c.HTTPHandlers)
+		handlers := inhttp.Handlers(*c.HTTPHandlers)
 	httpServer.RegisterRoutes(&handlers,
 		middleware.Recovery(),
 		middleware.RequestID(),
 		middleware.Logging(),
-		middleware.CORS([]string{"*"}),
+		middleware.CORS(cfg.CORS.OriginsList()),
 		middleware.Auth(c.Services.APIKey),
 	)
 
@@ -91,6 +93,10 @@ func New(cfg *config.Config) (*App, error) {
 			grpcinterceptor.AuthUnary(c.Services.APIKey),
 		),
 	)
+
+	// Register gRPC services
+	v1.RegisterMailServiceServer(grpcServer.GRPCServer(), c.GRPCHandlers.MailService)
+	reflection.Register(grpcServer.GRPCServer())
 
 	return &App{
 		cfg:       cfg,

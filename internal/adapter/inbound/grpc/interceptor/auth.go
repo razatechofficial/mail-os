@@ -22,12 +22,10 @@ func AuthUnary(apiKeySvc apikey.Service) grpclib.UnaryServerInterceptor {
 		if !ok {
 			return nil, status.Error(codes.Unauthenticated, "missing metadata")
 		}
-		// Get authorization header
-		authValues := md.Get("authorization")
-		if len(authValues) == 0 {
-			return nil, status.Error(codes.Unauthenticated, "missing authorization")
+		token := extractAPIKey(md)
+		if token == "" {
+			return nil, status.Error(codes.Unauthenticated, "missing authorization or x-api-key")
 		}
-		token := strings.TrimPrefix(authValues[0], "Bearer ")
 		key, err := apiKeySvc.ValidateKey(ctx, token)
 		if err != nil {
 			return nil, status.Error(codes.Unauthenticated, "invalid api key")
@@ -38,6 +36,17 @@ func AuthUnary(apiKeySvc apikey.Service) grpclib.UnaryServerInterceptor {
 }
 
 type orgIDKey struct{}
+
+// extractAPIKey gets the API key from authorization (Bearer) or x-api-key metadata.
+func extractAPIKey(md metadata.MD) string {
+	if v := md.Get("authorization"); len(v) > 0 {
+		return strings.TrimPrefix(strings.TrimSpace(v[0]), "Bearer ")
+	}
+	if v := md.Get("x-api-key"); len(v) > 0 {
+		return strings.TrimSpace(v[0])
+	}
+	return ""
+}
 
 func OrgIDFromContext(ctx context.Context) string {
 	if v, ok := ctx.Value(orgIDKey{}).(string); ok {
