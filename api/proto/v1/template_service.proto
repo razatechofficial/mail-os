@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package mailos.v1;
 
+import "common.proto";
+
 option go_package = "github.com/razatechofficial/mail-os/api/proto/v1;v1";
 
 service TemplateService {
