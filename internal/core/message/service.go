@@ -10,18 +10,26 @@ import (
 	"github.com/razatechofficial/mail-os/internal/port"
 	"github.com/razatechofficial/mail-os/pkg/errors"
 	"github.com/razatechofficial/mail-os/pkg/id"
+	"golang.org/x/sync/errgroup"
+
+	tmpl "github.com/razatechofficial/mail-os/internal/core/template"
 )
 
-const messageProcessTopic = "messages.process"
+const (
+	messageProcessTopic  = "messages.process"
+	defaultBatchConcur   = 20 // max concurrent Send() calls per batch when not configured
+)
 
 type service struct {
-	repo        Repository
-	suppressions port.SuppressionChecker
-	quotas      port.QuotaChecker
-	renderer    port.TemplateRenderer
-	publisher   port.Publisher
-	txManager   port.TxManager
-	events      port.EventPublisher
+	repo                Repository
+	suppressions        port.SuppressionChecker
+	quotas              port.QuotaChecker
+	renderer            port.TemplateRenderer
+	templateSvc         tmpl.Service
+	publisher           port.Publisher
+	txManager           port.TxManager
+	events              port.EventPublisher
+	batchSendConcur     int
 }
 
 func NewService(
@@ -29,18 +37,26 @@ func NewService(
 	suppressions port.SuppressionChecker,
 	quotas port.QuotaChecker,
 	renderer port.TemplateRenderer,
+	templateSvc tmpl.Service,
 	publisher port.Publisher,
 	txManager port.TxManager,
 	events port.EventPublisher,
+	batchSendConcurrency int,
 ) Service {
+	concur := batchSendConcurrency
+	if concur < 1 {
+		concur = defaultBatchConcur
+	}
 	return &service{
-		repo:        repo,
-		suppressions: suppressions,
-		quotas:      quotas,
-		renderer:    renderer,
-		publisher:   publisher,
-		txManager:   txManager,
-		events:      events,
+		repo:            repo,
+		suppressions:    suppressions,
+		quotas:          quotas,
+		renderer:        renderer,
+		templateSvc:     templateSvc,
+		publisher:       publisher,
+		txManager:      txManager,
+		events:         events,
+		batchSendConcur: concur,
 	}
 }
 
@@ -72,6 +88,47 @@ func (s *service) Send(ctx context.Context, input SendEmailInput) (*SendEmailOut
 	}
 
 	htmlBody, textBody := input.HTMLBody, input.TextBody
+	subject := input.Subject
+
+	if input.TemplateSlug == "" {
+		if subject == "" {
+			return nil, errors.NewBadRequest("subject is required when not using a template")
+		}
+		if htmlBody == "" && textBody == "" {
+			return nil, errors.NewBadRequest("html_body, text_body, or template_slug is required")
+		}
+	}
+
+	if input.TemplateSlug != "" {
+		tpl, err := s.templateSvc.GetBySlug(ctx, domain.OrganizationID(input.OrgID), input.TemplateSlug)
+		if err != nil {
+			return nil, fmt.Errorf("message.Send: template not found: %w", err)
+		}
+		version, err := s.templateSvc.GetActiveVersion(ctx, tpl.ID)
+		if err != nil {
+			return nil, fmt.Errorf("message.Send: no active template version: %w", err)
+		}
+		vars := input.TemplateVars
+		if vars == nil {
+			vars = map[string]any{}
+		}
+		htmlRendered, textRendered, err := s.renderer.Render(ctx, version.HTMLBody, vars)
+		if err != nil {
+			return nil, fmt.Errorf("message.Send: template render failed: %w", err)
+		}
+		htmlBody = htmlRendered
+		if version.TextBody != "" {
+			_, textRendered, err = s.renderer.Render(ctx, version.TextBody, vars)
+			if err == nil {
+				textBody = textRendered
+			}
+		} else {
+			textBody = textRendered
+		}
+		if subject == "" {
+			subject = version.Subject
+		}
+	}
 
 	priority := domain.MessagePriority(input.Priority)
 	if priority == 0 {
@@ -87,7 +144,7 @@ func (s *service) Send(ctx context.Context, input SendEmailInput) (*SendEmailOut
 		FromEmail:      input.FromEmail,
 		ToEmail:        input.ToEmail,
 		ToName:         input.ToName,
-		Subject:        input.Subject,
+		Subject:        subject,
 		HTMLBody:       htmlBody,
 		TextBody:       textBody,
 		Type:           domain.MessageTypeTransactional,
@@ -123,15 +180,28 @@ func (s *service) Send(ctx context.Context, input SendEmailInput) (*SendEmailOut
 }
 
 func (s *service) BatchSend(ctx context.Context, input BatchSendInput) (*BatchSendOutput, error) {
-	results := make([]SendEmailOutput, 0, len(input.Messages))
-	for _, m := range input.Messages {
+	n := len(input.Messages)
+	if n == 0 {
+		return &BatchSendOutput{Results: []SendEmailOutput{}, SuccessCount: 0, FailCount: 0}, nil
+	}
+	results := make([]SendEmailOutput, n)
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(s.batchSendConcur)
+	for i, m := range input.Messages {
+		i, m := i, m
 		m.OrgID = input.OrgID
-		out, err := s.Send(ctx, m)
-		if err != nil {
-			results = append(results, SendEmailOutput{})
-			continue
-		}
-		results = append(results, *out)
+		g.Go(func() error {
+			out, err := s.Send(gctx, m)
+			if err != nil {
+				results[i] = SendEmailOutput{}
+				return nil // collect all; don't cancel on first error
+			}
+			results[i] = *out
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, fmt.Errorf("message.BatchSend: %w", err)
 	}
 	success := 0
 	for _, r := range results {
@@ -139,7 +209,7 @@ func (s *service) BatchSend(ctx context.Context, input BatchSendInput) (*BatchSe
 			success++
 		}
 	}
-	return &BatchSendOutput{Results: results, SuccessCount: success, FailCount: len(results) - success}, nil
+	return &BatchSendOutput{Results: results, SuccessCount: success, FailCount: n - success}, nil
 }
 
 func (s *service) Schedule(ctx context.Context, input ScheduleEmailInput) (*SendEmailOutput, error) {
