@@ -141,7 +141,7 @@ type SendEmailRequest struct {
 	FromEmail      string         `json:"from_email" binding:"required,email"`
 	ToEmail        string         `json:"to_email" binding:"required,email"`
 	ToName         string         `json:"to_name"`
-	Subject        string         `json:"subject" binding:"required"`
+	Subject        string         `json:"subject"` // required when template_slug is empty; when using template, can come from template
 	HTMLBody       string         `json:"html_body"`
 	TextBody       string         `json:"text_body"`
 	TemplateSlug   string         `json:"template_slug"`
@@ -149,8 +149,8 @@ type SendEmailRequest struct {
 	Tags           []string       `json:"tags"`
 	Metadata       map[string]any `json:"metadata"`
 	Priority       int            `json:"priority"`
-	IdempotencyKey string        `json:"idempotency_key"`
-	ScheduleAt     *time.Time    `json:"schedule_at"`
+	IdempotencyKey string         `json:"idempotency_key"`
+	ScheduleAt     *time.Time     `json:"schedule_at"`
 }
 
 type BatchSendEmailRequest struct {

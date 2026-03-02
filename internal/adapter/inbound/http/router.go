@@ -71,6 +71,7 @@ func (s *Server) RegisterRoutes(h *Handlers, middlewares ...gin.HandlerFunc) {
 			templates.PUT("/:id", h.Template.Update)
 			templates.DELETE("/:id", h.Template.Delete)
 			templates.GET("", h.Template.List)
+			templates.GET("/:id/active-version", h.Template.GetActiveVersion)
 			templates.POST("/:id/versions", h.Template.CreateVersion)
 			templates.GET("/:id/versions", h.Template.ListVersions)
 		}

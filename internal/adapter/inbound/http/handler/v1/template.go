@@ -102,6 +102,22 @@ func (h *TemplateHandler) CreateVersion(c *gin.Context) {
 	httputil.Created(c, dto.TemplateVersionToResponse(v))
 }
 
+func (h *TemplateHandler) GetActiveVersion(c *gin.Context) {
+	orgID := domain.OrganizationID(httputil.OrgIDFromContext(c))
+	templateID := domain.TemplateID(c.Param("id"))
+	_, err := h.svc.GetByID(c.Request.Context(), orgID, templateID)
+	if err != nil {
+		httputil.FromError(c, err)
+		return
+	}
+	v, err := h.svc.GetActiveVersion(c.Request.Context(), templateID)
+	if err != nil {
+		httputil.FromError(c, err)
+		return
+	}
+	httputil.OK(c, dto.TemplateVersionToResponse(v))
+}
+
 func (h *TemplateHandler) ListVersions(c *gin.Context) {
 	templateID := domain.TemplateID(c.Param("id"))
 	versions, err := h.svc.ListVersions(c.Request.Context(), templateID)
