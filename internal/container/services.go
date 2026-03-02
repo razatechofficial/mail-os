@@ -60,9 +60,11 @@ func (c *Container) buildServices() *Services {
 		suppChecker,
 		quotaChecker,
 		c.Adapters.Renderer,
+		templateSvc,
 		c.Pub,
 		c.Adapters.TxManager,
 		c.Adapters.EventBus,
+		c.cfg.HTTP.BatchSendConcurrency,
 	)
 
 	// Phase 4: two-phase setter injection for campaign <-> message
