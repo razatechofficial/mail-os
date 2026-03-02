@@ -37,8 +37,5 @@ go.work.sum
 .DS_Store
 Thumbs.db
 
-# Generated protobuf
-api/proto/v1/*.pb.go
-
 # Build
 tmp/
