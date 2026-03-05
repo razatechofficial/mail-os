@@ -35,9 +35,9 @@ redis:
 
 queue:
   backend: pgqueue
-  rabbit_url: "amqp://guest:guest@localhost:5672/"
-  nats_url: "nats://localhost:4222"
-  kafka_brokers: "localhost:9094"
+  rabbit_url: amqp://guest:guest@localhost:5672/
+  nats_url: nats://localhost:4222
+  kafka_brokers: localhost:9094
 
 smtp:
   enabled: true
