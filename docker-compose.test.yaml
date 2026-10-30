@@ -1,0 +1,40 @@
+# Test stack for the integration and e2e gates (same shape as IAM's). Every
+# host port can be moved with an environment variable, so several CI builds
+# can share an agent (Jenkinsfile.pr derives them from the executor number).
+# The defaults differ from IAM's (5433 / 6380) so both stacks run side by
+# side on a laptop.
+#
+#   docker compose -f docker-compose.test.yaml up -d --wait
+#   MAILOS_TEST_PG_PORT=5434 MAILOS_TEST_REDIS_PORT=6381 go test -tags integration -p 1 ./integration/
+#   scripts/ci/pr-gates.sh integration e2e
+#   docker compose -f docker-compose.test.yaml down -v
+#
+# What is here and what is not: docs/testing-e2e.md.
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: mail_os
+    ports:
+      - "${MAILOS_TEST_PG_PORT:-5434}:5432"
+    # In memory: every stack starts with an empty database.
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mail_os"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${MAILOS_TEST_REDIS_PORT:-6381}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
