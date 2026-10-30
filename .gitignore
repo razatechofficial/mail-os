@@ -39,3 +39,10 @@ Thumbs.db
 
 # Build
 tmp/
+
+# CI and e2e output
+ci-reports/
+e2e/.work/
+
+# Agent worktrees and caches
+.claude/
