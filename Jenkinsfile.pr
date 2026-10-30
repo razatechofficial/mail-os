@@ -1,0 +1,153 @@
+// ============================================================================
+// PR pipeline (MailOS server), modelled on IAM's Jenkinsfile.pr. Multibranch:
+// runs on every branch and pull request and blocks merging. It builds nothing
+// for release and pushes nothing.
+//
+// Gates (each is scripts/ci/pr-gates.sh <gate>, so a laptop runs the same):
+//   1. Static       go vet (default, integration and e2e tags), gosec, govulncheck
+//   2. Unit         go test -race ./...
+//   3. Integration  migrations up -> down to zero -> up, then -tags integration
+//                   against docker-compose.test.yaml
+//   4. E2E (API)    the server, worker and fake IAM binaries against the test
+//                   stack: e2e/run.sh all
+// A skipped test fails the gate (scripts/ci/skipgate).
+//
+// Jenkins job: Multibranch Pipeline, script path Jenkinsfile.pr
+// (setup: docs/ci-pr-pipeline.md).
+// ============================================================================
+
+pipeline {
+    agent { label 'linux && docker && amd64 && builder' }
+
+    options {
+        timestamps()
+        disableConcurrentBuilds(abortPrevious: true)
+        buildDiscarder(logRotator(numToKeepStr: '30'))
+        timeout(time: 60, unit: 'MINUTES')
+    }
+
+    environment {
+        // Debian-based: -race needs cgo.
+        GOLANG_IMAGE   = 'golang:1.26-bookworm'
+        GOSEC_VERSION  = 'v2.22.10'
+        CI_REPORT_DIR  = 'ci-reports'
+        // One stack per executor, so builds on one agent do not collide.
+        COMPOSE_PROJECT_NAME = "mailos-pr-${env.EXECUTOR_NUMBER}"
+    }
+
+    stages {
+        stage('Prepare') {
+            steps {
+                script {
+                    // Per-executor host ports for the test stack and the e2e
+                    // processes. IAM's PR job uses 20000 + 10 x executor; this
+                    // job uses 21000 + 10 x executor, so both share an agent.
+                    def base = 21000 + (env.EXECUTOR_NUMBER as Integer) * 10
+                    env.MAILOS_TEST_PG_PORT = "${base + 1}"
+                    env.MAILOS_TEST_REDIS_PORT = "${base + 2}"
+                    env.MAILOS_E2E_HTTP_PORT = "${base + 4}"
+                    env.MAILOS_E2E_GRPC_PORT = "${base + 5}"
+                    env.MAILOS_E2E_IAM_PORT = "${base + 6}"
+                    env.MAILOS_E2E_METRICS_PORT = "${base + 7}"
+                    env.MAILOS_E2E_WORKER_METRICS_PORT = "${base + 8}"
+                    env.BUILD_DIR = fileExists('go.mod') ? '.' : 'server'
+                }
+                sh '''#!/usr/bin/env bash
+                  set -euo pipefail
+                  mkdir -p "${WORKSPACE}/${CI_REPORT_DIR}"
+                  docker volume create mailos-go-mod-cache >/dev/null
+                  docker volume create mailos-go-build-cache >/dev/null
+                '''
+            }
+        }
+
+        stage('Static') {
+            parallel {
+                stage('vet') { steps { goGate('vet') } }
+                stage('gosec') { steps { goGate('gosec') } }
+                stage('govulncheck') { steps { goGate('govulncheck') } }
+            }
+        }
+
+        stage('Unit (-race)') {
+            steps { goGate('unit') }
+        }
+
+        stage('Integration') {
+            steps {
+                stackUp()
+                goGate('integration')
+            }
+            post { always { stackDown() } }
+        }
+
+        stage('E2E (API)') {
+            steps {
+                stackUp()
+                goGate('e2e')
+            }
+            post {
+                always {
+                    sh '''
+                      for f in server worker fakeiam; do
+                        cp -f "${BUILD_DIR}/${CI_REPORT_DIR}/e2e-work/$f.log" "${WORKSPACE}/${CI_REPORT_DIR}/e2e-$f.log" 2>/dev/null || true
+                      done
+                    '''
+                    stackDown()
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: "${env.CI_REPORT_DIR}/**", allowEmptyArchive: true
+        }
+    }
+}
+
+// goGate runs one gate of scripts/ci/pr-gates.sh in the Go image, on the host
+// network so it reaches the test stack's published ports.
+def goGate(String gate) {
+    withEnv(["GATE=${gate}"]) {
+        sh '''#!/usr/bin/env bash
+          set -euo pipefail
+          cd "${BUILD_DIR}"
+          docker run --rm --network host \
+            -v "$PWD:/src" -w /src \
+            -v mailos-go-mod-cache:/go/pkg/mod \
+            -v mailos-go-build-cache:/root/.cache/go-build \
+            -e GOCACHE=/root/.cache/go-build -e GOMODCACHE=/go/pkg/mod -e GOTOOLCHAIN=local \
+            -e GOSEC_VERSION -e CI_REPORT_DIR="/src/${CI_REPORT_DIR}" \
+            -e MAILOS_TEST_PG_PORT -e MAILOS_TEST_REDIS_PORT \
+            -e MAILOS_E2E_HTTP_PORT -e MAILOS_E2E_GRPC_PORT -e MAILOS_E2E_IAM_PORT \
+            -e MAILOS_E2E_METRICS_PORT -e MAILOS_E2E_WORKER_METRICS_PORT \
+            "${GOLANG_IMAGE}" \
+            bash -c '
+              set -euo pipefail
+              scripts/ci/pr-gates.sh "$GATE"
+              chown -R '"$(id -u):$(id -g)"' "$CI_REPORT_DIR" 2>/dev/null || true
+            '
+          mkdir -p "${WORKSPACE}/${CI_REPORT_DIR}"
+          cp -rf "${CI_REPORT_DIR}/." "${WORKSPACE}/${CI_REPORT_DIR}/" 2>/dev/null || true
+        '''
+    }
+}
+
+// stackUp starts a fresh test stack (in-memory Postgres, Redis).
+def stackUp() {
+    sh '''#!/usr/bin/env bash
+      set -euo pipefail
+      cd "${BUILD_DIR}"
+      docker compose -f docker-compose.test.yaml down -v --remove-orphans >/dev/null 2>&1 || true
+      docker compose -f docker-compose.test.yaml up -d --wait --wait-timeout 180
+    '''
+}
+
+def stackDown() {
+    sh '''#!/usr/bin/env bash
+      cd "${BUILD_DIR}"
+      docker compose -f docker-compose.test.yaml logs --no-color > "${WORKSPACE}/${CI_REPORT_DIR}/stack-${STAGE_NAME// /_}.log" 2>&1 || true
+      docker compose -f docker-compose.test.yaml down -v --remove-orphans || true
+    '''
+}
