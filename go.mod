@@ -5,6 +5,7 @@ go 1.26.4
 toolchain go1.26.10
 
 require (
+	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/google/uuid v1.6.0
 	github.com/ilyakaznacheev/cleanenv v1.5.0
