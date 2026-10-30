@@ -1,48 +1,38 @@
+# Production defaults. Everything secret or deployment-specific (issuer,
+# hosts, certificates, KEY_MANAGER_MASTER_KEY, MAILOS_SERVICE_CLIENTS)
+# comes from the environment (Vault through External Secrets).
 app:
   env: production
   log_level: info
+  log_format: json
 
 http:
   host: 0.0.0.0
-  port: ${HTTP_PORT}
+  port: 8443
   read_timeout: 10s
-  write_timeout: 5m
+  write_timeout: 60s
   idle_timeout: 120s
-  batch_send_concurrency: 50
 
 grpc:
   host: 0.0.0.0
-  port: ${GRPC_PORT}
+  port: 9443
 
 postgres:
-  host: ${POSTGRES_HOST}
-  port: ${POSTGRES_PORT}
-  user: ${POSTGRES_USER}
-  password: ${POSTGRES_PASSWORD}
-  database: ${POSTGRES_DB}
-  ssl_mode: require
+  ssl_mode: verify-full
   max_conns: 50
-  min_conns: 10
+  min_conns: 5
 
 redis:
-  host: ${REDIS_HOST}
-  port: ${REDIS_PORT}
-  password: ${REDIS_PASSWORD}
-  db: 0
+  tls: true
 
-queue:
-  backend: ${QUEUE_BACKEND}
+iam:
+  audience: mailos
 
-encryption:
-  key: ${ENCRYPTION_KEY}
-  hmac_secret: ${HMAC_SECRET}
+retention:
+  message_days: 30
+
+audit:
+  retention_days: 365
 
 rate_limit:
-  per_org: 1000
-  burst: 100
-
-worker:
-  email_concurrency: 50
-  campaign_concurrency: 20
-  stats_flush_interval: 10s
-  scheduler_interval: 30s
+  enabled: true

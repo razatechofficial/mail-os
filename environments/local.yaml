@@ -1,62 +1,34 @@
+# Local development. Secrets come from .env (see .env.example), never from
+# this file. Plaintext listeners are allowed only because APP_ENV is local.
 app:
   env: local
   log_level: debug
+  log_format: console
 
 http:
-  host: localhost
+  host: 127.0.0.1
   port: 8080
-  read_timeout: 10s
-  write_timeout: 5m
-  idle_timeout: 60s
-  batch_send_concurrency: 20
 
 grpc:
-  host: localhost
+  host: 127.0.0.1
   port: 9090
 
 cors:
-  origins: "http://localhost:3000,http://127.0.0.1:3000"
+  origins: ["http://localhost:3000"]
 
 postgres:
   host: localhost
   port: 5432
-  user: postgres
-  password:
   database: mail_os
   ssl_mode: disable
-  max_conns: 25
-  min_conns: 5
 
 redis:
   host: localhost
   port: 6379
-  password:
-  db: 0
 
-queue:
-  backend: pgqueue
-  rabbit_url: amqp://guest:guest@localhost:5672/
-  nats_url: nats://localhost:4222
-  kafka_brokers: localhost:9094
-
-smtp:
-  enabled: true
-  host: smtp.example.com
-  port: 587
-  username:
-  password:
-  from_addr:
-
-encryption:
-  key:
-  hmac_secret:
+iam:
+  issuer: http://localhost:8081
+  audience: mailos
 
 rate_limit:
-  per_org: 100
-  burst: 20
-
-worker:
-  email_concurrency: 10
-  campaign_concurrency: 5
-  stats_flush_interval: 10s
-  scheduler_interval: 30s
+  enabled: true
