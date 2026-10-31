@@ -132,5 +132,22 @@ func Main(m *testing.M, name string, fx **Fixture) {
 	os.Exit(code)
 }
 
+// MainAsIAM is Main for a package that plays IAM: its tenant is the one
+// IAM's system application belongs to (MAILOS_E2E_IAM_TENANT), so events
+// sent with Env.IAMClient's token are that tenant's. The package's other
+// users are of the same tenant.
+func MainAsIAM(m *testing.M, name string, fx **Fixture) {
+	t := NewMainT(name)
+	env, err := LoadEnv()
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	*fx = NewFixture(t, env, name)
+	(*fx).TenantID = env.IAMTenant
+	code := m.Run()
+	t.runCleanups()
+	os.Exit(code)
+}
+
 // NewID returns a new UUID string.
 func NewID() string { return uuid.NewString() }
