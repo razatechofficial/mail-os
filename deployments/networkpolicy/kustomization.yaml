@@ -1,0 +1,25 @@
+# NetworkPolicies for the mailos namespace (contract §3). Explained rule by
+# rule in docs/network-policy.md. gitops includes this folder from the MailOS
+# application's base (the user changes gitops).
+#
+# Pod labels these policies select (the MailOS Deployments and the migration
+# Job must carry them):
+#   app.kubernetes.io/name: mailos
+#   app.kubernetes.io/component: server | worker | migrate
+#   mailos.razatech.io/kafka-client: "true"   only on the pods that run the
+#                                               Kafka consumer or the audit producer
+#
+# Peers to adjust per cluster are marked "ADJUST" in each file.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: mailos
+resources:
+  - default-deny.yaml
+  - dns.yaml
+  - server-ingress.yaml
+  - metrics-ingress.yaml
+  - datastores-egress.yaml
+  - iam-egress.yaml
+  - kafka-egress.yaml
+  - providers-egress.yaml
+# broker-sample/ is applied on the broker side, not here.

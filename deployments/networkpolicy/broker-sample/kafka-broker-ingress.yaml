@@ -1,0 +1,50 @@
+# SAMPLE, applied on the broker side (not by this folder's kustomization):
+# contract §3, the broker is reachable only by its producers and consumers.
+# Written for an in-cluster Strimzi cluster named "events" in namespace
+# kafka; ADJUST names. Strimzi can generate the same rule from the listener's
+# networkPolicyPeers; use one or the other. For today's external broker the
+# equivalent is a host firewall rule (docs/network-policy.md).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kafka-clients-only
+  namespace: kafka
+spec:
+  podSelector:
+    matchLabels:
+      strimzi.io/cluster: events
+      strimzi.io/kind: Kafka
+  policyTypes:
+    - Ingress
+  ingress:
+    # Client listener (TLS + SASL): MailOS's consumer and audit producer.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: mailos
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mailos
+              mailos.razatech.io/kafka-client: "true"
+        # IAM, which produces the iam.* email events.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: iam
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: iam
+      ports:
+        - protocol: TCP
+          port: 9093
+    # Brokers and controllers of the same cluster, and the Strimzi operators
+    # (replication, control plane, the entity operator's admin calls).
+    - from:
+        - podSelector:
+            matchLabels:
+              strimzi.io/cluster: events
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kafka
+          podSelector:
+            matchLabels:
+              strimzi.io/kind: cluster-operator
