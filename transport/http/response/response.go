@@ -63,9 +63,13 @@ func HTTPStatusFromKind(k apperrors.ErrorKind) int {
 
 func OK(c *gin.Context, data any) { c.JSON(http.StatusOK, Response{Success: true, Data: data}) }
 
-func Created(c *gin.Context, data any) { c.JSON(http.StatusCreated, Response{Success: true, Data: data}) }
+func Created(c *gin.Context, data any) {
+	c.JSON(http.StatusCreated, Response{Success: true, Data: data})
+}
 
-func Accepted(c *gin.Context, data any) { c.JSON(http.StatusAccepted, Response{Success: true, Data: data}) }
+func Accepted(c *gin.Context, data any) {
+	c.JSON(http.StatusAccepted, Response{Success: true, Data: data})
+}
 
 func NoContent(c *gin.Context) { c.Status(http.StatusNoContent) }
 
