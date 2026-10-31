@@ -3,17 +3,21 @@
 // iam-msg-sig header as a compact JWS:
 //
 //	header  {"alg","kid","typ":"mailos-msg+jwt"}
-//	claims  {"iss","aud":"mailos","sub":<client_id>,"iat","exp","jti","topic","body_sha256"}
+//	claims  {"iss","sub":<client_id>,"aud":"mailos","iat","exp","jti","topic","body_sha256"}
 //
-// Verify runs checks 1 to 5 of the contract in order: the signature against
-// IAM's JWKS, iss/aud/exp with the clock skew, the topic, the body hash and
-// the jti replay guard. Check 6, whether the sender may publish the topic,
-// is the caller's (domain/access).
+// Verify runs checks 1 to 5 of the contract in the order of IAM's reference
+// verifier (iam/server/pkg/msgsig), with its reason names, and passes its
+// test vectors (testdata/v1.json): the JWS and the signature against IAM's
+// JWKS; iss, aud, the lifetime and the validity window with the clock skew;
+// the topic; the body hash; the jti replay guard. Check 6, whether the
+// sender may publish the topic, is the caller's (domain/access).
 //
-// A refused message is an *event.Rejection carrying the reason; it is
-// permanent and the consumer commits past it after auditing the reason. When
-// the check itself cannot run (IAM's JWKS unreachable, the replay store down) Verify
-// returns ErrUnavailable instead, and the consumer redelivers the message.
+// A refused message is an *event.Rejection carrying the reason. It is
+// permanent, so the consumer commits past it after auditing the reason,
+// except replay_guard_unavailable, which is Transient. When IAM's JWKS
+// cannot be read the signature was not checked at all: Verify returns
+// ErrUnavailable without a reason. Both transient failures wrap
+// ErrUnavailable and the consumer redelivers the message.
 package msgsig
 
 import (
@@ -21,8 +25,10 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -38,7 +44,7 @@ const (
 	// Type is the JWS typ of a message signature, which keeps it from being
 	// taken for any other token IAM signs (RFC 8725 §3.11).
 	Type = "mailos-msg+jwt"
-	// Lifetime is exp - iat of every message signature IAM issues.
+	// Lifetime is the longest exp - iat a message signature may have.
 	Lifetime = 5 * time.Minute
 )
 
@@ -48,9 +54,9 @@ const (
 	maxJTILen    = 256
 )
 
-// ErrUnavailable means the signature could not be checked: IAM's signing
-// keys or the replay guard are unreachable. The message was neither
-// accepted nor rejected, so it must be redelivered, never dropped.
+// ErrUnavailable means a check could not run: IAM's signing keys or the
+// replay guard are unreachable. The message must be redelivered, never
+// dropped.
 var ErrUnavailable = errors.New("the message signature cannot be checked now")
 
 // IsUnavailable reports whether err is a transient verification failure.
@@ -64,8 +70,9 @@ type Claims struct {
 	ClientID  string
 	IssuedAt  time.Time
 	ExpiresAt time.Time
-	JTI       string
-	Topic     string
+	// JTI is unique per message; IAM sets it to the event id.
+	JTI   string
+	Topic string
 }
 
 // ReplayGuard remembers message ids (check 5). It must be atomic across
@@ -108,95 +115,174 @@ func NewVerifier(keys *jwt.Verifier, replay ReplayGuard) (*Verifier, error) {
 	return &Verifier{keys: keys, replay: replay}, nil
 }
 
+func reject(reason event.Reason, format string, args ...any) error {
+	if format == "" {
+		return event.Reject(reason, nil)
+	}
+	return event.Reject(reason, fmt.Errorf(format, args...))
+}
+
 // Verify checks header, the iam-msg-sig value of a message published on
 // topic with value, and returns its claims. The error is an
-// *event.Rejection (permanent, with the reason) or wraps ErrUnavailable
-// (transient). Rejections never quote the value.
+// *event.Rejection with the reason, or wraps ErrUnavailable when a check
+// could not run (see the package documentation). Rejections never quote
+// the value.
 func (v *Verifier) Verify(ctx context.Context, header, topic string, value []byte, opts ...Option) (Claims, error) {
 	var o verifyOptions
 	for _, opt := range opts {
 		opt(&o)
 	}
 
+	// The JWS: three segments and a protected header naming the type.
 	raw := strings.TrimSpace(header)
 	if raw == "" {
-		return Claims{}, event.Reject(event.ReasonMissingSignature, nil)
+		return Claims{}, reject(event.ReasonMalformed, "the message has no %s header", Header)
 	}
 	if len(raw) > maxHeaderLen {
-		return Claims{}, event.Reject(event.ReasonMalformed, errors.New("the signature header is too long"))
+		return Claims{}, reject(event.ReasonMalformed, "the signature header is too long")
 	}
-	if _, err := jose.ParseSignedCompact(raw, jwt.Algorithms); err != nil {
-		return Claims{}, event.Reject(event.ReasonMalformed, fmt.Errorf("the signature is not a compact JWS: %w", err))
+	parts := strings.Split(raw, ".")
+	if len(parts) != 3 {
+		return Claims{}, reject(event.ReasonMalformed, "the signature is not a compact JWS")
 	}
-
-	// 1. The signature, with the key IAM publishes under its kid, and typ.
-	claims, err := v.keys.Verify(ctx, raw, Type)
+	hb, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		if errors.Is(err, jwt.ErrUnavailable) {
-			return Claims{}, fmt.Errorf("%w: %w", ErrUnavailable, err)
-		}
-		return Claims{}, event.Reject(event.ReasonBadSignature, err)
+		return Claims{}, reject(event.ReasonMalformed, "the JWS header is not base64url")
+	}
+	var h struct {
+		Alg  string          `json:"alg"`
+		Typ  string          `json:"typ"`
+		Crit json.RawMessage `json:"crit"`
+	}
+	if err := json.Unmarshal(hb, &h); err != nil {
+		return Claims{}, reject(event.ReasonMalformed, "the JWS header is not JSON")
+	}
+	if !strings.EqualFold(h.Typ, Type) {
+		return Claims{}, reject(event.ReasonType, "typ %q is not %s", h.Typ, Type)
+	}
+	if len(h.Crit) > 0 {
+		return Claims{}, reject(event.ReasonMalformed, "the crit header is not understood")
+	}
+	if !slices.Contains(jwt.Algorithms, jose.SignatureAlgorithm(h.Alg)) {
+		return Claims{}, reject(event.ReasonAlgorithm, "alg %q is not one IAM signs with", h.Alg)
 	}
 
-	// 2. iss, aud and the validity window, with the clock skew.
-	iss, _ := claims["iss"].(string)
-	if strings.TrimRight(iss, "/") != v.keys.Issuer() {
-		return Claims{}, event.Reject(event.ReasonWrongIssuer, fmt.Errorf("iss %q", iss))
+	// 1. The signature, with the key IAM publishes under its kid.
+	claims, err := v.keys.Verify(ctx, raw, Type)
+	switch {
+	case err == nil:
+	case errors.Is(err, jwt.ErrUnavailable):
+		return Claims{}, fmt.Errorf("%w: %w", ErrUnavailable, err)
+	case errors.Is(err, jwt.ErrUnknownKey):
+		return Claims{}, event.Reject(event.ReasonUnknownKey, err)
+	case errors.Is(err, jwt.ErrAlgorithm):
+		return Claims{}, event.Reject(event.ReasonAlgorithm, err)
+	case errors.Is(err, jwt.ErrSignature):
+		return Claims{}, event.Reject(event.ReasonSignature, err)
+	case errors.Is(err, jwt.ErrType):
+		return Claims{}, event.Reject(event.ReasonType, err)
+	default:
+		return Claims{}, event.Reject(event.ReasonMalformed, err)
 	}
-	if aud := jwt.Audiences(claims); len(aud) != 1 || aud[0] != v.keys.Audience() {
-		return Claims{}, event.Reject(event.ReasonWrongAudience, fmt.Errorf("aud %v", aud))
+	c, err := decodeClaims(claims)
+	if err != nil {
+		return Claims{}, event.Reject(event.ReasonMalformed, err)
 	}
-	iat, okIat := jwt.NumericDate(claims, "iat")
-	exp, okExp := jwt.NumericDate(claims, "exp")
-	if !okIat || !okExp {
-		return Claims{}, event.Reject(event.ReasonMalformed, errors.New("iat and exp are required"))
+
+	// 2. iss, aud, the lifetime and the validity window.
+	if strings.TrimRight(c.Issuer, "/") != v.keys.Issuer() {
+		return Claims{}, reject(event.ReasonIssuer, "iss %q", c.Issuer)
 	}
-	if !exp.After(iat) || exp.Sub(iat) > Lifetime {
-		return Claims{}, event.Reject(event.ReasonMalformed, errors.New("exp - iat is not within the message lifetime"))
+	if c.audience != v.keys.Audience() {
+		return Claims{}, reject(event.ReasonAudience, "aud %q", c.audience)
+	}
+	if !c.ExpiresAt.After(c.IssuedAt) || c.ExpiresAt.Sub(c.IssuedAt) > Lifetime {
+		return Claims{}, reject(event.ReasonLifetime, "exp - iat is not within %s", Lifetime)
 	}
 	now, skew := v.keys.Now(), v.keys.ClockSkew()
-	if now.After(exp.Add(skew)) {
-		return Claims{}, event.Reject(event.ReasonExpired, fmt.Errorf("expired at %s", exp.Format(time.RFC3339)))
+	if !now.Before(c.ExpiresAt.Add(skew)) {
+		return Claims{}, reject(event.ReasonExpired, "expired at %s", c.ExpiresAt.Format(time.RFC3339))
 	}
-	if iat.After(now.Add(skew)) {
-		return Claims{}, event.Reject(event.ReasonExpired, fmt.Errorf("issued in the future at %s", iat.Format(time.RFC3339)))
+	if c.IssuedAt.After(now.Add(skew)) {
+		return Claims{}, reject(event.ReasonNotYetValid, "issued at %s", c.IssuedAt.Format(time.RFC3339))
 	}
 
 	// 3. The topic it was signed for.
-	signedTopic, _ := claims["topic"].(string)
-	if signedTopic == "" || signedTopic != topic {
-		return Claims{}, event.Reject(event.ReasonTopicMismatch, fmt.Errorf("signed for topic %q, received on %q", signedTopic, topic))
+	if c.Topic != topic {
+		return Claims{}, reject(event.ReasonTopic, "signed for topic %q, received on %q", c.Topic, topic)
 	}
 
 	// 4. The exact value bytes.
 	sum := sha256.Sum256(value)
 	want := base64.RawURLEncoding.EncodeToString(sum[:])
-	got, _ := claims["body_sha256"].(string)
-	if subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
-		return Claims{}, event.Reject(event.ReasonBodyMismatch, nil)
-	}
-
-	sub, _ := claims["sub"].(string)
-	jti, _ := claims["jti"].(string)
-	if strings.TrimSpace(sub) == "" || strings.TrimSpace(jti) == "" || len(jti) > maxJTILen {
-		return Claims{}, event.Reject(event.ReasonMalformed, errors.New("sub and jti are required"))
+	if subtle.ConstantTimeCompare([]byte(c.bodyHash), []byte(want)) != 1 {
+		return Claims{}, reject(event.ReasonBodyHash, "")
 	}
 
 	// 5. Each message once, remembered until it could no longer verify.
-	replayed, err := v.replay.Use(ctx, jti, o.delivery, exp.Add(skew))
+	if strings.TrimSpace(c.JTI) == "" || len(c.JTI) > maxJTILen {
+		return Claims{}, reject(event.ReasonMalformed, "jti is missing or too long")
+	}
+	replayed, err := v.replay.Use(ctx, c.JTI, o.delivery, c.ExpiresAt.Add(skew))
 	if err != nil {
-		return Claims{}, fmt.Errorf("%w: replay guard: %w", ErrUnavailable, err)
+		return Claims{}, &event.Rejection{Reason: event.ReasonReplayGuardUnavailable, Transient: true,
+			Err: fmt.Errorf("%w: replay guard: %w", ErrUnavailable, err)}
 	}
 	if replayed {
-		return Claims{}, event.Reject(event.ReasonReplayed, fmt.Errorf("jti %q was already used", jti))
+		return Claims{}, reject(event.ReasonReplay, "jti %q was already used", c.JTI)
 	}
+	c.Issuer = v.keys.Issuer()
+	return c.Claims, nil
+}
 
-	return Claims{
-		Issuer:    v.keys.Issuer(),
-		ClientID:  sub,
-		IssuedAt:  iat,
-		ExpiresAt: exp,
-		JTI:       jti,
-		Topic:     signedTopic,
-	}, nil
+// signedClaims are the claims as signed, before they are checked.
+type signedClaims struct {
+	Claims
+	audience string
+	bodyHash string
+}
+
+// decodeClaims reads the claims as IAM's reference verifier does: iss, sub,
+// topic and body_sha256 present, iat and exp integers, and aud a string or
+// a one-element array.
+func decodeClaims(m map[string]any) (signedClaims, error) {
+	str := func(k string) string { s, _ := m[k].(string); return s }
+	var c signedClaims
+	c.Issuer, c.ClientID, c.JTI, c.Topic, c.bodyHash = str("iss"), str("sub"), str("jti"), str("topic"), str("body_sha256")
+	if c.Issuer == "" || c.ClientID == "" || c.Topic == "" || c.bodyHash == "" {
+		return signedClaims{}, errors.New("iss, sub, topic and body_sha256 are required")
+	}
+	iat, okIat := integer(m["iat"])
+	exp, okExp := integer(m["exp"])
+	if !okIat || !okExp {
+		return signedClaims{}, errors.New("iat and exp must be integers")
+	}
+	c.IssuedAt, c.ExpiresAt = time.Unix(iat, 0).UTC(), time.Unix(exp, 0).UTC()
+	switch aud := m["aud"].(type) {
+	case string:
+		c.audience = aud
+	case []any:
+		s, ok := "", len(aud) == 1
+		if ok {
+			s, ok = aud[0].(string)
+		}
+		if !ok {
+			return signedClaims{}, errors.New("aud must be a single audience")
+		}
+		c.audience = s
+	default:
+		return signedClaims{}, errors.New("aud must be a single audience")
+	}
+	return c, nil
+}
+
+// integer reads a JSON integer (the jwt verifier decodes numbers as
+// json.Number).
+func integer(v any) (int64, bool) {
+	n, ok := v.(json.Number)
+	if !ok {
+		return 0, false
+	}
+	i, err := n.Int64()
+	return i, err == nil
 }
