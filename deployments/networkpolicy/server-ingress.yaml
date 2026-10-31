@@ -1,0 +1,37 @@
+# Contract §3: only IAM's pods and the MailOS console's BFF reach the MailOS
+# server's HTTP (8080) and gRPC (9090) listeners. Nothing else in the cluster,
+# and no ingress controller: the API is not public.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mailos-server-ingress-api
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mailos
+      app.kubernetes.io/component: server
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        # IAM (gitops applications/iam: namespace iam, pods labelled
+        # app.kubernetes.io/name: iam by its kustomization). ADJUST if renamed.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: iam
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: iam
+        # The MailOS console's BFF. ADJUST to the console's gitops namespace
+        # and pod labels once it is deployed.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: mailos-client
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mailos-client
+      ports:
+        - protocol: TCP
+          port: 8080 # HTTP_PORT
+        - protocol: TCP
+          port: 9090 # GRPC_PORT
