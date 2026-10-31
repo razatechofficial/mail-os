@@ -26,6 +26,7 @@ import (
 	"github.com/razatechofficial/mail-os/infrastructure/mailer"
 	"github.com/razatechofficial/mail-os/infrastructure/persistence/postgres"
 	"github.com/razatechofficial/mail-os/infrastructure/worker"
+	"github.com/razatechofficial/mail-os/internal/bootstrap"
 	"github.com/razatechofficial/mail-os/pkg/tlsconfig"
 	grpctransport "github.com/razatechofficial/mail-os/transport/grpc"
 	transporthttp "github.com/razatechofficial/mail-os/transport/http"
@@ -166,6 +167,9 @@ func (c *Container) buildInfrastructure(ctx context.Context) error {
 // manager's routes and schedule.
 func (c *Container) buildCore(ctx context.Context) error {
 	cfg := c.Cfg
+	if err := bootstrap.CheckSchema(ctx, c.DB); err != nil {
+		return err
+	}
 	if err := c.Keys.Bootstrap(ctx); err != nil {
 		return fmt.Errorf("key manager: %w", err)
 	}
