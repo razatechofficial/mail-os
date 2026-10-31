@@ -26,6 +26,7 @@ type Config struct {
 	Postgres     Postgres     `yaml:"postgres"`
 	Redis        Redis        `yaml:"redis"`
 	IAM          IAM          `yaml:"iam"`
+	Idempotency  Idempotency  `yaml:"idempotency"`
 	StepUp       StepUp       `yaml:"step_up"`
 	Kafka        Kafka        `yaml:"kafka"`
 	Audit        Audit        `yaml:"audit"`
@@ -159,8 +160,18 @@ type IAM struct {
 	ClockSkew        time.Duration `yaml:"clock_skew" env:"IAM_CLOCK_SKEW" env-default:"60s"`
 	// CAFile verifies the IAM origin's certificate when it is not publicly trusted.
 	CAFile string `yaml:"ca_file" env:"IAM_CA_FILE" env-default:""`
-	// ServiceClients is the §4 allow-list: client_id=prefix|prefix[@tenant];...
-	ServiceClients string `yaml:"service_clients" env:"MAILOS_SERVICE_CLIENTS" env-default:""`
+	// ServiceClientID is IAM's own OAuth client (contract §1). MailOS seeds
+	// it at startup as the system application of ServiceTenantID, allowed
+	// ServiceTopics; every other caller is an application registered in
+	// the console.
+	ServiceClientID string   `yaml:"service_client_id" env:"IAM_SERVICE_CLIENT_ID" env-default:""`
+	ServiceTenantID string   `yaml:"service_tenant_id" env:"IAM_SERVICE_TENANT_ID" env-default:""`
+	ServiceTopics   []string `yaml:"service_topics" env:"IAM_SERVICE_TOPICS" env-separator:"," env-default:"iam.*"`
+}
+
+// Idempotency keeps Idempotency-Key responses of the send endpoints.
+type Idempotency struct {
+	TTL time.Duration `yaml:"ttl" env:"IDEMPOTENCY_KEY_TTL" env-default:"24h"`
 }
 
 // StepUp is the fresh-MFA rule for sensitive operations (contract §5).
@@ -393,8 +404,11 @@ func (c *Config) Validate() error {
 	if c.IAM.ClockSkew < 0 || c.IAM.ClockSkew > 5*time.Minute {
 		return fmt.Errorf("IAM_CLOCK_SKEW must be between 0 and 5m")
 	}
-	if _, err := ParseServiceClients(c.IAM.ServiceClients); err != nil {
-		return fmt.Errorf("MAILOS_SERVICE_CLIENTS: %w", err)
+	if err := c.IAM.validateSystemApplication(plaintext); err != nil {
+		return err
+	}
+	if c.Idempotency.TTL < time.Hour || c.Idempotency.TTL > 7*24*time.Hour {
+		return fmt.Errorf("IDEMPOTENCY_KEY_TTL must be between 1h and 168h")
 	}
 
 	if c.StepUp.MaxAge < time.Minute || c.StepUp.MaxAge > 5*time.Minute {
