@@ -74,9 +74,15 @@ type Deliverer interface {
 	Deliver(ctx context.Context, tenantID, id string) error
 }
 
+// missingRetries is how often a send whose message row is not visible yet
+// is retried: an event's message is queued inside the inbound
+// transaction, so the task can run before the commit.
+const missingRetries = 3
+
 // MessageSend runs a delivery. A RetryError is retried after the
 // provider's Retry-After or the jittered backoff (RetryDelay); a message
-// that no longer exists is dropped.
+// that is not there is retried a few times (its transaction may not have
+// committed), then dropped. The sweep requeues anything left queued.
 func MessageSend(d Deliverer) func(context.Context, *asynq.Task) error {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var p sendPayload
@@ -85,6 +91,9 @@ func MessageSend(d Deliverer) func(context.Context, *asynq.Task) error {
 		}
 		err := d.Deliver(ctx, p.TenantID, p.MessageID)
 		if apperrors.IsNotFound(err) {
+			if n, _ := asynq.GetRetryCount(ctx); n < missingRetries {
+				return err
+			}
 			return errors.Join(asynq.SkipRetry, err)
 		}
 		return err

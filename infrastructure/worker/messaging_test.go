@@ -17,7 +17,7 @@ type deliverFunc func(ctx context.Context, tenantID, id string) error
 
 func (f deliverFunc) Deliver(ctx context.Context, tenantID, id string) error { return f(ctx, tenantID, id) }
 
-func TestMessageSendHonoursRetryAfterAndSkipsMissing(t *testing.T) {
+func TestMessageSendHonoursRetryAfterAndRetriesMissing(t *testing.T) {
 	task := asynq.NewTask(TypeMessageSend, []byte(`{"tenant_id":"t1","message_id":"m1"}`))
 	retry := &appmsg.RetryError{Err: errors.New("429"), After: 45 * time.Minute}
 	err := MessageSend(deliverFunc(func(_ context.Context, tenant, id string) error {
@@ -29,9 +29,11 @@ func TestMessageSendHonoursRetryAfterAndSkipsMissing(t *testing.T) {
 	if d := RetryDelay(0, err, task); d < 44*time.Minute {
 		t.Fatalf("Retry-After ignored: %v", d)
 	}
+	// Outside a task context (retry count unknown, 0) a missing row is
+	// retried: its transaction may not have committed yet.
 	err = MessageSend(deliverFunc(func(context.Context, string, string) error { return apperrors.NotFound("gone") }))(context.Background(), task)
-	if !errors.Is(err, asynq.SkipRetry) {
-		t.Fatal("a missing message is retried")
+	if err == nil || errors.Is(err, asynq.SkipRetry) {
+		t.Fatal("a not-yet-committed message is dropped at once")
 	}
 	if err := MessageSend(nil)(context.Background(), asynq.NewTask(TypeMessageSend, []byte("{"))); !errors.Is(err, asynq.SkipRetry) {
 		t.Fatal("malformed task retried")
