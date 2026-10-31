@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/razatechofficial/mail-os/application/applications/appstest"
 	"github.com/razatechofficial/mail-os/application/inbound"
 	"github.com/razatechofficial/mail-os/domain/access"
 	"github.com/razatechofficial/mail-os/infrastructure/jwt"
@@ -97,9 +98,10 @@ func eventsRouter(t *testing.T) (*fakeiam.IAM, *gin.Engine, *evAudit, *evDispatc
 	gin.SetMode(gin.TestMode)
 	iam, _ := fakeiam.NewServer(t)
 	log, disp := &evAudit{}, &evDispatcher{}
-	grants := access.NewServiceGrants([]access.ServiceGrant{{ClientID: "iam", TopicPatterns: []string{"iam.*"}}})
-	svc := inbound.NewService(grants, evTenants{}, &evStore{rows: map[string]inbound.Record{}}, evTx{}, disp, log)
-	auth := &middleware.Auth{Verifier: jwt.NewVerifier(jwt.Config{Issuer: iam.Issuer, Audience: "mailos"}), Tenants: evTenants{}, Audit: log}
+	apps := appstest.New(appstest.Server("iam", evTenant, "iam.*"))
+	svc := inbound.NewService(apps, evTenants{}, &evStore{rows: map[string]inbound.Record{}}, evTx{}, disp, log)
+	auth := &middleware.Auth{Verifier: jwt.NewVerifier(jwt.Config{Issuer: iam.Issuer, Audience: "mailos"}), Tenants: evTenants{},
+		Apps: apps, Audit: log}
 	g := middleware.Guard{StepUp: access.StepUpPolicy{MaxAge: 5 * time.Minute, ACR: access.ACRMFA}, Audit: log}
 	r := gin.New()
 	NewEventHandler(svc).Mount(r.Group("/api/v1", auth.Required()), g)
@@ -158,9 +160,10 @@ func TestPostEventRefusals(t *testing.T) {
 	cases := []struct {
 		name, token, body, action, reason string
 	}{
-		{"unknown client", iam.ServiceToken("crm", evTenant), iamEvent("e1", reset, evTenant), inbound.AuditRefused, "unknown_client"},
+		{"unknown client", iam.ServiceToken("crm", evTenant), iamEvent("e1", reset, evTenant), "access_denied", "unknown_client"},
+		{"token for another tenant", iam.ServiceToken("iam", evOtherTenant), iamEvent("e5", reset, ""), "access_denied", "tenant_mismatch"},
 		{"foreign tenant", iam.ServiceToken("iam", evTenant), iamEvent("e2", reset, evOtherTenant), inbound.AuditRefused, "tenant_mismatch"},
-		{"wrong topic", iam.ServiceToken("iam", evTenant), iamEvent("e3", "mailos.campaign", evTenant), inbound.AuditRefused, "topic_not_allowed"},
+		{"wrong topic", iam.ServiceToken("iam", evTenant), iamEvent("e3", "mailos.campaign", evTenant), inbound.AuditRefused, "message_type_not_allowed"},
 		{"user token", iam.UserToken(fakeiam.User{Tenant: evTenant, Roles: []string{"mailos_admin"}}), iamEvent("e4", reset, evTenant), "access_denied", "permission"},
 	}
 	for _, tc := range cases {
