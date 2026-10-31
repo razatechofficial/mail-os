@@ -1,0 +1,40 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MailOS API",
+    "version": "2.0.0",
+    "description": "Transactional email for IAM and the MailOS console. Every /api/v1 operation needs an IAM access token (Bearer, or DPoP for sender-constrained tokens). Console users need a MailOS role (mailos_admin, mailos_template_editor, mailos_template_publisher, mailos_operator, mailos_auditor, mailos_viewer); sensitive operations need a sign-in no older than 5 minutes with a second factor and answer 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge otherwise."
+  },
+  "servers": [{ "url": "/" }],
+  "paths": {},
+  "components": {
+    "securitySchemes": {
+      "bearer": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT", "description": "IAM access token (aud mailos or the console client)." }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": ["success", "error"],
+        "properties": {
+          "success": { "type": "boolean", "const": false },
+          "request_id": { "type": "string" },
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": { "type": "string", "enum": ["BAD_REQUEST", "UNAUTHORIZED", "FORBIDDEN", "STEP_UP_REQUIRED", "FOUR_EYES_REQUIRED", "NOT_FOUND", "CONFLICT", "VALIDATION", "RATE_LIMITED", "INTERNAL_SERVER_ERROR", "SERVICE_UNAVAILABLE", "PAYLOAD_TOO_LARGE"] },
+              "message": { "type": "string" },
+              "details": { "type": "array", "items": { "type": "object", "properties": { "field": { "type": "string" }, "code": { "type": "string" }, "message": { "type": "string" } } } },
+              "retry_after_seconds": { "type": "integer" },
+              "acr_values": { "type": "string" },
+              "max_age": { "type": "integer" }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "Error": { "description": "Error envelope", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    }
+  }
+}
