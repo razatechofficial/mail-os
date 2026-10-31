@@ -1235,11 +1235,11 @@
           }
         },
         "security": [],
-        "summary": "Route",
+        "summary": "This document",
         "tags": [
           "openapi.json"
         ],
-        "x-stub": true
+        "description": "Served without authentication."
       }
     },
     "/api/v1/organizations": {
