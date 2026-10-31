@@ -13,8 +13,8 @@ import (
 	grpclib "google.golang.org/grpc"
 
 	"github.com/razatechofficial/mail-os/application/auditlog"
-	"github.com/razatechofficial/mail-os/application/inbound"
 	"github.com/razatechofficial/mail-os/application/campaign"
+	"github.com/razatechofficial/mail-os/application/inbound"
 	appkm "github.com/razatechofficial/mail-os/application/keymanager"
 	apptemplate "github.com/razatechofficial/mail-os/application/template"
 	"github.com/razatechofficial/mail-os/application/tenant"
@@ -107,6 +107,11 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 			return nil, err
 		}
 	}
+	// The probes run after every feature registered its own.
+	if err := bootstrap.CheckSchema(ctx, c.DB); err != nil {
+		c.Close()
+		return nil, err
+	}
 	return c, nil
 }
 
@@ -188,9 +193,6 @@ func (c *Container) buildInfrastructure(ctx context.Context) error {
 // manager's routes and schedule.
 func (c *Container) buildCore(ctx context.Context) error {
 	cfg := c.Cfg
-	if err := bootstrap.CheckSchema(ctx, c.DB); err != nil {
-		return err
-	}
 	if err := c.Keys.Bootstrap(ctx); err != nil {
 		return fmt.Errorf("key manager: %w", err)
 	}
