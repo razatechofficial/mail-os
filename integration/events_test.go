@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/twmb/franz-go/pkg/kfake"
 
+	"github.com/razatechofficial/mail-os/application/applications"
 	"github.com/razatechofficial/mail-os/application/inbound"
 	"github.com/razatechofficial/mail-os/application/tenant"
 	"github.com/razatechofficial/mail-os/config"
@@ -58,9 +59,10 @@ type eventsEnv struct {
 	audit  *postgres.AuditRepository
 	svc    *inbound.Service
 	disp   *countingDispatcher
-	grants access.ServiceGrants
 	writer *audit.Writer
 	tenant string
+	// client is the IAM client of the tenant's system application.
+	client string
 }
 
 func newEventsEnv(t *testing.T) eventsEnv {
@@ -69,15 +71,25 @@ func newEventsEnv(t *testing.T) eventsEnv {
 	auditRepo := postgres.NewAuditRepository(db)
 	w := audit.NewWriter(auditRepo, false)
 	tenants := tenant.NewService(postgres.NewTenantRepository(db), w, time.Minute)
-	grants := access.NewServiceGrants([]access.ServiceGrant{{ClientID: "iam", TopicPatterns: []string{"iam.*"}}})
-	disp := &countingDispatcher{}
-	svc := inbound.NewService(grants, tenants, postgres.NewInboundEventRepository(db), db, disp, w)
-	return eventsEnv{db: db, audit: auditRepo, svc: svc, disp: disp, grants: grants, writer: w, tenant: uuid.NewString()}
+	e := eventsEnv{db: db, audit: auditRepo, disp: &countingDispatcher{}, writer: w, tenant: uuid.NewString(),
+		client: "iam-" + uuid.NewString()}
+	apps := applications.NewService(postgres.NewApplicationRepository(db), noDomains{}, connectRedis(t), tenants, w, applications.Config{})
+	if _, err := apps.SeedSystem(context.Background(), applications.SystemSpec{ClientID: e.client, TenantID: e.tenant, Name: "IAM",
+		Topics: []string{"iam.*"}}); err != nil {
+		t.Fatal(err)
+	}
+	e.svc = inbound.NewService(apps, tenants, postgres.NewInboundEventRepository(db), db, e.disp, w)
+	return e
 }
+
+// noDomains is a tenant without verified sending domains.
+type noDomains struct{}
+
+func (noDomains) VerifiedFrom(context.Context, string, string) (bool, error) { return false, nil }
 
 func (e eventsEnv) serviceCtx() context.Context {
 	return access.WithPrincipal(context.Background(), access.Principal{
-		Kind: access.KindService, Subject: "client:iam", ClientID: "iam", TenantID: e.tenant})
+		Kind: access.KindService, Subject: "client:" + e.client, ClientID: e.client, TenantID: e.tenant})
 }
 
 func resetEvent(id, tenant string) event.Event {
@@ -128,7 +140,7 @@ func TestInboundEventsOnPostgres(t *testing.T) {
 	}
 
 	accepted := e.actions(t, inbound.AuditAccepted)
-	if len(accepted) != 2 || accepted[0].ActorType != audit.ActorService || accepted[0].Metadata["client_id"] != "iam" {
+	if len(accepted) != 2 || accepted[0].ActorType != audit.ActorService || accepted[0].Metadata["client_id"] != e.client || accepted[0].Metadata["application_id"] == nil {
 		t.Fatalf("accepted audit %+v", accepted)
 	}
 	if _, ok := accepted[0].Metadata["data"]; ok {
@@ -189,14 +201,14 @@ func TestSignedKafkaEventsOnTheStack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := pubsub.NewHandler(verifier, e.grants, e.svc, e.writer)
+	handler := pubsub.NewHandler(verifier, e.svc, e.writer)
 
 	id := uuid.NewString()
 	value, _ := json.Marshal(resetEvent(id, e.tenant))
 	sum := sha256.Sum256(value)
 	now := time.Now()
 	sig := iam.Sign(iam.Keys[0], msgsig.Type, map[string]any{
-		"iss": iam.Issuer, "sub": "iam", "aud": "mailos", "iat": now.Unix(), "exp": now.Add(msgsig.Lifetime).Unix(),
+		"iss": iam.Issuer, "sub": e.client, "aud": "mailos", "iat": now.Unix(), "exp": now.Add(msgsig.Lifetime).Unix(),
 		"jti": id, "topic": template.TopicPasswordReset, "body_sha256": base64.RawURLEncoding.EncodeToString(sum[:]),
 	})
 	p, err := kafka.NewProducer(cfg)
