@@ -38,9 +38,11 @@ var alertActions = map[string]struct{}{
 // rejectionAlertReasons are the mailos.message_rejected reasons that mean
 // an attack rather than a misconfiguration.
 var rejectionAlertReasons = map[string]struct{}{
-	"bad_signature": {},
-	"replayed":      {},
-	"body_mismatch": {},
+	"signature":   {},
+	"unknown_key": {},
+	"algorithm":   {},
+	"replay":      {},
+	"body_hash":   {},
 }
 
 // SeverityOfAction maps an audit action to a syslog severity, with the same

@@ -93,11 +93,11 @@ func TestSeverities(t *testing.T) {
 			t.Errorf("%s = %s, want %s", action, got, want)
 		}
 	}
-	forged := Event{Action: "mailos.message_rejected", Tier: TierCritical, Metadata: map[string]any{"reason": "bad_signature"}}
+	forged := Event{Action: "mailos.message_rejected", Tier: TierCritical, Metadata: map[string]any{"reason": "signature"}}
 	if SeverityOf(forged) != SeverityAlert {
 		t.Fatal("a forged message signature must be an Alert")
 	}
-	misconfigured := Event{Action: "mailos.message_rejected", Tier: TierCritical, Metadata: map[string]any{"reason": "not_allowed"}}
+	misconfigured := Event{Action: "mailos.message_rejected", Tier: TierCritical, Metadata: map[string]any{"reason": "unknown_client"}}
 	if SeverityOf(misconfigured) != SeverityWarning {
 		t.Fatal("an unknown client is a Warning")
 	}
