@@ -231,13 +231,16 @@ func messageService(e msgEnv, platform mailer.Sender) *appmessage.Service {
 		appmessage.Config{MaxAttempts: 3, RetentionDays: 30, DefaultFrom: "noreply@platform.example"})
 }
 
+// platformFrom is the e2e sink's platform sender, as the container passes it.
+var platformFrom = domainmsg.Address{Name: "Platform", Email: "noreply@platform.example"}
+
 // A templated OTP goes through the e2e sink after a transient failure: the
 // retry is recorded, the body is rendered and stored, the view masks the
 // code, and the purge erases body and data past retention.
 func TestSendRetryAndPurge(t *testing.T) {
 	e := newMsgEnv(t)
 	rdb := connectRedis(t)
-	sink := mailer.NewE2ESink(rdb.Client)
+	sink := mailer.NewE2ESink(rdb.Client, platformFrom)
 	platform := &flaky{next: sink}
 	platform.fails.Store(1)
 	svc := messageService(e, platform)
@@ -300,7 +303,7 @@ func TestSendRetryAndPurge(t *testing.T) {
 // cancelled message is never delivered.
 func TestIdempotencyAndCancel(t *testing.T) {
 	e := newMsgEnv(t)
-	sink := mailer.NewE2ESink(connectRedis(t).Client)
+	sink := mailer.NewE2ESink(connectRedis(t).Client, platformFrom)
 	svc := messageService(e, sink)
 	ctx := e.userCtx()
 	in := appmessage.SendInput{TenantID: e.tenant, FromEmail: "noreply@bank.example", ToEmail: "idem@example.com", Subject: "Hi",
