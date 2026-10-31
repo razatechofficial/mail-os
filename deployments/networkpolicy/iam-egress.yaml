@@ -1,0 +1,33 @@
+# The server and the worker reach IAM over HTTPS at IAM_ISSUER: discovery and
+# JWKS (token and message-signature verification) and, for Kafka OAUTHBEARER,
+# the token endpoint (KAFKA_SASL_TOKEN_URL). The issuer is IAM's public
+# origin behind ingress-nginx; when the cluster routes that address to the
+# controller pods directly, this rule is the one that matches. When it leaves
+# the cluster, providers-egress.yaml's public-HTTPS rule covers it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mailos-egress-iam
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [mailos]
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [server, worker]
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        # gitops infrastructure/ingress-nginx. ADJUST if the controller moves.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 443

@@ -1,0 +1,67 @@
+# Outbound mail and provider APIs, to public addresses only: private, link-
+# local (cloud metadata) and carrier-grade NAT ranges are excluded, so a
+# tenant-configured provider host or webhook URL cannot reach the cluster
+# network or the metadata service.
+#
+# The worker sends: SMTP (25, 465, 587, 2525) and HTTPS (provider APIs such
+# as SES or SendGrid, customer webhooks). The server dials HTTPS only (IAM's
+# public issuer, provider credential checks).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mailos-egress-providers-worker
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mailos
+      app.kubernetes.io/component: worker
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 100.64.0.0/10
+              - 169.254.0.0/16
+              - 127.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 25
+        - protocol: TCP
+          port: 465
+        - protocol: TCP
+          port: 587
+        - protocol: TCP
+          port: 2525
+        - protocol: TCP
+          port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mailos-egress-https-server
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mailos
+      app.kubernetes.io/component: server
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 100.64.0.0/10
+              - 169.254.0.0/16
+              - 127.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 443
