@@ -14,6 +14,7 @@ import (
 
 	"github.com/razatechofficial/mail-os/application/auditlog"
 	"github.com/razatechofficial/mail-os/application/inbound"
+	"github.com/razatechofficial/mail-os/application/campaign"
 	appkm "github.com/razatechofficial/mail-os/application/keymanager"
 	apptemplate "github.com/razatechofficial/mail-os/application/template"
 	"github.com/razatechofficial/mail-os/application/tenant"
@@ -65,6 +66,10 @@ type Container struct {
 	E2ESink *mailer.E2ESink
 	// AuditStream publishes the audit outbox (FEATURE_AUDIT_STREAM).
 	AuditStream *kafka.Producer
+	// CampaignSender hands campaign messages to the messaging slice. Its
+	// builder sets it before buildMarketing runs; nil leaves campaign
+	// launch answering 503.
+	CampaignSender campaign.CampaignSender
 
 	// EventDispatcher turns accepted events into messages; the messaging
 	// builder sets it before buildEvents. Inbound is the event use case
@@ -95,6 +100,7 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 		c.buildCore,
 		c.buildTemplates,
 		c.buildEvents,
+		c.buildMarketing,
 	} {
 		if err := build(ctx); err != nil {
 			c.Close()
