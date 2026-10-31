@@ -22,10 +22,22 @@ import (
 	"github.com/razatechofficial/mail-os/infrastructure/render"
 	"github.com/razatechofficial/mail-os/infrastructure/webhookclient"
 	"github.com/razatechofficial/mail-os/infrastructure/worker"
+	"github.com/razatechofficial/mail-os/internal/bootstrap"
 	"github.com/razatechofficial/mail-os/pkg/logger"
 	grpchandler "github.com/razatechofficial/mail-os/transport/grpc/handler"
 	"github.com/razatechofficial/mail-os/transport/http/handler"
 )
+
+// The messaging structures the migrations 20261031110000-110300 add. The
+// probes run in buildCore, before buildMessaging, so they register here.
+func init() {
+	bootstrap.Register("messages v2 columns",
+		"SELECT template_version_id, template_data, secret_keys, body_purged_at, actor_type FROM messages LIMIT 0", true,
+		"templated sends, masking and the retention purge cannot work")
+	bootstrap.Register("sealed provider, DKIM and webhook columns",
+		"SELECT p.credentials_sealed, d.dkim_private_key_sealed, d.dkim_selector, w.secret FROM providers p, sending_domains d, webhooks w LIMIT 0",
+		true, "provider credentials, DKIM keys and webhook secrets cannot be sealed")
+}
 
 // providerSource serves the router the tenant's providers.
 type providerSource struct{ svc *appprovider.Service }
