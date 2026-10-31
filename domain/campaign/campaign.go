@@ -264,3 +264,6 @@ const (
 	RecipientSent   = "sent"
 	RecipientFailed = "failed"
 )
+
+// ErrNotFound is a campaign the tenant does not have (or deleted).
+var ErrNotFound = apperrors.NotFound("campaign not found")
