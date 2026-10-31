@@ -265,7 +265,7 @@ func (c *Container) buildApplications(ctx context.Context, domains applications.
 	if cfg.IAM.ServiceClientID == "" {
 		return nil
 	}
-	a, err := c.Apps.SeedSystem(ctx, applications.SystemSpec{ClientID: cfg.IAM.ServiceClientID, TenantID: cfg.IAM.ServiceTenantID,
+	a, err := c.Apps.SeedSystem(audit.WithTenant(ctx, cfg.IAM.ServiceTenantID), applications.SystemSpec{ClientID: cfg.IAM.ServiceClientID, TenantID: cfg.IAM.ServiceTenantID,
 		Name: "IAM", Topics: cfg.IAM.ServiceTopics})
 	if err != nil {
 		return fmt.Errorf("system application: %w", err)
