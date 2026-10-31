@@ -1,7 +1,11 @@
 // Package webhook is a tenant's outbound webhooks: HTTPS endpoints MailOS
 // posts message events to, each request signed with the endpoint's secret
-// (HMAC-SHA256 over the timestamp and body, Stripe-style), so the receiver
-// can check origin and freshness. The secret is sealed at rest.
+// as the Standard Webhooks specification defines (webhook-id,
+// webhook-timestamp and webhook-signature headers, HMAC-SHA256 over the id,
+// timestamp and body), so a receiver checks origin and freshness with any
+// Standard Webhooks library. An endpoint is the tenant's (every message)
+// or one application's (that application's messages only). The secret is
+// sealed at rest.
 package webhook
 
 import (
@@ -9,7 +13,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"net/url"
 	"slices"
 	"strconv"
@@ -35,18 +38,27 @@ var Events = []string{EventSent, EventDelivered, EventBounced, EventComplained, 
 
 // Limits.
 const (
-	MaxURLLen       = 2048
-	MinSecretLen    = 16
-	MaxSecretLen    = 128
-	SignatureHeader = "X-MailOS-Signature"
-	EventHeader     = "X-MailOS-Event"
-	DeliveryHeader  = "X-MailOS-Delivery"
+	MaxURLLen    = 2048
+	MinSecretLen = 16
+	MaxSecretLen = 128
+)
+
+// Standard Webhooks headers and secret format.
+const (
+	IDHeader         = "webhook-id"
+	TimestampHeader  = "webhook-timestamp"
+	SignatureHeader  = "webhook-signature"
+	SignatureVersion = "v1"
+	SecretPrefix     = "whsec_"
 )
 
 // Webhook is one endpoint.
 type Webhook struct {
-	ID        string
-	OrgID     string
+	ID    string
+	OrgID string
+	// ApplicationID limits the endpoint to one application's messages;
+	// empty receives every message of the tenant.
+	ApplicationID string
 	URL       string
 	Events    []string
 	Active    bool
@@ -93,45 +105,61 @@ func ValidateSecret(s string) error {
 	return nil
 }
 
-// NewSecret returns a random signing secret ("whsec_" + 32 bytes).
+// NewSecret returns a random signing secret in the Standard Webhooks
+// format: "whsec_" and 32 random bytes in base64.
 func NewSecret() (string, error) {
 	var b [32]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", err
 	}
-	return "whsec_" + base64.RawURLEncoding.EncodeToString(b[:]), nil
+	return SecretPrefix + base64.StdEncoding.EncodeToString(b[:]), nil
 }
 
-// Sign returns the signature header value for body sent at t:
-// "t=<unix>,v1=<hex HMAC-SHA256(secret, "<unix>.<body>")>".
-func Sign(secret string, t time.Time, body []byte) string {
-	ts := strconv.FormatInt(t.Unix(), 10)
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(ts + "."))
-	mac.Write(body)
-	return "t=" + ts + ",v1=" + hex.EncodeToString(mac.Sum(nil))
-}
-
-// Verify checks a signature header, refusing one older than tolerance.
-// Receivers use the same rule; MailOS uses it in tests.
-func Verify(secret, header string, body []byte, now time.Time, tolerance time.Duration) bool {
-	var ts, sig string
-	for _, part := range strings.Split(header, ",") {
-		k, v, _ := strings.Cut(part, "=")
-		switch k {
-		case "t":
-			ts = v
-		case "v1":
-			sig = v
+// signingKey is the HMAC key of a secret: the bytes a "whsec_" secret
+// encodes in base64 (Standard Webhooks), otherwise the secret itself.
+func signingKey(secret string) []byte {
+	if b64, ok := strings.CutPrefix(secret, SecretPrefix); ok {
+		if key, err := base64.StdEncoding.DecodeString(b64); err == nil && len(key) > 0 {
+			return key
 		}
 	}
-	n, err := strconv.ParseInt(ts, 10, 64)
+	return []byte(secret)
+}
+
+// Sign returns the webhook-signature header value for the message id
+// sent at t (Standard Webhooks): "v1,<base64 HMAC-SHA256(key,
+// "<id>.<unix>.<body>")>".
+func Sign(secret, id string, t time.Time, body []byte) string {
+	mac := hmac.New(sha256.New, signingKey(secret))
+	mac.Write([]byte(id + "." + strconv.FormatInt(t.Unix(), 10) + "."))
+	mac.Write(body)
+	return SignatureVersion + "," + base64.StdEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// Headers are the Standard Webhooks headers of one delivery.
+func Headers(secret, id string, t time.Time, body []byte) map[string]string {
+	return map[string]string{
+		IDHeader:        id,
+		TimestampHeader: strconv.FormatInt(t.Unix(), 10),
+		SignatureHeader: Sign(secret, id, t, body),
+	}
+}
+
+// Verify checks a delivery's headers as a receiver does: one of the
+// space-separated v1 signatures matches, and the timestamp is within
+// tolerance of now. MailOS uses it in tests.
+func Verify(secret, id, timestamp, signatures string, body []byte, now time.Time, tolerance time.Duration) bool {
+	n, err := strconv.ParseInt(timestamp, 10, 64)
 	if err != nil || now.Sub(time.Unix(n, 0)).Abs() > tolerance {
 		return false
 	}
-	want := Sign(secret, time.Unix(n, 0), body)
-	_, wantSig, _ := strings.Cut(want, ",v1=")
-	return hmac.Equal([]byte(sig), []byte(wantSig))
+	want := Sign(secret, id, time.Unix(n, 0), body)
+	for _, sig := range strings.Fields(signatures) {
+		if hmac.Equal([]byte(sig), []byte(want)) {
+			return true
+		}
+	}
+	return false
 }
 
 // DeliveryStatus is where a delivery is.
