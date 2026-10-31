@@ -40,7 +40,9 @@ func (r *memRepo) Find(_ context.Context, tenantID, appID, email string) ([]doma
 	return out, nil
 }
 
-func (r *memRepo) List(context.Context, Filter) ([]domain.Suppression, int, error) { return r.rows, len(r.rows), nil }
+func (r *memRepo) List(context.Context, Filter) ([]domain.Suppression, int, error) {
+	return r.rows, len(r.rows), nil
+}
 
 type nopAudit struct{}
 
