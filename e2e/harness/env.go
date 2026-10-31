@@ -28,10 +28,14 @@ type Env struct {
 	IAMURL string
 	// IAMMintToken authorizes the fake IAM's /test mint routes.
 	IAMMintToken string
+	// IAMClient is IAM's own client, which MailOS seeds as the system
+	// application of IAMTenant.
+	IAMClient, IAMTenant string
 }
 
 // LoadEnv reads MAILOS_E2E_BASE_URL, MAILOS_E2E_GRPC_ADDR,
-// MAILOS_E2E_HOOK_TOKEN, MAILOS_E2E_IAM_URL and MAILOS_E2E_IAM_TOKEN
+// MAILOS_E2E_HOOK_TOKEN, MAILOS_E2E_IAM_URL, MAILOS_E2E_IAM_TOKEN,
+// MAILOS_E2E_IAM_CLIENT and MAILOS_E2E_IAM_TENANT
 // (e2e/run.sh env prints them). A missing value is an error, never a skip:
 // the gate fails rather than passing with nothing run.
 func LoadEnv() (*Env, error) {
@@ -41,11 +45,14 @@ func LoadEnv() (*Env, error) {
 		HookToken:    os.Getenv("MAILOS_E2E_HOOK_TOKEN"),
 		IAMURL:       strings.TrimRight(os.Getenv("MAILOS_E2E_IAM_URL"), "/"),
 		IAMMintToken: os.Getenv("MAILOS_E2E_IAM_TOKEN"),
+		IAMClient:    os.Getenv("MAILOS_E2E_IAM_CLIENT"),
+		IAMTenant:    os.Getenv("MAILOS_E2E_IAM_TENANT"),
 	}
 	var missing []string
 	for name, v := range map[string]string{
 		"MAILOS_E2E_BASE_URL": e.BaseURL, "MAILOS_E2E_GRPC_ADDR": e.GRPCAddr, "MAILOS_E2E_HOOK_TOKEN": e.HookToken,
 		"MAILOS_E2E_IAM_URL": e.IAMURL, "MAILOS_E2E_IAM_TOKEN": e.IAMMintToken,
+		"MAILOS_E2E_IAM_CLIENT": e.IAMClient, "MAILOS_E2E_IAM_TENANT": e.IAMTenant,
 	} {
 		if v == "" {
 			missing = append(missing, name)

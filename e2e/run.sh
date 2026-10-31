@@ -32,7 +32,8 @@ CONSOLE_ORIGIN="${MAILOS_E2E_CONSOLE_ORIGIN:-http://localhost:3200}"
 PKGS="${MAILOS_E2E_PKGS:-./e2e/...}"
 BASE_URL="http://127.0.0.1:${HTTP_PORT}"
 IAM_URL="http://127.0.0.1:${IAM_PORT}"
-# The service client IAM calls MailOS as (contract §1, §4).
+# The service client IAM calls MailOS as (contract §1), seeded as the
+# system application of a tenant of its own (keys/iam-tenant).
 IAM_SERVICE_CLIENT="mailos-iam"
 
 mkdir -p "$WORK/bin" "$WORK/keys"
@@ -62,6 +63,9 @@ keys() {
 # hooks, and no Kafka.
 write_env() {
   local k="$WORK/keys"
+  # IAM's tenant is new on every up, as each package's tenant is new on
+  # every run: the flows that play IAM publish topic templates into it.
+  uuidgen | tr 'A-Z' 'a-z' > "$k/iam-tenant"
   cat > "$WORK/server.env" <<EOF
 APP_ENV=e2e
 CONFIG_DIR=$WORK/no-config
@@ -84,7 +88,9 @@ IAM_ISSUER=$IAM_URL
 IAM_AUDIENCE=mailos
 IAM_CONSOLE_AUDIENCES=mailos-console
 IAM_JWKS_CACHE_TTL=1m
-MAILOS_SERVICE_CLIENTS=$IAM_SERVICE_CLIENT=iam.*
+IAM_SERVICE_CLIENT_ID=$IAM_SERVICE_CLIENT
+IAM_SERVICE_TENANT_ID=$(cat "$k/iam-tenant")
+IAM_SERVICE_TOPICS=iam.*
 KEY_MANAGER_MASTER_KEY=$(cat "$k/master.key")
 CORS_ORIGINS=$CONSOLE_ORIGIN
 FEATURE_PUBSUB_INGEST=false
@@ -155,6 +161,8 @@ print_env() {
   echo "MAILOS_E2E_HOOK_TOKEN=$(cat "$WORK/keys/hooks.token")"
   echo "MAILOS_E2E_IAM_URL=$IAM_URL"
   echo "MAILOS_E2E_IAM_TOKEN=$(cat "$WORK/keys/iam-mint.token")"
+  echo "MAILOS_E2E_IAM_CLIENT=$IAM_SERVICE_CLIENT"
+  echo "MAILOS_E2E_IAM_TENANT=$(cat "$WORK/keys/iam-tenant")"
 }
 
 run_tests() {
