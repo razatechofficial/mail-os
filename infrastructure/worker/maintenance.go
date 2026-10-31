@@ -18,7 +18,9 @@ const (
 )
 
 // KeyTicker is the key manager schedule.
-type KeyTicker interface{ Tick(ctx context.Context) error }
+type KeyTicker interface {
+	Tick(ctx context.Context) error
+}
 
 // KeyManagerTick rotates due keys, re-encrypts and destroys drained keys.
 func KeyManagerTick(k KeyTicker) func(context.Context, *asynq.Task) error {
