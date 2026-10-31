@@ -1,0 +1,208 @@
+{
+  "description": "IAM to MailOS message signature (iam-msg-sig) test vectors, contract §2. Bodies are the exact message value bytes. 'now' is the verifier's clock in Unix seconds; skew is 60 s. seen_jtis are already in the replay guard. The Ed25519 seed is a public test key: signing vectors are byte-for-byte.",
+  "issuer": "https://iam.local",
+  "jwks": {
+    "keys": [
+      {
+        "alg": "EdDSA",
+        "crv": "Ed25519",
+        "kid": "BuP9j9opu2CrWVV95h7bCuzbIxE0vjDnW0Vfjht5L6k",
+        "kty": "OKP",
+        "use": "sig",
+        "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
+      },
+      {
+        "alg": "RS256",
+        "e": "AQAB",
+        "kid": "rbQnCC-K1RLkmpJf06Bgm8nXsU5o0NXCuoaegvp6YXk",
+        "kty": "RSA",
+        "n": "x9yu9FfFk5lRUPhY6GkKdWcSEWtik7dZyrMrwiq7cuwApmaZOGkAOTTmg8DbecTZSS-hGAvqOu0QiQ2Xnf5-vjTt5njN47GAkDV9tU3uPFTUE1d7GCFLcGeqmmPX69rZRJPOafBUQZOKHQRuSTtmSqwg2kAKN70DgsWUJj3MLiH22dB_x_bTB1fidU0Jt83y1Bs_k_G1WJ01TwZpC6eSVx0Dth7ptggCKaR7Mox_ZQD1XvimNxnt-DIrGCab5QMYAapkQSQ--swYUgs5Nc-hELWbvcs4y9e3C9hUvzZqXntgaoLR40sNWiwuNIS4LQt3YxMaYDH9IQgj0NTIUjB9Zw",
+        "use": "sig"
+      },
+      {
+        "alg": "PS256",
+        "e": "AQAB",
+        "kid": "LTD-i5Az0VmPTY_Pvoa9Kn7MyfLw1-FLZi9tbgTHnpo",
+        "kty": "RSA",
+        "n": "8bCwUbzYno6n0IhoTQWBp8b-Bv9jiXi6OhcEq5ib2xtGtBWOi8oGiyinxynDeS2B2E9KSFhkGqbdvUIviKankvZB9J9fya698oKCK7nvfppdRBcOBAqAsRh0JZicQqHDmKuV9fPbPNCppTWA2Gw0E8R1tuSSKwc8XW5-yTiC8SJnvPNg9YhLMcjoJ3MzNEJr_euQKtA-JYEtuWn876Yp6xRAOPyWlXYp_vx3m0Txa_gb7Tw9RA8Br1nc6TOwv366-7OKVm4VR2QlWsnjpJ4P0cczNE2_9k8hnkPflvDmYgz8I0DR3D3chC2kBRz6ioy8uEXSWORd5cppg7ZBX9siFw",
+        "use": "sig"
+      },
+      {
+        "alg": "ES256",
+        "crv": "P-256",
+        "kid": "Wo2MzcI8xnZgcw1nTpKn_Me75-yEAPd-rHa1cdtQKr4",
+        "kty": "EC",
+        "use": "sig",
+        "x": "8kCWlOY1qSYO2t9btCg5_KOvS4YgY1MlTaoGQrphWMY",
+        "y": "wErOZ_Tg1Go6ITXtLEXDxchCxPzsXT7SU2ehdBjiFYM"
+      }
+    ]
+  },
+  "signing": [
+    {
+      "body": "{\"id\":\"6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d\",\"type\":\"iam.auth.password_reset_requested\",\"source\":\"iam\",\"data\":{\"email\":\"raza@iam.local\",\"reset_link\":\"https://iam.local/reset?t=redacted\"},\"timestamp\":\"2026-10-29T08:20:00Z\",\"tenant_uuid\":\"7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}",
+      "body_sha256": "-3-2XqvtYSqP2QWLER9BjyZu-Lc8rol5i9LvgoCQ10I",
+      "ed25519_test_seed_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+      "iat": 1793178000,
+      "jti": "6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6IkJ1UDlqOW9wdTJDcldWVjk1aDdiQ3V6Ykl4RTB2akRuVzBWZmpodDVMNmsiLCJ0eXAiOiJtYWlsb3MtbXNnK2p3dCJ9.eyJpc3MiOiJodHRwczovL2lhbS5sb2NhbCIsInN1YiI6IjBmM2MyYTllLTdiMTQtNGQ2YS05YzgxLTJlNWY2YTdiOGM5MCIsImF1ZCI6Im1haWxvcyIsImlhdCI6MTc5MzE3ODAwMCwiZXhwIjoxNzkzMTc4MzAwLCJqdGkiOiI2ZjFkOGEyYy0zYjRlLTRmNWEtOGM5ZC0wZTFmMmEzYjRjNWQiLCJ0b3BpYyI6ImlhbS5hdXRoLnBhc3N3b3JkX3Jlc2V0X3JlcXVlc3RlZCIsImJvZHlfc2hhMjU2IjoiLTMtMlhxdnRZU3FQMlFXTEVSOUJqeVp1LUxjOHJvbDVpOUx2Z29DUTEwSSJ9.Ki_faWgHo99pG5dHiAxTHA5qP22P3nq07SiDoPUW1LlOrAtgKRHK-E-kgzPiL98epX6aECy2l4-hxCLL66g3Cg",
+      "kid": "BuP9j9opu2CrWVV95h7bCuzbIxE0vjDnW0Vfjht5L6k",
+      "name": "EdDSA password reset",
+      "topic": "iam.auth.password_reset_requested"
+    }
+  ],
+  "subject": "0f3c2a9e-7b14-4d6a-9c81-2e5f6a7b8c90",
+  "verify": [
+    {
+      "name": "valid EdDSA",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6IkJ1UDlqOW9wdTJDcldWVjk1aDdiQ3V6Ykl4RTB2akRuVzBWZmpodDVMNmsiLCJ0eXAiOiJtYWlsb3MtbXNnK2p3dCJ9.eyJpc3MiOiJodHRwczovL2lhbS5sb2NhbCIsInN1YiI6IjBmM2MyYTllLTdiMTQtNGQ2YS05YzgxLTJlNWY2YTdiOGM5MCIsImF1ZCI6Im1haWxvcyIsImlhdCI6MTc5MzE3ODAwMCwiZXhwIjoxNzkzMTc4MzAwLCJqdGkiOiI2ZjFkOGEyYy0zYjRlLTRmNWEtOGM5ZC0wZTFmMmEzYjRjNWQiLCJ0b3BpYyI6ImlhbS5hdXRoLnBhc3N3b3JkX3Jlc2V0X3JlcXVlc3RlZCIsImJvZHlfc2hhMjU2IjoiLTMtMlhxdnRZU3FQMlFXTEVSOUJqeVp1LUxjOHJvbDVpOUx2Z29DUTEwSSJ9.Ki_faWgHo99pG5dHiAxTHA5qP22P3nq07SiDoPUW1LlOrAtgKRHK-E-kgzPiL98epX6aECy2l4-hxCLL66g3Cg",
+      "topic": "iam.auth.password_reset_requested",
+      "body": "{\"id\":\"6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d\",\"type\":\"iam.auth.password_reset_requested\",\"source\":\"iam\",\"data\":{\"email\":\"raza@iam.local\",\"reset_link\":\"https://iam.local/reset?t=redacted\"},\"timestamp\":\"2026-10-29T08:20:00Z\",\"tenant_uuid\":\"7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}",
+      "now": 1793178030,
+      "valid": true
+    },
+    {
+      "name": "valid RS256",
+      "jws": "eyJhbGciOiJSUzI1NiIsImtpZCI6InJiUW5DQy1LMVJMa21wSmYwNkJnbThuWHNVNW8wTlhDdW9hZWd2cDZZWGsiLCJ0eXAiOiJtYWlsb3MtbXNnK2p3dCJ9.eyJpc3MiOiJodHRwczovL2lhbS5sb2NhbCIsInN1YiI6IjBmM2MyYTllLTdiMTQtNGQ2YS05YzgxLTJlNWY2YTdiOGM5MCIsImF1ZCI6Im1haWxvcyIsImlhdCI6MTc5MzE3ODAwMCwiZXhwIjoxNzkzMTc4MzAwLCJqdGkiOiI2ZjFkOGEyYy0zYjRlLTRmNWEtOGM5ZC0wZTFmMmEzYjRjNWQiLCJ0b3BpYyI6ImlhbS5hdXRoLnBhc3N3b3JkX3Jlc2V0X3JlcXVlc3RlZCIsImJvZHlfc2hhMjU2IjoiLTMtMlhxdnRZU3FQMlFXTEVSOUJqeVp1LUxjOHJvbDVpOUx2Z29DUTEwSSJ9.JnMoK3Xh7zw62yMt52pR33PUkwxZBFzNWpsANDYEXdwZs2LI0E_mAypglgDv-N3qh6lqxnH8qNOuFV6v0SM-zNpf7WDyfyLdr1rJDxhh7yz4uaYZvs8AVgTSbbYxeTHptoK5NNlJ8NXgzP64Uya_4JFWbzuY6eUfPfad_vzz9ShogxyXn8Vjsaz0bsdVx1vDHs9Esjen_ZPYG_w69fepq0e6GPPaxhw4YA02m8lpHSHSNcgysRNjOB5t9kgYPddehC1EploXmHl_HE4UEhAH3y5xMZwpQjZK1XNydUIMhLGR7KMlthehRYEPDJL0PedVlhnXXQSnOsrvZtf8wUJcQg",
+      "topic": "iam.auth.password_reset_requested",
+      "body": "{\"id\":\"6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d\",\"type\":\"iam.auth.password_reset_requested\",\"source\":\"iam\",\"data\":{\"email\":\"raza@iam.local\",\"reset_link\":\"https://iam.local/reset?t=redacted\"},\"timestamp\":\"2026-10-29T08:20:00Z\",\"tenant_uuid\":\"7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}",
+      "now": 1793178030,
+      "valid": true
+    },
+    {
+      "name": "valid PS256",
+      "jws": "eyJhbGciOiJQUzI1NiIsImtpZCI6IkxURC1pNUF6MFZtUFRZX1B2b2E5S243TXlmTHcxLUZMWmk5dGJnVEhucG8iLCJ0eXAiOiJtYWlsb3MtbXNnK2p3dCJ9.eyJpc3MiOiJodHRwczovL2lhbS5sb2NhbCIsInN1YiI6IjBmM2MyYTllLTdiMTQtNGQ2YS05YzgxLTJlNWY2YTdiOGM5MCIsImF1ZCI6Im1haWxvcyIsImlhdCI6MTc5MzE3ODAwMCwiZXhwIjoxNzkzMTc4MzAwLCJqdGkiOiI2ZjFkOGEyYy0zYjRlLTRmNWEtOGM5ZC0wZTFmMmEzYjRjNWQiLCJ0b3BpYyI6ImlhbS5hdXRoLnBhc3N3b3JkX3Jlc2V0X3JlcXVlc3RlZCIsImJvZHlfc2hhMjU2IjoiLTMtMlhxdnRZU3FQMlFXTEVSOUJqeVp1LUxjOHJvbDVpOUx2Z29DUTEwSSJ9.C2sreLd59SPlyfNAeyXYaSUW2Di6kFEyZgPOZIyGqB6Vfi3JjG6unFOEdOxbl7rXmEyi5PK43vzmZ9SgURlhSMAjo623uVi7TmnLFhp_ytko3fZRp-5wdZLS7taGdUMsgPC3t3rc4Wb1dWaP5s33j4hKJFdpuJi67UDTr-__icUWDeK0qcGD7p1vBHMPvlZMJB4k30TjKEabVCW4AqjXXCZaSjPAfIHi1gMe5gLBaBJfPhrcwq_0Z_V8aDnahnOrc2jEoYTfVLhoJD5AiDYD7bFaU8PmxYhNzB4Y_NswtCqb9a9Yik69Jhpt8lcFRYplgI2shzmqUpJhuG1jHmIvyg",
+      "topic": "iam.auth.password_reset_requested",
+      "body": "{\"id\":\"6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d\",\"type\":\"iam.auth.password_reset_requested\",\"source\":\"iam\",\"data\":{\"email\":\"raza@iam.local\",\"reset_link\":\"https://iam.local/reset?t=redacted\"},\"timestamp\":\"2026-10-29T08:20:00Z\",\"tenant_uuid\":\"7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}",
+      "now": 1793178030,
+      "valid": true
+    },
+    {
+      "name": "valid ES256",
+      "jws": "eyJhbGciOiJFUzI1NiIsImtpZCI6IldvMk16Y0k4eG5aZ2N3MW5UcEtuX01lNzUteUVBUGQtckhhMWNkdFFLcjQiLCJ0eXAiOiJtYWlsb3MtbXNnK2p3dCJ9.eyJpc3MiOiJodHRwczovL2lhbS5sb2NhbCIsInN1YiI6IjBmM2MyYTllLTdiMTQtNGQ2YS05YzgxLTJlNWY2YTdiOGM5MCIsImF1ZCI6Im1haWxvcyIsImlhdCI6MTc5MzE3ODAwMCwiZXhwIjoxNzkzMTc4MzAwLCJqdGkiOiI2ZjFkOGEyYy0zYjRlLTRmNWEtOGM5ZC0wZTFmMmEzYjRjNWQiLCJ0b3BpYyI6ImlhbS5hdXRoLnBhc3N3b3JkX3Jlc2V0X3JlcXVlc3RlZCIsImJvZHlfc2hhMjU2IjoiLTMtMlhxdnRZU3FQMlFXTEVSOUJqeVp1LUxjOHJvbDVpOUx2Z29DUTEwSSJ9.N-o5raRk5nHYfW-UBPNhHCL-34SYPpTBhbUVQDbZGSSUC4bcSuLATmkgy0bQwyYX5-knYwWg55PIwQkIdDEf5A",
+      "topic": "iam.auth.password_reset_requested",
+      "body": "{\"id\":\"6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d\",\"type\":\"iam.auth.password_reset_requested\",\"source\":\"iam\",\"data\":{\"email\":\"raza@iam.local\",\"reset_link\":\"https://iam.local/reset?t=redacted\"},\"timestamp\":\"2026-10-29T08:20:00Z\",\"tenant_uuid\":\"7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}",
+      "now": 1793178030,
+      "valid": true
+    },
+    {
+      "name": "valid at the far edge of skew",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6IkJ1UDlqOW9wdTJDcldWVjk1aDdiQ3V6Ykl4RTB2akRuVzBWZmpodDVMNmsiLCJ0eXAiOiJtYWlsb3MtbXNnK2p3dCJ9.eyJpc3MiOiJodHRwczovL2lhbS5sb2NhbCIsInN1YiI6IjBmM2MyYTllLTdiMTQtNGQ2YS05YzgxLTJlNWY2YTdiOGM5MCIsImF1ZCI6Im1haWxvcyIsImlhdCI6MTc5MzE3ODAwMCwiZXhwIjoxNzkzMTc4MzAwLCJqdGkiOiI2ZjFkOGEyYy0zYjRlLTRmNWEtOGM5ZC0wZTFmMmEzYjRjNWQiLCJ0b3BpYyI6ImlhbS5hdXRoLnBhc3N3b3JkX3Jlc2V0X3JlcXVlc3RlZCIsImJvZHlfc2hhMjU2IjoiLTMtMlhxdnRZU3FQMlFXTEVSOUJqeVp1LUxjOHJvbDVpOUx2Z29DUTEwSSJ9.Ki_faWgHo99pG5dHiAxTHA5qP22P3nq07SiDoPUW1LlOrAtgKRHK-E-kgzPiL98epX6aECy2l4-hxCLL66g3Cg",
+      "topic": "iam.auth.password_reset_requested",
+      "body": "{\"id\":\"6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d\",\"type\":\"iam.auth.password_reset_requested\",\"source\":\"iam\",\"data\":{\"email\":\"raza@iam.local\",\"reset_link\":\"https://iam.local/reset?t=redacted\"},\"timestamp\":\"2026-10-29T08:20:00Z\",\"tenant_uuid\":\"7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}",
+      "now": 1793178359,
+      "valid": true
+    },
+    {
+      "name": "tampered body",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6IkJ1UDlqOW9wdTJDcldWVjk1aDdiQ3V6Ykl4RTB2akRuVzBWZmpodDVMNmsiLCJ0eXAiOiJtYWlsb3MtbXNnK2p3dCJ9.eyJpc3MiOiJodHRwczovL2lhbS5sb2NhbCIsInN1YiI6IjBmM2MyYTllLTdiMTQtNGQ2YS05YzgxLTJlNWY2YTdiOGM5MCIsImF1ZCI6Im1haWxvcyIsImlhdCI6MTc5MzE3ODAwMCwiZXhwIjoxNzkzMTc4MzAwLCJqdGkiOiI2ZjFkOGEyYy0zYjRlLTRmNWEtOGM5ZC0wZTFmMmEzYjRjNWQiLCJ0b3BpYyI6ImlhbS5hdXRoLnBhc3N3b3JkX3Jlc2V0X3JlcXVlc3RlZCIsImJvZHlfc2hhMjU2IjoiLTMtMlhxdnRZU3FQMlFXTEVSOUJqeVp1LUxjOHJvbDVpOUx2Z29DUTEwSSJ9.Ki_faWgHo99pG5dHiAxTHA5qP22P3nq07SiDoPUW1LlOrAtgKRHK-E-kgzPiL98epX6aECy2l4-hxCLL66g3Cg",
+      "topic": "iam.auth.password_reset_requested",
+      "body": "{\"id\":\"6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d\",\"type\":\"iam.auth.password_reset_requested\",\"source\":\"iam\",\"data\":{\"email\":\"raza@iam.local\",\"reset_link\":\"https://iam.local/reset?t=redacted\"},\"timestamp\":\"2026-10-29T08:20:00Z\",\"tenant_uuid\":\"7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d!\"}",
+      "now": 1793178030,
+      "valid": false,
+      "reason": "body_hash"
+    },
+    {
+      "name": "wrong topic",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6IkJ1UDlqOW9wdTJDcldWVjk1aDdiQ3V6Ykl4RTB2akRuVzBWZmpodDVMNmsiLCJ0eXAiOiJtYWlsb3MtbXNnK2p3dCJ9.eyJpc3MiOiJodHRwczovL2lhbS5sb2NhbCIsInN1YiI6IjBmM2MyYTllLTdiMTQtNGQ2YS05YzgxLTJlNWY2YTdiOGM5MCIsImF1ZCI6Im1haWxvcyIsImlhdCI6MTc5MzE3ODAwMCwiZXhwIjoxNzkzMTc4MzAwLCJqdGkiOiI2ZjFkOGEyYy0zYjRlLTRmNWEtOGM5ZC0wZTFmMmEzYjRjNWQiLCJ0b3BpYyI6ImlhbS5hdXRoLnBhc3N3b3JkX3Jlc2V0X3JlcXVlc3RlZCIsImJvZHlfc2hhMjU2IjoiLTMtMlhxdnRZU3FQMlFXTEVSOUJqeVp1LUxjOHJvbDVpOUx2Z29DUTEwSSJ9.Ki_faWgHo99pG5dHiAxTHA5qP22P3nq07SiDoPUW1LlOrAtgKRHK-E-kgzPiL98epX6aECy2l4-hxCLL66g3Cg",
+      "topic": "iam.auth.magic_link_requested",
+      "body": "{\"id\":\"6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d\",\"type\":\"iam.auth.password_reset_requested\",\"source\":\"iam\",\"data\":{\"email\":\"raza@iam.local\",\"reset_link\":\"https://iam.local/reset?t=redacted\"},\"timestamp\":\"2026-10-29T08:20:00Z\",\"tenant_uuid\":\"7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}",
+      "now": 1793178030,
+      "valid": false,
+      "reason": "topic"
+    },
+    {
+      "name": "expired",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6IkJ1UDlqOW9wdTJDcldWVjk1aDdiQ3V6Ykl4RTB2akRuVzBWZmpodDVMNmsiLCJ0eXAiOiJtYWlsb3MtbXNnK2p3dCJ9.eyJpc3MiOiJodHRwczovL2lhbS5sb2NhbCIsInN1YiI6IjBmM2MyYTllLTdiMTQtNGQ2YS05YzgxLTJlNWY2YTdiOGM5MCIsImF1ZCI6Im1haWxvcyIsImlhdCI6MTc5MzE3ODAwMCwiZXhwIjoxNzkzMTc4MzAwLCJqdGkiOiI2ZjFkOGEyYy0zYjRlLTRmNWEtOGM5ZC0wZTFmMmEzYjRjNWQiLCJ0b3BpYyI6ImlhbS5hdXRoLnBhc3N3b3JkX3Jlc2V0X3JlcXVlc3RlZCIsImJvZHlfc2hhMjU2IjoiLTMtMlhxdnRZU3FQMlFXTEVSOUJqeVp1LUxjOHJvbDVpOUx2Z29DUTEwSSJ9.Ki_faWgHo99pG5dHiAxTHA5qP22P3nq07SiDoPUW1LlOrAtgKRHK-E-kgzPiL98epX6aECy2l4-hxCLL66g3Cg",
+      "topic": "iam.auth.password_reset_requested",
+      "body": "{\"id\":\"6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d\",\"type\":\"iam.auth.password_reset_requested\",\"source\":\"iam\",\"data\":{\"email\":\"raza@iam.local\",\"reset_link\":\"https://iam.local/reset?t=redacted\"},\"timestamp\":\"2026-10-29T08:20:00Z\",\"tenant_uuid\":\"7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}",
+      "now": 1793178360,
+      "valid": false,
+      "reason": "expired"
+    },
+    {
+      "name": "issued in the future",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6IkJ1UDlqOW9wdTJDcldWVjk1aDdiQ3V6Ykl4RTB2akRuVzBWZmpodDVMNmsiLCJ0eXAiOiJtYWlsb3MtbXNnK2p3dCJ9.eyJpc3MiOiJodHRwczovL2lhbS5sb2NhbCIsInN1YiI6IjBmM2MyYTllLTdiMTQtNGQ2YS05YzgxLTJlNWY2YTdiOGM5MCIsImF1ZCI6Im1haWxvcyIsImlhdCI6MTc5MzE3ODAwMCwiZXhwIjoxNzkzMTc4MzAwLCJqdGkiOiI2ZjFkOGEyYy0zYjRlLTRmNWEtOGM5ZC0wZTFmMmEzYjRjNWQiLCJ0b3BpYyI6ImlhbS5hdXRoLnBhc3N3b3JkX3Jlc2V0X3JlcXVlc3RlZCIsImJvZHlfc2hhMjU2IjoiLTMtMlhxdnRZU3FQMlFXTEVSOUJqeVp1LUxjOHJvbDVpOUx2Z29DUTEwSSJ9.Ki_faWgHo99pG5dHiAxTHA5qP22P3nq07SiDoPUW1LlOrAtgKRHK-E-kgzPiL98epX6aECy2l4-hxCLL66g3Cg",
+      "topic": "iam.auth.password_reset_requested",
+      "body": "{\"id\":\"6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d\",\"type\":\"iam.auth.password_reset_requested\",\"source\":\"iam\",\"data\":{\"email\":\"raza@iam.local\",\"reset_link\":\"https://iam.local/reset?t=redacted\"},\"timestamp\":\"2026-10-29T08:20:00Z\",\"tenant_uuid\":\"7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}",
+      "now": 1793177939,
+      "valid": false,
+      "reason": "not_yet_valid"
+    },
+    {
+      "name": "replayed",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6IkJ1UDlqOW9wdTJDcldWVjk1aDdiQ3V6Ykl4RTB2akRuVzBWZmpodDVMNmsiLCJ0eXAiOiJtYWlsb3MtbXNnK2p3dCJ9.eyJpc3MiOiJodHRwczovL2lhbS5sb2NhbCIsInN1YiI6IjBmM2MyYTllLTdiMTQtNGQ2YS05YzgxLTJlNWY2YTdiOGM5MCIsImF1ZCI6Im1haWxvcyIsImlhdCI6MTc5MzE3ODAwMCwiZXhwIjoxNzkzMTc4MzAwLCJqdGkiOiI2ZjFkOGEyYy0zYjRlLTRmNWEtOGM5ZC0wZTFmMmEzYjRjNWQiLCJ0b3BpYyI6ImlhbS5hdXRoLnBhc3N3b3JkX3Jlc2V0X3JlcXVlc3RlZCIsImJvZHlfc2hhMjU2IjoiLTMtMlhxdnRZU3FQMlFXTEVSOUJqeVp1LUxjOHJvbDVpOUx2Z29DUTEwSSJ9.Ki_faWgHo99pG5dHiAxTHA5qP22P3nq07SiDoPUW1LlOrAtgKRHK-E-kgzPiL98epX6aECy2l4-hxCLL66g3Cg",
+      "topic": "iam.auth.password_reset_requested",
+      "body": "{\"id\":\"6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d\",\"type\":\"iam.auth.password_reset_requested\",\"source\":\"iam\",\"data\":{\"email\":\"raza@iam.local\",\"reset_link\":\"https://iam.local/reset?t=redacted\"},\"timestamp\":\"2026-10-29T08:20:00Z\",\"tenant_uuid\":\"7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}",
+      "now": 1793178030,
+      "seen_jtis": [
+        "6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d"
+      ],
+      "valid": false,
+      "reason": "replay"
+    },
+    {
+      "name": "unknown key",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6Im9ucmx5WlJ1blhDZ1FHSkdPR2E5OXBBZ3YzTXR4SDZTTVlrOVZQbG91cWsiLCJ0eXAiOiJtYWlsb3MtbXNnK2p3dCJ9.eyJpc3MiOiJodHRwczovL2lhbS5sb2NhbCIsInN1YiI6IjBmM2MyYTllLTdiMTQtNGQ2YS05YzgxLTJlNWY2YTdiOGM5MCIsImF1ZCI6Im1haWxvcyIsImlhdCI6MTc5MzE3ODAwMCwiZXhwIjoxNzkzMTc4MzAwLCJqdGkiOiI2ZjFkOGEyYy0zYjRlLTRmNWEtOGM5ZC0wZTFmMmEzYjRjNWQiLCJ0b3BpYyI6ImlhbS5hdXRoLnBhc3N3b3JkX3Jlc2V0X3JlcXVlc3RlZCIsImJvZHlfc2hhMjU2IjoiLTMtMlhxdnRZU3FQMlFXTEVSOUJqeVp1LUxjOHJvbDVpOUx2Z29DUTEwSSJ9.BrlZwVnD6DnEvHaLM7Kp_fgnbt6k1wdIpJPwLOjjNtqSO7rldOUwSMewG8WYiIMkugkeYu1QRQjT3y81Px8hBg",
+      "topic": "iam.auth.password_reset_requested",
+      "body": "{\"id\":\"6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d\",\"type\":\"iam.auth.password_reset_requested\",\"source\":\"iam\",\"data\":{\"email\":\"raza@iam.local\",\"reset_link\":\"https://iam.local/reset?t=redacted\"},\"timestamp\":\"2026-10-29T08:20:00Z\",\"tenant_uuid\":\"7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}",
+      "now": 1793178030,
+      "valid": false,
+      "reason": "unknown_key"
+    },
+    {
+      "name": "alg is not the key's",
+      "jws": "eyJhbGciOiJSUzI1NiIsImtpZCI6IkJ1UDlqOW9wdTJDcldWVjk1aDdiQ3V6Ykl4RTB2akRuVzBWZmpodDVMNmsiLCJ0eXAiOiJtYWlsb3MtbXNnK2p3dCJ9.eyJhdWQiOiJtYWlsb3MiLCJib2R5X3NoYTI1NiI6Ii0zLTJYcXZ0WVNxUDJRV0xFUjlCanladS1MYzhyb2w1aTlMdmdvQ1ExMEkiLCJleHAiOjE3OTMxNzgzMDAsImlhdCI6MTc5MzE3ODAwMCwiaXNzIjoiaHR0cHM6Ly9pYW0ubG9jYWwiLCJqdGkiOiI2ZjFkOGEyYy0zYjRlLTRmNWEtOGM5ZC0wZTFmMmEzYjRjNWQiLCJzdWIiOiIwZjNjMmE5ZS03YjE0LTRkNmEtOWM4MS0yZTVmNmE3YjhjOTAiLCJ0b3BpYyI6ImlhbS5hdXRoLnBhc3N3b3JkX3Jlc2V0X3JlcXVlc3RlZCJ9.tcRaPd5w_ySxOhRsjCyLWt6a0sTjzjlSGDxQXNsypjd30SZLppdBS-64Qv4rc71DFkiU4kBG_c0jvSDHZTgbBg",
+      "topic": "iam.auth.password_reset_requested",
+      "body": "{\"id\":\"6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d\",\"type\":\"iam.auth.password_reset_requested\",\"source\":\"iam\",\"data\":{\"email\":\"raza@iam.local\",\"reset_link\":\"https://iam.local/reset?t=redacted\"},\"timestamp\":\"2026-10-29T08:20:00Z\",\"tenant_uuid\":\"7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}",
+      "now": 1793178030,
+      "valid": false,
+      "reason": "algorithm"
+    },
+    {
+      "name": "access token typ",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6IkJ1UDlqOW9wdTJDcldWVjk1aDdiQ3V6Ykl4RTB2akRuVzBWZmpodDVMNmsiLCJ0eXAiOiJhdCtqd3QifQ.eyJhdWQiOiJtYWlsb3MiLCJib2R5X3NoYTI1NiI6Ii0zLTJYcXZ0WVNxUDJRV0xFUjlCanladS1MYzhyb2w1aTlMdmdvQ1ExMEkiLCJleHAiOjE3OTMxNzgzMDAsImlhdCI6MTc5MzE3ODAwMCwiaXNzIjoiaHR0cHM6Ly9pYW0ubG9jYWwiLCJqdGkiOiI2ZjFkOGEyYy0zYjRlLTRmNWEtOGM5ZC0wZTFmMmEzYjRjNWQiLCJzdWIiOiIwZjNjMmE5ZS03YjE0LTRkNmEtOWM4MS0yZTVmNmE3YjhjOTAiLCJ0b3BpYyI6ImlhbS5hdXRoLnBhc3N3b3JkX3Jlc2V0X3JlcXVlc3RlZCJ9.YnWyTi4aSRX_nbxfpiBahdSlzCxkfO6FjDJHovqVv3kquNnhLYiGN6rokB4n17Uwjuz1WSJ8uXYtV9lik4xDBA",
+      "topic": "iam.auth.password_reset_requested",
+      "body": "{\"id\":\"6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d\",\"type\":\"iam.auth.password_reset_requested\",\"source\":\"iam\",\"data\":{\"email\":\"raza@iam.local\",\"reset_link\":\"https://iam.local/reset?t=redacted\"},\"timestamp\":\"2026-10-29T08:20:00Z\",\"tenant_uuid\":\"7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}",
+      "now": 1793178030,
+      "valid": false,
+      "reason": "type"
+    },
+    {
+      "name": "other issuer",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6IkJ1UDlqOW9wdTJDcldWVjk1aDdiQ3V6Ykl4RTB2akRuVzBWZmpodDVMNmsiLCJ0eXAiOiJtYWlsb3MtbXNnK2p3dCJ9.eyJhdWQiOiJtYWlsb3MiLCJib2R5X3NoYTI1NiI6Ii0zLTJYcXZ0WVNxUDJRV0xFUjlCanladS1MYzhyb2w1aTlMdmdvQ1ExMEkiLCJleHAiOjE3OTMxNzgzMDAsImlhdCI6MTc5MzE3ODAwMCwiaXNzIjoiaHR0cHM6Ly9vdGhlci5pYW0ubG9jYWwiLCJqdGkiOiI2ZjFkOGEyYy0zYjRlLTRmNWEtOGM5ZC0wZTFmMmEzYjRjNWQiLCJzdWIiOiIwZjNjMmE5ZS03YjE0LTRkNmEtOWM4MS0yZTVmNmE3YjhjOTAiLCJ0b3BpYyI6ImlhbS5hdXRoLnBhc3N3b3JkX3Jlc2V0X3JlcXVlc3RlZCJ9.XZyCp3GCeETfq8Z_QfD7k4SrCTINLLZ9f_ZOuE2kqOr-p0UBaiB6dd_OUI_0fXhuf7CTnkHVGOGm0_hStW3aBQ",
+      "topic": "iam.auth.password_reset_requested",
+      "body": "{\"id\":\"6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d\",\"type\":\"iam.auth.password_reset_requested\",\"source\":\"iam\",\"data\":{\"email\":\"raza@iam.local\",\"reset_link\":\"https://iam.local/reset?t=redacted\"},\"timestamp\":\"2026-10-29T08:20:00Z\",\"tenant_uuid\":\"7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}",
+      "now": 1793178030,
+      "valid": false,
+      "reason": "issuer"
+    },
+    {
+      "name": "other audience",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6IkJ1UDlqOW9wdTJDcldWVjk1aDdiQ3V6Ykl4RTB2akRuVzBWZmpodDVMNmsiLCJ0eXAiOiJtYWlsb3MtbXNnK2p3dCJ9.eyJhdWQiOiJ4ZHIiLCJib2R5X3NoYTI1NiI6Ii0zLTJYcXZ0WVNxUDJRV0xFUjlCanladS1MYzhyb2w1aTlMdmdvQ1ExMEkiLCJleHAiOjE3OTMxNzgzMDAsImlhdCI6MTc5MzE3ODAwMCwiaXNzIjoiaHR0cHM6Ly9pYW0ubG9jYWwiLCJqdGkiOiI2ZjFkOGEyYy0zYjRlLTRmNWEtOGM5ZC0wZTFmMmEzYjRjNWQiLCJzdWIiOiIwZjNjMmE5ZS03YjE0LTRkNmEtOWM4MS0yZTVmNmE3YjhjOTAiLCJ0b3BpYyI6ImlhbS5hdXRoLnBhc3N3b3JkX3Jlc2V0X3JlcXVlc3RlZCJ9.WyrIHeugBCa2jQHkbY2O8paZDeZ_iOW366yvFNpEVGbgDYMaajW5xbxURpJfP2_a0kmMk_cqnksmYjl3BUWmBw",
+      "topic": "iam.auth.password_reset_requested",
+      "body": "{\"id\":\"6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d\",\"type\":\"iam.auth.password_reset_requested\",\"source\":\"iam\",\"data\":{\"email\":\"raza@iam.local\",\"reset_link\":\"https://iam.local/reset?t=redacted\"},\"timestamp\":\"2026-10-29T08:20:00Z\",\"tenant_uuid\":\"7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}",
+      "now": 1793178030,
+      "valid": false,
+      "reason": "audience"
+    },
+    {
+      "name": "lifetime over five minutes",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6IkJ1UDlqOW9wdTJDcldWVjk1aDdiQ3V6Ykl4RTB2akRuVzBWZmpodDVMNmsiLCJ0eXAiOiJtYWlsb3MtbXNnK2p3dCJ9.eyJhdWQiOiJtYWlsb3MiLCJib2R5X3NoYTI1NiI6Ii0zLTJYcXZ0WVNxUDJRV0xFUjlCanladS1MYzhyb2w1aTlMdmdvQ1ExMEkiLCJleHAiOjE3OTMxODE2MDAsImlhdCI6MTc5MzE3ODAwMCwiaXNzIjoiaHR0cHM6Ly9pYW0ubG9jYWwiLCJqdGkiOiI2ZjFkOGEyYy0zYjRlLTRmNWEtOGM5ZC0wZTFmMmEzYjRjNWQiLCJzdWIiOiIwZjNjMmE5ZS03YjE0LTRkNmEtOWM4MS0yZTVmNmE3YjhjOTAiLCJ0b3BpYyI6ImlhbS5hdXRoLnBhc3N3b3JkX3Jlc2V0X3JlcXVlc3RlZCJ9.QWd5vZFd6lL1p8VdUn3QEFirCK5Mr23DK-gA-gPJsHO-FdV9oyL_ScX1F61uw2tSVbwGb6OiYLWCd9sdcNpWBw",
+      "topic": "iam.auth.password_reset_requested",
+      "body": "{\"id\":\"6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d\",\"type\":\"iam.auth.password_reset_requested\",\"source\":\"iam\",\"data\":{\"email\":\"raza@iam.local\",\"reset_link\":\"https://iam.local/reset?t=redacted\"},\"timestamp\":\"2026-10-29T08:20:00Z\",\"tenant_uuid\":\"7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}",
+      "now": 1793178030,
+      "valid": false,
+      "reason": "lifetime"
+    },
+    {
+      "name": "signature of another message",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6IkJ1UDlqOW9wdTJDcldWVjk1aDdiQ3V6Ykl4RTB2akRuVzBWZmpodDVMNmsiLCJ0eXAiOiJtYWlsb3MtbXNnK2p3dCJ9.eyJpc3MiOiJodHRwczovL2lhbS5sb2NhbCIsInN1YiI6IjBmM2MyYTllLTdiMTQtNGQ2YS05YzgxLTJlNWY2YTdiOGM5MCIsImF1ZCI6Im1haWxvcyIsImlhdCI6MTc5MzE3ODAwMCwiZXhwIjoxNzkzMTc4MzAwLCJqdGkiOiI2ZjFkOGEyYy0zYjRlLTRmNWEtOGM5ZC0wZTFmMmEzYjRjNWQiLCJ0b3BpYyI6ImlhbS5hdXRoLnBhc3N3b3JkX3Jlc2V0X3JlcXVlc3RlZCIsImJvZHlfc2hhMjU2IjoiLTMtMlhxdnRZU3FQMlFXTEVSOUJqeVp1LUxjOHJvbDVpOUx2Z29DUTEwSSJ9.e_pheKfjozv-G_Th1YFSFVm_v4tb-SaeNbducPCmTeeiV4U88jov3ZPZxLPItgPYLDHf5ouN4SOPkgjU6VXNDw",
+      "topic": "iam.auth.password_reset_requested",
+      "body": "{\"id\":\"6f1d8a2c-3b4e-4f5a-8c9d-0e1f2a3b4c5d\",\"type\":\"iam.auth.password_reset_requested\",\"source\":\"iam\",\"data\":{\"email\":\"raza@iam.local\",\"reset_link\":\"https://iam.local/reset?t=redacted\"},\"timestamp\":\"2026-10-29T08:20:00Z\",\"tenant_uuid\":\"7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\"}",
+      "now": 1793178030,
+      "valid": false,
+      "reason": "signature"
+    }
+  ]
+}
