@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/twmb/franz-go/pkg/kfake"
 
+	"github.com/razatechofficial/mail-os/application/applications/appstest"
 	"github.com/razatechofficial/mail-os/application/inbound"
 	"github.com/razatechofficial/mail-os/config"
 	"github.com/razatechofficial/mail-os/domain/access"
@@ -146,11 +147,11 @@ func newStack(t *testing.T) *stack {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grants := access.NewServiceGrants([]access.ServiceGrant{{ClientID: "iam", TopicPatterns: []string{"iam.*"}}})
+	apps := appstest.New(appstest.Server("iam", tenant, "iam.*"))
 	disp, log := &dispatcher{}, &auditLog{}
-	svc := inbound.NewService(grants, tenants{}, &records{rows: map[string]inbound.Record{}}, tx{}, disp, log)
+	svc := inbound.NewService(apps, tenants{}, &records{rows: map[string]inbound.Record{}}, tx{}, disp, log)
 	return &stack{iam: iam, cfg: config.Kafka{Brokers: c.ListenAddrs(), GroupID: "mailos-events"},
-		h: NewHandler(verifier, grants, svc, log), disp: disp, audit: log}
+		h: NewHandler(verifier, svc, log), disp: disp, audit: log}
 }
 
 // value is an IAM event on topic, as IAM's SignedPublisher marshals it; the

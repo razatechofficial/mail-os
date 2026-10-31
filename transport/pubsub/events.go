@@ -1,7 +1,7 @@
 // Package pubsub is the Kafka transport for events IAM publishes (contract
 // §2): each record's iam-msg-sig is verified, its envelope parsed and
-// matched to the signature, its sender authorised for the topic and tenant,
-// and the event handed to the inbound use case. Every rejection is audited
+// matched to the signature, and the event handed to the inbound use case,
+// which authorises its sender's application for the topic and tenant. Every rejection is audited
 // as mailos.message_rejected with the reason, never the body.
 //
 // MailOS consumes Kafka only. IAM can also publish over NATS and RabbitMQ;
@@ -16,6 +16,7 @@ import (
 
 	"github.com/razatechofficial/mail-os/application/inbound"
 	"github.com/razatechofficial/mail-os/domain/access"
+	domainapp "github.com/razatechofficial/mail-os/domain/application"
 	"github.com/razatechofficial/mail-os/domain/event"
 	"github.com/razatechofficial/mail-os/infrastructure/audit"
 	"github.com/razatechofficial/mail-os/infrastructure/kafka"
@@ -44,7 +45,6 @@ type Auditor interface {
 // error redelivers it.
 type Handler struct {
 	verifier Verifier
-	grants   access.ServiceGrants
 	events   Dispatcher
 	audit    Auditor
 
@@ -55,8 +55,8 @@ type Handler struct {
 }
 
 // NewHandler builds the handler.
-func NewHandler(verifier Verifier, grants access.ServiceGrants, events Dispatcher, audit Auditor) *Handler {
-	return &Handler{verifier: verifier, grants: grants, events: events, audit: audit}
+func NewHandler(verifier Verifier, events Dispatcher, audit Auditor) *Handler {
+	return &Handler{verifier: verifier, events: events, audit: audit}
 }
 
 // Handle implements kafka.Handler.
@@ -88,20 +88,17 @@ func (h *Handler) Handle(ctx context.Context, rec kafka.Record) error {
 	}
 
 	// The signed body is now trusted: act as the signing client, for the
-	// tenant the event names (or the one configured for the client).
+	// tenant the event names. Check 6 (the client's application may publish
+	// the topic for that tenant, contract §4) is the inbound use case's.
 	p := access.Principal{
 		Kind: access.KindService, Subject: "client:" + claims.ClientID, ClientID: claims.ClientID,
 		TenantID: ev.TenantUUID, OrgID: ev.OrganizationUUID, TokenID: claims.JTI,
 	}
 	ctx = access.WithPrincipal(ctx, p)
-	// 6. The sender may publish the topic for the tenant (contract §4).
-	if _, err := h.grants.Authorize(p, ev.Type, ev.TenantUUID); err != nil {
-		return h.reject(ctx, rec, stepSixReason(err), err, &claims, ev.ID)
-	}
 	res, err := h.events.Dispatch(ctx, inbound.In{Transport: inbound.TransportKafka, Event: ev, TopicHint: rec.Topic})
 	if err != nil {
-		if refusal, ok := inbound.IsRefusal(err); ok {
-			return h.reject(ctx, rec, stepSixReason(refusal), err, &claims, ev.ID)
+		if _, ok := inbound.IsRefusal(err); ok {
+			return h.reject(ctx, rec, stepSixReason(err), err, &claims, ev.ID)
 		}
 		switch apperrors.KindOf(err) {
 		case apperrors.KindInvalidInput, apperrors.KindBadRequest, apperrors.KindConflict:
@@ -118,11 +115,11 @@ func (h *Handler) Handle(ctx context.Context, rec kafka.Record) error {
 	return nil
 }
 
-// stepSixReason names an allow-list refusal for mailos.message_rejected:
-// unknown_client, or unauthorised_topic for a topic or tenant the client
-// may not publish (the access reason is audited beside it as refusal).
+// stepSixReason names an application refusal for mailos.message_rejected:
+// unknown_client, or unauthorised_topic for anything else the application
+// does not allow (its own reason is audited beside it as refusal).
 func stepSixReason(err error) event.Reason {
-	if errors.Is(err, access.ErrUnknownClient) {
+	if errors.Is(err, domainapp.ErrUnknownClient) {
 		return event.ReasonUnknownClient
 	}
 	return event.ReasonUnauthorisedTopic
@@ -149,8 +146,8 @@ func (h *Handler) reject(ctx context.Context, rec kafka.Record, reason event.Rea
 		meta["event_id"] = eventID[0]
 		resource = eventID[0]
 	}
-	if access.Reason(cause) != "refused" {
-		meta["refusal"] = access.Reason(cause)
+	if r := domainapp.Reason(cause); r != "" {
+		meta["refusal"] = r
 	}
 	logger.SecurityWarn("message rejected", logger.String("reason", string(reason)), logger.String("topic", rec.Topic),
 		logger.Int("partition", int(rec.Partition)), logger.Int64("offset", rec.Offset), logger.Err(cause))

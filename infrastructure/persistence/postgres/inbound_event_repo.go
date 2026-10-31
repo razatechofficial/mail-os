@@ -26,10 +26,10 @@ func NewInboundEventRepository(db *Pool) *InboundEventRepository {
 func (r *InboundEventRepository) Claim(ctx context.Context, rec inbound.Record) (inbound.Record, bool, error) {
 	q := QuerierFromContext(ctx, r.db)
 	tag, err := q.Exec(ctx, `
-		INSERT INTO inbound_events (org_id, event_id, topic, client_id, transport, data_sha256, received_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO inbound_events (org_id, event_id, topic, client_id, application_id, transport, data_sha256, received_at)
+		VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, $7, $8)
 		ON CONFLICT (org_id, event_id) DO NOTHING`,
-		rec.TenantID, rec.EventID, rec.Topic, rec.ClientID, rec.Transport, rec.DataSHA256, rec.ReceivedAt)
+		rec.TenantID, rec.EventID, rec.Topic, rec.ClientID, rec.ApplicationID, rec.Transport, rec.DataSHA256, rec.ReceivedAt)
 	if err != nil {
 		return inbound.Record{}, false, err
 	}
@@ -38,9 +38,10 @@ func (r *InboundEventRepository) Claim(ctx context.Context, rec inbound.Record) 
 	}
 	var prior inbound.Record
 	err = q.QueryRow(ctx, `
-		SELECT org_id, event_id, topic, client_id, transport, data_sha256, COALESCE(message_id, ''), received_at
+		SELECT org_id, event_id, topic, client_id, COALESCE(application_id, ''), transport, data_sha256,
+			COALESCE(message_id, ''), received_at
 		FROM inbound_events WHERE org_id = $1 AND event_id = $2`, rec.TenantID, rec.EventID).
-		Scan(&prior.TenantID, &prior.EventID, &prior.Topic, &prior.ClientID, &prior.Transport,
+		Scan(&prior.TenantID, &prior.EventID, &prior.Topic, &prior.ClientID, &prior.ApplicationID, &prior.Transport,
 			&prior.DataSHA256, &prior.MessageID, &prior.ReceivedAt)
 	return prior, false, err
 }
