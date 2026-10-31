@@ -53,7 +53,7 @@ func IsPermanent(err error) bool {
 // starts at the earliest retained offset; expired signatures there are
 // rejected, never silently skipped.
 type Consumer struct {
-	cl             *kgo.Client
+	opts           []kgo.Opt
 	handler        Handler
 	handlerTimeout time.Duration
 	backoff        backoff
@@ -61,14 +61,16 @@ type Consumer struct {
 
 	mu        sync.Mutex
 	started   bool
+	cl        *kgo.Client
 	cancel    context.CancelFunc
 	done      chan struct{}
 	closeOnce sync.Once
 }
 
-// NewConsumer joins cfg.GroupID on cfg's brokers for topics (cfg.Topics
-// when topics is empty) and hands every record to handler. It does not
-// connect until Run.
+// NewConsumer consumes topics (cfg.Topics when topics is empty) as a member
+// of cfg.GroupID on cfg's brokers and hands every record to handler. The
+// TLS and SASL settings are loaded now; the client is created, and joins the
+// group, only in Run, so a process that never runs it holds no partitions.
 func NewConsumer(cfg config.Kafka, topics []string, handler Handler, opts ...Option) (*Consumer, error) {
 	if handler == nil {
 		return nil, errors.New("kafka consumer: a handler is required")
@@ -95,12 +97,8 @@ func NewConsumer(cfg config.Kafka, topics []string, handler Handler, opts ...Opt
 		kgo.AutoCommitMarks(),
 		kgo.BlockRebalanceOnPoll(),
 	}, base...)
-	cl, err := kgo.NewClient(kopts...)
-	if err != nil {
-		return nil, fmt.Errorf("kafka consumer: %w", err)
-	}
 	return &Consumer{
-		cl:             cl,
+		opts:           kopts,
 		handler:        handler,
 		handlerTimeout: o.handlerTimeout,
 		backoff:        o.backoff,
@@ -118,6 +116,12 @@ func (c *Consumer) Run(ctx context.Context) error {
 		return errors.New("kafka consumer: already run")
 	}
 	c.started = true
+	cl, err := kgo.NewClient(c.opts...)
+	if err != nil {
+		c.mu.Unlock()
+		return fmt.Errorf("kafka consumer: %w", err)
+	}
+	c.cl = cl
 	ctx, c.cancel = context.WithCancel(ctx)
 	c.done = make(chan struct{})
 	c.mu.Unlock()
@@ -125,7 +129,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 	defer c.release()
 
 	for {
-		fetches := c.cl.PollRecords(ctx, c.maxPollRecords)
+		fetches := cl.PollRecords(ctx, c.maxPollRecords)
 		if fetches.IsClientClosed() || ctx.Err() != nil {
 			return nil
 		}
@@ -139,10 +143,10 @@ func (c *Consumer) Run(ctx context.Context) error {
 				stopped = true
 				break
 			}
-			c.cl.MarkCommitRecords(kr)
+			cl.MarkCommitRecords(kr)
 		}
 		c.commit()
-		c.cl.AllowRebalance()
+		cl.AllowRebalance()
 		if stopped {
 			return nil
 		}
@@ -165,9 +169,15 @@ func (c *Consumer) Close() {
 
 func (c *Consumer) release() {
 	c.closeOnce.Do(func() {
+		c.mu.Lock()
+		cl := c.cl
+		c.mu.Unlock()
+		if cl == nil {
+			return
+		}
 		c.commit()
-		c.cl.AllowRebalance()
-		c.cl.Close()
+		cl.AllowRebalance()
+		cl.Close()
 	})
 }
 

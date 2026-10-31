@@ -144,24 +144,26 @@ func TestVerifyRejections(t *testing.T) {
 		value  []byte
 		want   event.Reason
 	}{
-		{"missing", func() string { return "" }, testTopic, testValue, event.ReasonMissingSignature},
+		{"missing", func() string { return "" }, testTopic, testValue, event.ReasonMalformed},
 		{"not a JWS", func() string { return "not-a-jws" }, testTopic, testValue, event.ReasonMalformed},
 		{"JWS JSON serialisation", func() string { return `{"payload":"e30","signatures":[]}` }, testTopic, testValue, event.ReasonMalformed},
-		{"unpublished key", func() string { return f.iam.Sign(f.iam.Unpublished, Type, f.claims()) }, testTopic, testValue, event.ReasonBadSignature},
-		{"wrong typ", func() string { return f.iam.Sign(f.iam.Keys[0], "JWT", f.claims()) }, testTopic, testValue, event.ReasonBadSignature},
-		{"access token", func() string { return f.iam.ServiceToken(testClient, "") }, testTopic, testValue, event.ReasonBadSignature},
+		{"unpublished key", func() string { return f.iam.Sign(f.iam.Unpublished, Type, f.claims()) }, testTopic, testValue, event.ReasonUnknownKey},
+		{"wrong typ", func() string { return f.iam.Sign(f.iam.Keys[0], "JWT", f.claims()) }, testTopic, testValue, event.ReasonType},
+		{"access token", func() string { return f.iam.ServiceToken(testClient, "") }, testTopic, testValue, event.ReasonType},
 		{"forged signature", func() string {
 			h := f.sign(nil)
 			other := f.sign(func(c map[string]any) { c["topic"] = "iam.auth.login" })
 			return h[:strings.LastIndex(h, ".")] + other[strings.LastIndex(other, "."):]
-		}, testTopic, testValue, event.ReasonBadSignature},
-		{"wrong issuer", func() string { return f.sign(func(c map[string]any) { c["iss"] = "https://evil.example" }) }, testTopic, testValue, event.ReasonWrongIssuer},
-		{"wrong audience", func() string { return f.sign(func(c map[string]any) { c["aud"] = "other" }) }, testTopic, testValue, event.ReasonWrongAudience},
-		{"extra audience", func() string { return f.sign(func(c map[string]any) { c["aud"] = []string{"mailos", "other"} }) }, testTopic, testValue, event.ReasonWrongAudience},
+		}, testTopic, testValue, event.ReasonSignature},
+		{"wrong issuer", func() string { return f.sign(func(c map[string]any) { c["iss"] = "https://evil.example" }) }, testTopic, testValue, event.ReasonIssuer},
+		{"wrong audience", func() string { return f.sign(func(c map[string]any) { c["aud"] = "other" }) }, testTopic, testValue, event.ReasonAudience},
+		{"one-element audience array", func() string { return f.sign(func(c map[string]any) { c["aud"] = []string{"other"} }) }, testTopic, testValue, event.ReasonAudience},
+		{"two audiences", func() string { return f.sign(func(c map[string]any) { c["aud"] = []string{"mailos", "other"} }) }, testTopic, testValue, event.ReasonMalformed},
+		{"string iat", func() string { return f.sign(func(c map[string]any) { c["iat"] = "now" }) }, testTopic, testValue, event.ReasonMalformed},
 		{"no exp", func() string { return f.sign(func(c map[string]any) { delete(c, "exp") }) }, testTopic, testValue, event.ReasonMalformed},
 		{"lifetime over five minutes", func() string {
 			return f.sign(func(c map[string]any) { c["exp"] = time.Now().Add(time.Hour).Unix() })
-		}, testTopic, testValue, event.ReasonMalformed},
+		}, testTopic, testValue, event.ReasonLifetime},
 		{"expired beyond skew", func() string {
 			iat := time.Now().Add(-Lifetime - 2*time.Minute)
 			return f.sign(func(c map[string]any) { c["iat"], c["exp"] = iat.Unix(), iat.Add(Lifetime).Unix() })
@@ -169,11 +171,11 @@ func TestVerifyRejections(t *testing.T) {
 		{"issued in the future beyond skew", func() string {
 			iat := time.Now().Add(2 * time.Minute)
 			return f.sign(func(c map[string]any) { c["iat"], c["exp"] = iat.Unix(), iat.Add(Lifetime).Unix() })
-		}, testTopic, testValue, event.ReasonExpired},
-		{"topic mismatch", func() string { return f.sign(nil) }, "iam.auth.login", testValue, event.ReasonTopicMismatch},
-		{"no topic claim", func() string { return f.sign(func(c map[string]any) { delete(c, "topic") }) }, testTopic, testValue, event.ReasonTopicMismatch},
-		{"body tampered", func() string { return f.sign(nil) }, testTopic, []byte(strings.Replace(string(testValue), "a@example.com", "b@example.com", 1)), event.ReasonBodyMismatch},
-		{"body hash missing", func() string { return f.sign(func(c map[string]any) { delete(c, "body_sha256") }) }, testTopic, testValue, event.ReasonBodyMismatch},
+		}, testTopic, testValue, event.ReasonNotYetValid},
+		{"topic mismatch", func() string { return f.sign(nil) }, "iam.auth.login", testValue, event.ReasonTopic},
+		{"no topic claim", func() string { return f.sign(func(c map[string]any) { delete(c, "topic") }) }, testTopic, testValue, event.ReasonMalformed},
+		{"body tampered", func() string { return f.sign(nil) }, testTopic, []byte(strings.Replace(string(testValue), "a@example.com", "b@example.com", 1)), event.ReasonBodyHash},
+		{"body hash missing", func() string { return f.sign(func(c map[string]any) { delete(c, "body_sha256") }) }, testTopic, testValue, event.ReasonMalformed},
 		{"no sub", func() string { return f.sign(func(c map[string]any) { delete(c, "sub") }) }, testTopic, testValue, event.ReasonMalformed},
 		{"no jti", func() string { return f.sign(func(c map[string]any) { delete(c, "jti") }) }, testTopic, testValue, event.ReasonMalformed},
 	}
@@ -194,7 +196,7 @@ func TestVerifyAllowsClockSkew(t *testing.T) {
 	}
 
 	header = f.iam.MessageSignature(testClient, testTopic, testValue)
-	f.offset = Lifetime + 90*time.Second
+	f.offset = Lifetime + time.Minute // exactly exp + skew
 	_, err := f.verifier.Verify(context.Background(), header, testTopic, testValue)
 	wantReason(t, err, event.ReasonExpired)
 
@@ -217,7 +219,7 @@ func TestVerifyRejectsReplayedJTI(t *testing.T) {
 		t.Fatalf("first use: %v", err)
 	}
 	_, err = f.verifier.Verify(ctx, header, testTopic, testValue)
-	wantReason(t, err, event.ReasonReplayed)
+	wantReason(t, err, event.ReasonReplay)
 
 	// The record lives until exp + skew.
 	ttl := f.store.ttl(ReplayKeyPrefix + c.JTI)
@@ -238,9 +240,9 @@ func TestVerifyAllowsRedeliveryOfTheSameRecord(t *testing.T) {
 		t.Fatalf("redelivery of the same record: %v", err)
 	}
 	_, err := f.verifier.Verify(ctx, header, testTopic, testValue, Delivery(testTopic+"/0/42"))
-	wantReason(t, err, event.ReasonReplayed)
+	wantReason(t, err, event.ReasonReplay)
 	_, err = f.verifier.Verify(ctx, header, testTopic, testValue)
-	wantReason(t, err, event.ReasonReplayed)
+	wantReason(t, err, event.ReasonReplay)
 }
 
 func TestVerifyJWKSDownIsTransient(t *testing.T) {
@@ -269,8 +271,10 @@ func TestVerifyReplayStoreDownIsTransient(t *testing.T) {
 	if !IsUnavailable(err) {
 		t.Fatalf("err = %v, want ErrUnavailable (fail closed)", err)
 	}
-	if _, ok := event.ReasonOf(err); ok {
-		t.Fatalf("a store outage is reported as a rejection: %v", err)
+	// IAM names it a rejection; it is transient so the message is retried.
+	var r *event.Rejection
+	if !errors.As(err, &r) || r.Reason != event.ReasonReplayGuardUnavailable || r.Permanent() {
+		t.Fatalf("err = %v, want a transient replay_guard_unavailable rejection", err)
 	}
 }
 

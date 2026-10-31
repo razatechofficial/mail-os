@@ -129,7 +129,7 @@ func TestConsumerRetriesTransientAndCommitsAfterRejection(t *testing.T) {
 				return errTransient
 			}
 		case 2:
-			return event.Reject(event.ReasonBadSignature, nil)
+			return event.Reject(event.ReasonSignature, nil)
 		}
 		return nil
 	})
@@ -285,7 +285,7 @@ func TestProducerFailsWhenTheBrokerIsGone(t *testing.T) {
 }
 
 func TestIsPermanent(t *testing.T) {
-	if !IsPermanent(errors.Join(errTransient, event.Reject(event.ReasonReplayed, nil))) {
+	if !IsPermanent(errors.Join(errTransient, event.Reject(event.ReasonReplay, nil))) {
 		t.Error("a wrapped rejection is not permanent")
 	}
 	if IsPermanent(errTransient) || IsPermanent(nil) {

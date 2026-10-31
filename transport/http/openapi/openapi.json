@@ -13,6 +13,157 @@
       }
     },
     "schemas": {
+      "Branding": {
+        "properties": {
+          "background_color": {
+            "type": "string"
+          },
+          "company_address": {
+            "type": "string"
+          },
+          "company_name": {
+            "type": "string"
+          },
+          "content_background_color": {
+            "type": "string"
+          },
+          "font_family": {
+            "type": "string"
+          },
+          "footer_text": {
+            "type": "string"
+          },
+          "link_color": {
+            "type": "string"
+          },
+          "logo_alt": {
+            "type": "string"
+          },
+          "logo_url": {
+            "type": "string"
+          },
+          "primary_color": {
+            "type": "string"
+          },
+          "text_color": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "Draft": {
+        "properties": {
+          "design": {
+            "description": "Designer node tree, root \"email\" (max 512 KiB).",
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "html_body": {
+            "description": "Compiled HTML (max 1 MiB); sanitised on save.",
+            "type": "string"
+          },
+          "locale": {
+            "enum": [
+              "en",
+              "ur"
+            ],
+            "type": "string"
+          },
+          "preheader": {
+            "maxLength": 255,
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "subject": {
+            "maxLength": 998,
+            "type": "string"
+          },
+          "template_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "text_body": {
+            "description": "Plain text (max 256 KiB).",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updated_by": {
+            "type": "string"
+          },
+          "variables": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "DraftInput": {
+        "properties": {
+          "design": {
+            "description": "Designer node tree, root \"email\" (max 512 KiB).",
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "html_body": {
+            "description": "Compiled HTML (max 1 MiB); sanitised on save.",
+            "type": "string"
+          },
+          "locale": {
+            "enum": [
+              "en",
+              "ur"
+            ],
+            "type": "string"
+          },
+          "preheader": {
+            "maxLength": 255,
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "subject": {
+            "maxLength": 998,
+            "type": "string"
+          },
+          "text_body": {
+            "description": "Plain text (max 256 KiB).",
+            "type": "string"
+          },
+          "variables": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "locale",
+          "revision",
+          "subject",
+          "html_body",
+          "text_body"
+        ],
+        "type": "object"
+      },
       "Error": {
         "properties": {
           "error": {
@@ -85,310 +236,124 @@
         "type": "object"
       },
       "Template": {
-        "type": "object",
         "properties": {
+          "category": {
+            "enum": [
+              "transactional",
+              "marketing",
+              "notification"
+            ],
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "default_locale": {
+            "enum": [
+              "en",
+              "ur"
+            ],
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 2000,
+            "type": "string"
+          },
           "id": {
-            "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 255,
+            "type": "string"
           },
           "org_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "name": {
-            "type": "string",
-            "maxLength": 255
+            "format": "uuid",
+            "type": "string"
           },
           "slug": {
-            "type": "string",
             "maxLength": 100,
-            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
-          },
-          "category": {
-            "type": "string",
-            "enum": [
-              "transactional",
-              "marketing",
-              "notification"
-            ]
-          },
-          "description": {
-            "type": "string",
-            "maxLength": 2000
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "type": "string"
           },
           "topic": {
             "type": "string"
           },
-          "default_locale": {
-            "type": "string",
-            "enum": [
-              "en",
-              "ur"
-            ]
-          },
-          "is_active": {
-            "type": "boolean"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
           "updated_at": {
-            "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "type": "string"
           }
-        }
+        },
+        "type": "object"
       },
       "TemplateInput": {
-        "type": "object",
         "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 255
-          },
-          "slug": {
-            "type": "string",
-            "maxLength": 100,
-            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
-          },
-          "description": {
-            "type": "string",
-            "maxLength": 2000
-          },
           "category": {
-            "type": "string",
             "enum": [
               "transactional",
               "marketing",
               "notification"
-            ]
-          },
-          "topic": {
+            ],
             "type": "string"
           },
           "default_locale": {
-            "type": "string",
             "enum": [
               "en",
               "ur"
-            ]
-          },
-          "is_active": {
-            "type": "boolean"
-          }
-        }
-      },
-      "Draft": {
-        "type": "object",
-        "properties": {
-          "locale": {
-            "type": "string",
-            "enum": [
-              "en",
-              "ur"
-            ]
-          },
-          "subject": {
-            "type": "string",
-            "maxLength": 998
-          },
-          "preheader": {
-            "type": "string",
-            "maxLength": 255
-          },
-          "design": {
-            "type": [
-              "object",
-              "null"
             ],
-            "description": "Designer node tree, root \"email\" (max 512 KiB)."
-          },
-          "html_body": {
-            "type": "string",
-            "description": "Compiled HTML (max 1 MiB); sanitised on save."
-          },
-          "text_body": {
-            "type": "string",
-            "description": "Plain text (max 256 KiB)."
-          },
-          "variables": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "template_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "revision": {
-            "type": "integer"
-          },
-          "updated_by": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "DraftInput": {
-        "type": "object",
-        "required": [
-          "locale",
-          "revision",
-          "subject",
-          "html_body",
-          "text_body"
-        ],
-        "properties": {
-          "locale": {
-            "type": "string",
-            "enum": [
-              "en",
-              "ur"
-            ]
-          },
-          "subject": {
-            "type": "string",
-            "maxLength": 998
-          },
-          "preheader": {
-            "type": "string",
-            "maxLength": 255
-          },
-          "design": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "description": "Designer node tree, root \"email\" (max 512 KiB)."
-          },
-          "html_body": {
-            "type": "string",
-            "description": "Compiled HTML (max 1 MiB); sanitised on save."
-          },
-          "text_body": {
-            "type": "string",
-            "description": "Plain text (max 256 KiB)."
-          },
-          "variables": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "revision": {
-            "type": "integer"
-          }
-        }
-      },
-      "Version": {
-        "type": "object",
-        "description": "Immutable once published.",
-        "properties": {
-          "locale": {
-            "type": "string",
-            "enum": [
-              "en",
-              "ur"
-            ]
-          },
-          "subject": {
-            "type": "string",
-            "maxLength": 998
-          },
-          "preheader": {
-            "type": "string",
-            "maxLength": 255
-          },
-          "design": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "description": "Designer node tree, root \"email\" (max 512 KiB)."
-          },
-          "html_body": {
-            "type": "string",
-            "description": "Compiled HTML (max 1 MiB); sanitised on save."
-          },
-          "text_body": {
-            "type": "string",
-            "description": "Plain text (max 256 KiB)."
-          },
-          "variables": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "template_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "version": {
-            "type": "integer"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "published"
-            ]
-          },
-          "is_active": {
-            "type": "boolean"
-          },
-          "published_by": {
-            "type": "string"
-          },
-          "published_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "Topic": {
-        "type": "object",
-        "properties": {
-          "topic": {
-            "type": "string"
-          },
-          "name": {
             "type": "string"
           },
           "description": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 255,
+            "type": "string"
+          },
+          "slug": {
+            "maxLength": 100,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "type": "string"
+          },
+          "topic": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Topic": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
             "type": "string"
           },
           "source": {
-            "type": "string",
             "enum": [
               "iam",
               "mailos"
-            ]
+            ],
+            "type": "string"
+          },
+          "topic": {
+            "type": "string"
           },
           "variables": {
-            "type": "array",
             "items": {
-              "type": "object",
               "properties": {
                 "key": {
                   "type": "string"
                 },
-                "label": {
-                  "type": "string"
-                },
                 "kind": {
-                  "type": "string",
                   "enum": [
                     "text",
                     "url",
@@ -396,58 +361,93 @@
                     "datetime",
                     "number",
                     "secret"
-                  ]
+                  ],
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
                 },
                 "sample": {}
-              }
-            }
+              },
+              "type": "object"
+            },
+            "type": "array"
           }
-        }
+        },
+        "type": "object"
       },
-      "Branding": {
-        "type": "object",
+      "Version": {
+        "description": "Immutable once published.",
         "properties": {
-          "company_name": {
+          "created_at": {
+            "format": "date-time",
             "type": "string"
           },
-          "logo_url": {
-            "type": "string"
-          },
-          "logo_alt": {
-            "type": "string"
-          },
-          "primary_color": {
-            "type": "string"
-          },
-          "background_color": {
-            "type": "string"
-          },
-          "content_background_color": {
-            "type": "string"
-          },
-          "text_color": {
-            "type": "string"
-          },
-          "link_color": {
-            "type": "string"
-          },
-          "font_family": {
-            "type": "string"
-          },
-          "company_address": {
-            "type": "string"
-          },
-          "footer_text": {
-            "type": "string"
-          },
-          "updated_at": {
+          "design": {
+            "description": "Designer node tree, root \"email\" (max 512 KiB).",
             "type": [
-              "string",
+              "object",
               "null"
+            ]
+          },
+          "html_body": {
+            "description": "Compiled HTML (max 1 MiB); sanitised on save.",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "locale": {
+            "enum": [
+              "en",
+              "ur"
             ],
-            "format": "date-time"
+            "type": "string"
+          },
+          "preheader": {
+            "maxLength": 255,
+            "type": "string"
+          },
+          "published_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "published_by": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "published"
+            ],
+            "type": "string"
+          },
+          "subject": {
+            "maxLength": 998,
+            "type": "string"
+          },
+          "template_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "text_body": {
+            "description": "Plain text (max 256 KiB).",
+            "type": "string"
+          },
+          "variables": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "version": {
+            "type": "integer"
           }
-        }
+        },
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -507,6 +507,648 @@
         ],
         "x-permission": "audit:export",
         "x-step-up": true
+      }
+    },
+    "/api/v1/campaigns": {
+      "get": {
+        "operationId": "get_campaigns",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List (Campaign)",
+        "tags": [
+          "campaigns"
+        ],
+        "x-permission": "campaigns:read",
+        "description": "Permission: `campaigns:read`. Another tenant's records are 404."
+      },
+      "post": {
+        "operationId": "post_campaigns",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create (Campaign)",
+        "tags": [
+          "campaigns"
+        ],
+        "x-permission": "campaigns:manage",
+        "description": "Permission: `campaigns:manage`. Another tenant's records are 404."
+      }
+    },
+    "/api/v1/campaigns/{id}": {
+      "delete": {
+        "operationId": "delete_campaigns_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete (Campaign)",
+        "tags": [
+          "campaigns"
+        ],
+        "x-permission": "campaigns:manage",
+        "description": "Permission: `campaigns:manage`. Another tenant's records are 404."
+      },
+      "get": {
+        "operationId": "get_campaigns_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get (Campaign)",
+        "tags": [
+          "campaigns"
+        ],
+        "x-permission": "campaigns:read",
+        "description": "Permission: `campaigns:read`. Another tenant's records are 404."
+      },
+      "put": {
+        "operationId": "put_campaigns_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update (Campaign)",
+        "tags": [
+          "campaigns"
+        ],
+        "x-permission": "campaigns:manage",
+        "description": "Permission: `campaigns:manage`. Another tenant's records are 404."
+      }
+    },
+    "/api/v1/campaigns/{id}/cancel": {
+      "post": {
+        "operationId": "post_campaigns_id_cancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Cancel (Campaign)",
+        "tags": [
+          "campaigns"
+        ],
+        "x-permission": "campaigns:manage",
+        "description": "Permission: `campaigns:manage`. Another tenant's records are 404."
+      }
+    },
+    "/api/v1/campaigns/{id}/launch": {
+      "post": {
+        "operationId": "post_campaigns_id_launch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Launch (Campaign)",
+        "tags": [
+          "campaigns"
+        ],
+        "x-permission": "campaigns:manage",
+        "description": "Permission: `campaigns:manage`. Another tenant's records are 404."
+      }
+    },
+    "/api/v1/campaigns/{id}/pause": {
+      "post": {
+        "operationId": "post_campaigns_id_pause",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Pause (Campaign)",
+        "tags": [
+          "campaigns"
+        ],
+        "x-permission": "campaigns:manage",
+        "description": "Permission: `campaigns:manage`. Another tenant's records are 404."
+      }
+    },
+    "/api/v1/campaigns/{id}/resume": {
+      "post": {
+        "operationId": "post_campaigns_id_resume",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Resume (Campaign)",
+        "tags": [
+          "campaigns"
+        ],
+        "x-permission": "campaigns:manage",
+        "description": "Permission: `campaigns:manage`. Another tenant's records are 404."
+      }
+    },
+    "/api/v1/contact-lists": {
+      "get": {
+        "operationId": "get_contact_lists",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List (ContactList)",
+        "tags": [
+          "contact-lists"
+        ],
+        "x-permission": "contacts:read",
+        "description": "Permission: `contacts:read`. Another tenant's records are 404."
+      },
+      "post": {
+        "operationId": "post_contact_lists",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create (ContactList)",
+        "tags": [
+          "contact-lists"
+        ],
+        "x-permission": "contacts:manage",
+        "description": "Permission: `contacts:manage`. Another tenant's records are 404."
+      }
+    },
+    "/api/v1/contact-lists/{id}": {
+      "delete": {
+        "operationId": "delete_contact_lists_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete (ContactList)",
+        "tags": [
+          "contact-lists"
+        ],
+        "x-permission": "contacts:manage",
+        "description": "Permission: `contacts:manage`. Another tenant's records are 404."
+      },
+      "get": {
+        "operationId": "get_contact_lists_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get (ContactList)",
+        "tags": [
+          "contact-lists"
+        ],
+        "x-permission": "contacts:read",
+        "description": "Permission: `contacts:read`. Another tenant's records are 404."
+      },
+      "put": {
+        "operationId": "put_contact_lists_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update (ContactList)",
+        "tags": [
+          "contact-lists"
+        ],
+        "x-permission": "contacts:manage",
+        "description": "Permission: `contacts:manage`. Another tenant's records are 404."
+      }
+    },
+    "/api/v1/contact-lists/{id}/members": {
+      "delete": {
+        "operationId": "delete_contact_lists_id_members",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove members (ContactList)",
+        "tags": [
+          "contact-lists"
+        ],
+        "x-permission": "contacts:manage",
+        "description": "Permission: `contacts:manage`. Another tenant's records are 404."
+      },
+      "get": {
+        "operationId": "get_contact_lists_id_members",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Members (ContactList)",
+        "tags": [
+          "contact-lists"
+        ],
+        "x-permission": "contacts:read",
+        "description": "Permission: `contacts:read`. Another tenant's records are 404."
+      },
+      "post": {
+        "operationId": "post_contact_lists_id_members",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add members (ContactList)",
+        "tags": [
+          "contact-lists"
+        ],
+        "x-permission": "contacts:manage",
+        "description": "Permission: `contacts:manage`. Another tenant's records are 404."
+      }
+    },
+    "/api/v1/contacts": {
+      "get": {
+        "operationId": "get_contacts",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List (Contact)",
+        "tags": [
+          "contacts"
+        ],
+        "x-permission": "contacts:read",
+        "description": "Permission: `contacts:read`. Another tenant's records are 404."
+      },
+      "post": {
+        "operationId": "post_contacts",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create (Contact)",
+        "tags": [
+          "contacts"
+        ],
+        "x-permission": "contacts:manage",
+        "description": "Permission: `contacts:manage`. Another tenant's records are 404."
+      }
+    },
+    "/api/v1/contacts/batch": {
+      "post": {
+        "operationId": "post_contacts_batch",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Import (Contact)",
+        "tags": [
+          "contacts"
+        ],
+        "x-permission": "contacts:manage",
+        "description": "Permission: `contacts:manage`. Another tenant's records are 404."
+      }
+    },
+    "/api/v1/contacts/{id}": {
+      "delete": {
+        "operationId": "delete_contacts_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete (Contact)",
+        "tags": [
+          "contacts"
+        ],
+        "x-permission": "contacts:manage",
+        "description": "Permission: `contacts:manage`. Another tenant's records are 404."
+      },
+      "get": {
+        "operationId": "get_contacts_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get (Contact)",
+        "tags": [
+          "contacts"
+        ],
+        "x-permission": "contacts:read",
+        "description": "Permission: `contacts:read`. Another tenant's records are 404."
+      },
+      "put": {
+        "operationId": "put_contacts_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update (Contact)",
+        "tags": [
+          "contacts"
+        ],
+        "x-permission": "contacts:manage",
+        "description": "Permission: `contacts:manage`. Another tenant's records are 404."
+      }
+    },
+    "/api/v1/events": {
+      "post": {
+        "operationId": "post_events",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Dispatch an event",
+        "tags": [
+          "events"
+        ],
+        "x-permission": "events:dispatch",
+        "description": "For service clients only (IAM client-credentials token with aud mailos). Body is IAM's event envelope {id, type, source, data, tenant_uuid, organization_uuid}. The client must be allow-listed for the topic (MAILOS_SERVICE_CLIENTS) and may act only for its tenant; refusals are 403 and audited as event.refused. 202 {accepted, delivery_id, event_id, duplicate}; a repeated id is a duplicate with no second message. Permission: `events:dispatch`."
       }
     },
     "/api/v1/keys/encryption": {
@@ -593,11 +1235,11 @@
           }
         },
         "security": [],
-        "summary": "Route",
+        "summary": "This document",
         "tags": [
           "openapi.json"
         ],
-        "x-stub": true
+        "description": "Served without authentication."
       }
     },
     "/api/v1/organizations": {
@@ -654,28 +1296,29 @@
     },
     "/api/v1/template-branding": {
       "get": {
+        "description": "Permission: `templates:read`.",
         "operationId": "get_template_branding",
         "responses": {
-          "default": {
-            "$ref": "#/components/responses/Error"
-          },
           "200": {
-            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
                     "data": {
                       "$ref": "#/components/schemas/Branding"
+                    },
+                    "success": {
+                      "type": "boolean"
                     }
-                  }
+                  },
+                  "type": "object"
                 }
               }
-            }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
         "security": [
@@ -687,32 +1330,42 @@
         "tags": [
           "template-branding"
         ],
-        "x-permission": "templates:read",
-        "description": "Permission: `templates:read`."
+        "x-permission": "templates:read"
       },
       "put": {
+        "description": "Permission: `branding:edit`.",
         "operationId": "put_template_branding",
-        "responses": {
-          "default": {
-            "$ref": "#/components/responses/Error"
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Branding"
+              }
+            }
           },
+          "required": true
+        },
+        "responses": {
           "200": {
-            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
                     "data": {
                       "$ref": "#/components/schemas/Branding"
+                    },
+                    "success": {
+                      "type": "boolean"
                     }
-                  }
+                  },
+                  "type": "object"
                 }
               }
-            }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
         "security": [
@@ -724,47 +1377,37 @@
         "tags": [
           "template-branding"
         ],
-        "x-permission": "branding:edit",
-        "description": "Permission: `branding:edit`.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Branding"
-              }
-            }
-          }
-        }
+        "x-permission": "branding:edit"
       }
     },
     "/api/v1/template-topics": {
       "get": {
+        "description": "Static catalogue built from IAM's events; secret variables are masked in previews and message views. Permission: `templates:read`.",
         "operationId": "get_template_topics",
         "responses": {
-          "default": {
-            "$ref": "#/components/responses/Error"
-          },
           "200": {
-            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
                     "data": {
-                      "type": "array",
                       "items": {
                         "$ref": "#/components/schemas/Topic"
-                      }
+                      },
+                      "type": "array"
+                    },
+                    "success": {
+                      "type": "boolean"
                     }
-                  }
+                  },
+                  "type": "object"
                 }
               }
-            }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
         "security": [
@@ -776,37 +1419,37 @@
         "tags": [
           "template-topics"
         ],
-        "x-permission": "templates:read",
-        "description": "Static catalogue built from IAM's events; secret variables are masked in previews and message views. Permission: `templates:read`."
+        "x-permission": "templates:read"
       }
     },
     "/api/v1/templates": {
       "get": {
+        "description": "Permission: `templates:read`.",
         "operationId": "get_templates",
         "responses": {
-          "default": {
-            "$ref": "#/components/responses/Error"
-          },
           "200": {
-            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
                     "data": {
-                      "type": "array",
                       "items": {
                         "$ref": "#/components/schemas/Template"
-                      }
+                      },
+                      "type": "array"
+                    },
+                    "success": {
+                      "type": "boolean"
                     }
-                  }
+                  },
+                  "type": "object"
                 }
               }
-            }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
         "security": [
@@ -818,32 +1461,42 @@
         "tags": [
           "templates"
         ],
-        "x-permission": "templates:read",
-        "description": "Permission: `templates:read`."
+        "x-permission": "templates:read"
       },
       "post": {
+        "description": "Permission: `templates:edit`.",
         "operationId": "post_templates",
-        "responses": {
-          "default": {
-            "$ref": "#/components/responses/Error"
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateInput"
+              }
+            }
           },
+          "required": true
+        },
+        "responses": {
           "201": {
-            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
                     "data": {
                       "$ref": "#/components/schemas/Template"
+                    },
+                    "success": {
+                      "type": "boolean"
                     }
-                  }
+                  },
+                  "type": "object"
                 }
               }
-            }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
         "security": [
@@ -855,22 +1508,12 @@
         "tags": [
           "templates"
         ],
-        "x-permission": "templates:edit",
-        "description": "Permission: `templates:edit`.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TemplateInput"
-              }
-            }
-          }
-        }
+        "x-permission": "templates:edit"
       }
     },
     "/api/v1/templates/{id}": {
       "delete": {
+        "description": "Permission: `templates:delete`.",
         "operationId": "delete_templates_id",
         "parameters": [
           {
@@ -896,10 +1539,10 @@
         "tags": [
           "templates"
         ],
-        "x-permission": "templates:delete",
-        "description": "Permission: `templates:delete`."
+        "x-permission": "templates:delete"
       },
       "get": {
+        "description": "Another tenant's template is 404. Permission: `templates:read`.",
         "operationId": "get_templates_id",
         "parameters": [
           {
@@ -912,26 +1555,26 @@
           }
         ],
         "responses": {
-          "default": {
-            "$ref": "#/components/responses/Error"
-          },
           "200": {
-            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
                     "data": {
                       "$ref": "#/components/schemas/Template"
+                    },
+                    "success": {
+                      "type": "boolean"
                     }
-                  }
+                  },
+                  "type": "object"
                 }
               }
-            }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
         "security": [
@@ -943,10 +1586,10 @@
         "tags": [
           "templates"
         ],
-        "x-permission": "templates:read",
-        "description": "Another tenant's template is 404. Permission: `templates:read`."
+        "x-permission": "templates:read"
       },
       "put": {
+        "description": "Permission: `templates:edit`.",
         "operationId": "put_templates_id",
         "parameters": [
           {
@@ -958,27 +1601,37 @@
             }
           }
         ],
-        "responses": {
-          "default": {
-            "$ref": "#/components/responses/Error"
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateInput"
+              }
+            }
           },
+          "required": true
+        },
+        "responses": {
           "200": {
-            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
                     "data": {
                       "$ref": "#/components/schemas/Template"
+                    },
+                    "success": {
+                      "type": "boolean"
                     }
-                  }
+                  },
+                  "type": "object"
                 }
               }
-            }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
         "security": [
@@ -990,22 +1643,12 @@
         "tags": [
           "templates"
         ],
-        "x-permission": "templates:edit",
-        "description": "Permission: `templates:edit`.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TemplateInput"
-              }
-            }
-          }
-        }
+        "x-permission": "templates:edit"
       }
     },
     "/api/v1/templates/{id}/active-version": {
       "get": {
+        "description": "?locale= (defaults to default_locale); 404 when none is published. Permission: `templates:read`.",
         "operationId": "get_templates_id_active_version",
         "parameters": [
           {
@@ -1018,26 +1661,26 @@
           }
         ],
         "responses": {
-          "default": {
-            "$ref": "#/components/responses/Error"
-          },
           "200": {
-            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
                     "data": {
                       "$ref": "#/components/schemas/Version"
+                    },
+                    "success": {
+                      "type": "boolean"
                     }
-                  }
+                  },
+                  "type": "object"
                 }
               }
-            }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
         "security": [
@@ -1049,12 +1692,12 @@
         "tags": [
           "templates"
         ],
-        "x-permission": "templates:read",
-        "description": "?locale= (defaults to default_locale); 404 when none is published. Permission: `templates:read`."
+        "x-permission": "templates:read"
       }
     },
     "/api/v1/templates/{id}/draft": {
       "get": {
+        "description": "?locale=en|ur. Revision 0 when none is saved, seeded from the active version. Permission: `templates:read`.",
         "operationId": "get_templates_id_draft",
         "parameters": [
           {
@@ -1067,26 +1710,26 @@
           }
         ],
         "responses": {
-          "default": {
-            "$ref": "#/components/responses/Error"
-          },
           "200": {
-            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
                     "data": {
                       "$ref": "#/components/schemas/Draft"
+                    },
+                    "success": {
+                      "type": "boolean"
                     }
-                  }
+                  },
+                  "type": "object"
                 }
               }
-            }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
         "security": [
@@ -1098,10 +1741,10 @@
         "tags": [
           "templates"
         ],
-        "x-permission": "templates:read",
-        "description": "?locale=en|ur. Revision 0 when none is saved, seeded from the active version. Permission: `templates:read`."
+        "x-permission": "templates:read"
       },
       "put": {
+        "description": "409 CONFLICT when revision is stale; 422 VALIDATION with details; unknown variables come back as meta.warnings. Raw HTML design nodes only for mailos_admin with FEATURE_RAW_HTML_BLOCKS. Permission: `templates:edit`.",
         "operationId": "put_templates_id_draft",
         "parameters": [
           {
@@ -1113,27 +1756,37 @@
             }
           }
         ],
-        "responses": {
-          "default": {
-            "$ref": "#/components/responses/Error"
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftInput"
+              }
+            }
           },
+          "required": true
+        },
+        "responses": {
           "200": {
-            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
                     "data": {
                       "$ref": "#/components/schemas/Draft"
+                    },
+                    "success": {
+                      "type": "boolean"
                     }
-                  }
+                  },
+                  "type": "object"
                 }
               }
-            }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
         "security": [
@@ -1145,22 +1798,12 @@
         "tags": [
           "templates"
         ],
-        "x-permission": "templates:edit",
-        "description": "409 CONFLICT when revision is stale; 422 VALIDATION with details; unknown variables come back as meta.warnings. Raw HTML design nodes only for mailos_admin with FEATURE_RAW_HTML_BLOCKS. Permission: `templates:edit`.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DraftInput"
-              }
-            }
-          }
-        }
+        "x-permission": "templates:edit"
       }
     },
     "/api/v1/templates/{id}/preview": {
       "post": {
+        "description": "Renders unsaved content with data; variables HTML-escaped by context. Rate limited per user. Permission: `templates:edit`.",
         "operationId": "post_templates_id_preview",
         "parameters": [
           {
@@ -1186,12 +1829,12 @@
         "tags": [
           "templates"
         ],
-        "x-permission": "templates:edit",
-        "description": "Renders unsaved content with data; variables HTML-escaped by context. Rate limited per user. Permission: `templates:edit`."
+        "x-permission": "templates:edit"
       }
     },
     "/api/v1/templates/{id}/publish": {
       "post": {
+        "description": "Body {locale, revision}. Creates an immutable version, active for its locale only. 403 FOUR_EYES_REQUIRED when the tenant requires four-eyes and the publisher last edited the draft. Permission: `templates:publish`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
         "operationId": "post_templates_id_publish",
         "parameters": [
           {
@@ -1204,26 +1847,26 @@
           }
         ],
         "responses": {
-          "default": {
-            "$ref": "#/components/responses/Error"
-          },
           "201": {
-            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
                     "data": {
                       "$ref": "#/components/schemas/Version"
+                    },
+                    "success": {
+                      "type": "boolean"
                     }
-                  }
+                  },
+                  "type": "object"
                 }
               }
-            }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
         "security": [
@@ -1236,12 +1879,12 @@
           "templates"
         ],
         "x-permission": "templates:publish",
-        "description": "Body {locale, revision}. Creates an immutable version, active for its locale only. 403 FOUR_EYES_REQUIRED when the tenant requires four-eyes and the publisher last edited the draft. Permission: `templates:publish`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
         "x-step-up": true
       }
     },
     "/api/v1/templates/{id}/test-send": {
       "post": {
+        "description": "Renders the saved draft, subject prefixed [Test], from a verified sending domain. Audited; rate limited per user. Permission: `templates:edit`.",
         "operationId": "post_templates_id_test_send",
         "parameters": [
           {
@@ -1267,12 +1910,12 @@
         "tags": [
           "templates"
         ],
-        "x-permission": "templates:edit",
-        "description": "Renders the saved draft, subject prefixed [Test], from a verified sending domain. Audited; rate limited per user. Permission: `templates:edit`."
+        "x-permission": "templates:edit"
       }
     },
     "/api/v1/templates/{id}/versions": {
       "get": {
+        "description": "?locale=; newest first. Permission: `templates:read`.",
         "operationId": "get_templates_id_versions",
         "parameters": [
           {
@@ -1285,29 +1928,29 @@
           }
         ],
         "responses": {
-          "default": {
-            "$ref": "#/components/responses/Error"
-          },
           "200": {
-            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
                     "data": {
-                      "type": "array",
                       "items": {
                         "$ref": "#/components/schemas/Version"
-                      }
+                      },
+                      "type": "array"
+                    },
+                    "success": {
+                      "type": "boolean"
                     }
-                  }
+                  },
+                  "type": "object"
                 }
               }
-            }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
         "security": [
@@ -1319,12 +1962,12 @@
         "tags": [
           "templates"
         ],
-        "x-permission": "templates:read",
-        "description": "?locale=; newest first. Permission: `templates:read`."
+        "x-permission": "templates:read"
       }
     },
     "/api/v1/templates/{id}/versions/{version}/restore": {
       "post": {
+        "description": "Body {locale, revision}. Permission: `templates:edit`.",
         "operationId": "post_templates_id_versions_version_restore",
         "parameters": [
           {
@@ -1345,26 +1988,26 @@
           }
         ],
         "responses": {
-          "default": {
-            "$ref": "#/components/responses/Error"
-          },
           "200": {
-            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
                     "data": {
                       "$ref": "#/components/schemas/Draft"
+                    },
+                    "success": {
+                      "type": "boolean"
                     }
-                  }
+                  },
+                  "type": "object"
                 }
               }
-            }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
         "security": [
@@ -1376,8 +2019,7 @@
         "tags": [
           "templates"
         ],
-        "x-permission": "templates:edit",
-        "description": "Body {locale, revision}. Permission: `templates:edit`."
+        "x-permission": "templates:edit"
       }
     },
     "/api/v1/tenant/settings": {

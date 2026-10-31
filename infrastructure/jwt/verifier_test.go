@@ -106,6 +106,32 @@ func TestAlgorithmBoundToKey(t *testing.T) {
 	}
 }
 
+// Verify names the kind of a signature refusal beside ErrInvalid.
+func TestVerifyRefusalKinds(t *testing.T) {
+	iam, v := newVerifier(t)
+	claims := map[string]any{"iss": iam.Issuer, "sub": "u", "aud": "mailos",
+		"iat": time.Now().Unix(), "exp": time.Now().Add(time.Minute).Unix()}
+	swapped := iam.Keys[0]
+	swapped.Algorithm = jose.RS256
+	good := iam.Sign(iam.Keys[0], "at+jwt", claims)
+	other := iam.Sign(iam.Keys[0], "at+jwt", map[string]any{"sub": "other"})
+	forged := good[:strings.LastIndex(good, ".")] + other[strings.LastIndex(other, "."):]
+	for name, tc := range map[string]struct {
+		raw  string
+		kind error
+	}{
+		"typ":         {iam.Sign(iam.Keys[0], "JWT", claims), jwt.ErrType},
+		"unknown kid": {iam.Sign(iam.Unpublished, "at+jwt", claims), jwt.ErrUnknownKey},
+		"alg swap":    {iam.Sign(swapped, "at+jwt", claims), jwt.ErrAlgorithm},
+		"signature":   {forged, jwt.ErrSignature},
+	} {
+		_, err := v.Verify(context.Background(), tc.raw, "at+jwt")
+		if !errors.Is(err, jwt.ErrInvalid) || !errors.Is(err, tc.kind) {
+			t.Errorf("%s: err = %v, want ErrInvalid and %v", name, err, tc.kind)
+		}
+	}
+}
+
 // A key IAM adds after MailOS cached the JWKS is picked up by kid.
 func TestRotationRefetches(t *testing.T) {
 	iam, v := newVerifier(t)

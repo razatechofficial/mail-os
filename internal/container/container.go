@@ -13,6 +13,8 @@ import (
 	grpclib "google.golang.org/grpc"
 
 	"github.com/razatechofficial/mail-os/application/auditlog"
+	"github.com/razatechofficial/mail-os/application/campaign"
+	"github.com/razatechofficial/mail-os/application/inbound"
 	appkm "github.com/razatechofficial/mail-os/application/keymanager"
 	appmessage "github.com/razatechofficial/mail-os/application/message"
 	appsendingdomain "github.com/razatechofficial/mail-os/application/sendingdomain"
@@ -66,13 +68,23 @@ type Container struct {
 	E2ESink *mailer.E2ESink
 	// AuditStream publishes the audit outbox (FEATURE_AUDIT_STREAM).
 	AuditStream *kafka.Producer
+	// CampaignSender hands campaign messages to the messaging slice. Its
+	// builder sets it before buildMarketing runs; nil leaves campaign
+	// launch answering 503.
+	CampaignSender campaign.CampaignSender
+
+	// EventDispatcher turns accepted events into messages; the messaging
+	// builder sets it before buildEvents. Inbound is the event use case
+	// behind POST /events, GRPCEvents (MailService.DispatchEvent delegates
+	// to it) and the Kafka consumer.
+	EventDispatcher inbound.Dispatcher
+	Inbound         *inbound.Service
+	GRPCEvents      *grpchandler.EventHandler
 
 	// Messaging (messaging.go). Messages is what other slices send with
 	// (SendTemplated, SendTest); SendingDomains answers VerifiedFrom.
 	Messages       *appmessage.Service
 	SendingDomains *appsendingdomain.Service
-	// MailEvents handles the gRPC DispatchEvent (the events slice).
-	MailEvents grpchandler.EventDispatcher
 
 	// Routes are the REST route sets; GRPCServices register on the gRPC
 	// server; Tasks register worker handlers and schedules; Consumers run
@@ -95,11 +107,18 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 		c.buildCore,
 		c.buildTemplates,
 		c.buildMessaging,
+		c.buildEvents,
+		c.buildMarketing,
 	} {
 		if err := build(ctx); err != nil {
 			c.Close()
 			return nil, err
 		}
+	}
+	// The probes run after every feature registered its own.
+	if err := bootstrap.CheckSchema(ctx, c.DB); err != nil {
+		c.Close()
+		return nil, err
 	}
 	return c, nil
 }
@@ -182,9 +201,6 @@ func (c *Container) buildInfrastructure(ctx context.Context) error {
 // manager's routes and schedule.
 func (c *Container) buildCore(ctx context.Context) error {
 	cfg := c.Cfg
-	if err := bootstrap.CheckSchema(ctx, c.DB); err != nil {
-		return err
-	}
 	if err := c.Keys.Bootstrap(ctx); err != nil {
 		return fmt.Errorf("key manager: %w", err)
 	}
