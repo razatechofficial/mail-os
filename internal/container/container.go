@@ -22,6 +22,7 @@ import (
 	"github.com/razatechofficial/mail-os/application/tenant"
 	"github.com/razatechofficial/mail-os/config"
 	"github.com/razatechofficial/mail-os/domain/access"
+	"github.com/razatechofficial/mail-os/domain/message"
 	"github.com/razatechofficial/mail-os/infrastructure/audit"
 	"github.com/razatechofficial/mail-os/infrastructure/cache/redis"
 	"github.com/razatechofficial/mail-os/infrastructure/dpop"
@@ -183,7 +184,7 @@ func (c *Container) buildInfrastructure(ctx context.Context) error {
 	c.Grants = access.NewServiceGrants(grants)
 
 	if cfg.E2EHooks.Enabled {
-		c.E2ESink = mailer.NewE2ESink(rdb.Client)
+		c.E2ESink = mailer.NewE2ESink(rdb.Client, message.Address{Name: cfg.SMTP.FromName, Email: cfg.SMTP.FromAddr})
 		c.Platform = c.E2ESink
 	} else {
 		relay, err := mailer.NewPlatformSMTP(cfg.SMTP, cfg.App.AllowsPlaintext(), mailer.Options{AllowPlaintext: cfg.App.AllowsPlaintext()})

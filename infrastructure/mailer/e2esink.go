@@ -31,14 +31,19 @@ type CapturedMail struct {
 // refused outside test environments by config): it keeps mail in Redis, so
 // the server's hook route can show what the worker process sent.
 type E2ESink struct {
-	rdb *goredis.Client
+	rdb  *goredis.Client
+	from message.Address
 }
 
-// NewE2ESink returns the sink.
-func NewE2ESink(rdb *goredis.Client) *E2ESink { return &E2ESink{rdb: rdb} }
+// NewE2ESink returns the sink; from is the platform sender, used like the
+// relay's when a message names none.
+func NewE2ESink(rdb *goredis.Client, from message.Address) *E2ESink {
+	return &E2ESink{rdb: rdb, from: from}
+}
 
 // Send records the message.
 func (s *E2ESink) Send(ctx context.Context, out message.Outgoing) (Result, error) {
+	out = out.WithDefaultFrom(s.from)
 	if err := out.Validate(); err != nil {
 		return Result{}, err
 	}
