@@ -92,8 +92,22 @@ func (v *Verifier) Now() time.Time { return v.now() }
 // never returned to the caller.
 var ErrInvalid = errors.New("invalid token")
 
+// Kinds of signature refusal Verify reports beside ErrInvalid, so a caller
+// such as the message-signature verifier can name the reason.
+var (
+	ErrType       = errors.New("the token type is not accepted")
+	ErrUnknownKey = errors.New("the signing key is not published")
+	ErrAlgorithm  = errors.New("the algorithm is not the signing key's")
+	ErrSignature  = errors.New("the signature does not verify")
+)
+
 func invalid(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(format, args...))
+}
+
+// invalidAs is invalid that also wraps kind.
+func invalidAs(kind error, format string, args ...any) error {
+	return fmt.Errorf("%w: %w: %s", ErrInvalid, kind, fmt.Sprintf(format, args...))
 }
 
 // Verify checks raw's signature against IAM's JWKS and its typ header, and
@@ -110,24 +124,24 @@ func (v *Verifier) Verify(ctx context.Context, raw string, wantTypes ...string) 
 	h := jws.Signatures[0].Protected
 	typ, _ := h.ExtraHeaders[jose.HeaderType].(string)
 	if !slices.ContainsFunc(wantTypes, func(w string) bool { return strings.EqualFold(w, typ) }) {
-		return nil, invalid("typ %q is not %v", typ, wantTypes)
+		return nil, invalidAs(ErrType, "typ %q is not %v", typ, wantTypes)
 	}
 	if h.KeyID == "" {
-		return nil, invalid("no kid")
+		return nil, invalidAs(ErrUnknownKey, "no kid")
 	}
 	key, err := v.keys.key(ctx, h.KeyID)
 	if err != nil {
 		if errors.Is(err, ErrUnavailable) {
 			return nil, err
 		}
-		return nil, invalid("%v", err)
+		return nil, invalidAs(ErrUnknownKey, "%v", err)
 	}
 	if !algorithmAllowed(key, h.Algorithm) {
-		return nil, invalid("alg %s is not the algorithm of key %s", h.Algorithm, h.KeyID)
+		return nil, invalidAs(ErrAlgorithm, "alg %s is not the algorithm of key %s", h.Algorithm, h.KeyID)
 	}
 	payload, err := jws.Verify(key.Key)
 	if err != nil {
-		return nil, invalid("signature: %v", err)
+		return nil, invalidAs(ErrSignature, "signature: %v", err)
 	}
 	var claims map[string]any
 	dec := json.NewDecoder(strings.NewReader(string(payload)))
