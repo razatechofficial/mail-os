@@ -93,6 +93,12 @@ func newSMTP(cfg SMTPConfig, opts Options) (*SMTP, error) {
 	return &SMTP{cfg: cfg, opts: opts}, nil
 }
 
+// DialGuard is the tenant address rule as a net.Dialer Control, for other
+// outbound callers that reach tenant-chosen hosts (webhooks).
+func DialGuard(allowPrivateNetworks, allowLoopback bool) func(network, address string, _ syscall.RawConn) error {
+	return dialGuard(Options{AllowPrivateNetworks: allowPrivateNetworks, AllowLoopback: allowLoopback})
+}
+
 // dialGuard refuses link-local (cloud metadata), unspecified and
 // multicast addresses always, and loopback and private ones unless
 // allowed. It runs on the resolved address, so DNS cannot sidestep it.
