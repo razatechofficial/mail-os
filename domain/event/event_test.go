@@ -78,12 +78,12 @@ func TestParseRejectsMalformed(t *testing.T) {
 }
 
 func TestRejectionIsPermanent(t *testing.T) {
-	err := fmt.Errorf("handle: %w", Reject(ReasonReplayed, errors.New("jti seen")))
+	err := fmt.Errorf("handle: %w", Reject(ReasonReplay, errors.New("jti seen")))
 	var p interface{ Permanent() bool }
 	if !errors.As(err, &p) || !p.Permanent() {
 		t.Fatal("a wrapped rejection does not report Permanent")
 	}
-	if r, ok := ReasonOf(err); !ok || r != ReasonReplayed {
+	if r, ok := ReasonOf(err); !ok || r != ReasonReplay {
 		t.Fatalf("ReasonOf = %q, %v", r, ok)
 	}
 	if _, ok := ReasonOf(errors.New("other")); ok {
@@ -91,6 +91,10 @@ func TestRejectionIsPermanent(t *testing.T) {
 	}
 	if got := Reject(ReasonExpired, nil).Error(); got != "message rejected: expired" {
 		t.Fatalf("Error() = %q", got)
+	}
+	transient := &Rejection{Reason: ReasonReplayGuardUnavailable, Transient: true}
+	if transient.Permanent() {
+		t.Fatal("a transient rejection reports Permanent")
 	}
 }
 
