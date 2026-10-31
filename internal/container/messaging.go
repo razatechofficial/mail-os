@@ -67,7 +67,8 @@ func renderContent(c appmessage.Content, data map[string]any) (appmessage.Conten
 	return appmessage.Content{Subject: out.Subject, HTML: out.HTML, Text: out.Text}, err
 }
 
-// buildMessaging wires providers, sending domains, suppressions, webhooks,
+// buildMessaging runs before buildEvents and buildMarketing: it sets
+// EventDispatcher and CampaignSender for them. It wires providers, sending domains, suppressions, webhooks,
 // stats and messages: their routes, worker tasks, the gRPC MailService,
 // the sealed columns, and the one-time sealing of legacy plaintext
 // secrets.
@@ -119,6 +120,10 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 	if c.Templates != nil {
 		c.Templates.SetTestSend(c.Messages, c.SendingDomains)
 	}
+	// Events (buildEvents) and campaigns (buildMarketing) send through the
+	// message use case; both builders run after this one.
+	c.EventDispatcher = c.Messages
+	c.CampaignSender = c.Messages
 
 	c.Routes = append(c.Routes,
 		handler.NewMessageHandler(c.Messages),
@@ -129,7 +134,11 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 		handler.NewAnalyticsHandler(stats),
 	)
 	c.GRPCServices = append(c.GRPCServices, func(s *grpclib.Server) {
-		v1.RegisterMailServiceServer(s, &grpchandler.MailService{Messages: c.Messages, Tenants: c.Tenants, Events: c.MailEvents})
+		ms := &grpchandler.MailService{Messages: c.Messages, Tenants: c.Tenants}
+		if c.GRPCEvents != nil { // set by buildEvents, which runs later
+			ms.Events = c.GRPCEvents
+		}
+		v1.RegisterMailServiceServer(s, ms)
 	})
 	c.Tasks = append(c.Tasks, func(s *worker.Server) error {
 		s.HandleFunc(worker.TypeMessageSend, worker.MessageSend(c.Messages))
