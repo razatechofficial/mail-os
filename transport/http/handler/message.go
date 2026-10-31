@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"context"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/razatechofficial/mail-os/application/applications"
 	appmsg "github.com/razatechofficial/mail-os/application/message"
 	"github.com/razatechofficial/mail-os/domain/access"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
@@ -13,20 +15,35 @@ import (
 	"github.com/razatechofficial/mail-os/transport/http/response"
 )
 
-// MessageHandler serves sends and the message log. Lists and gets never
-// carry bodies; GET /messages/:id/body is its own permission (step-up) and
-// is audited.
-type MessageHandler struct {
-	svc *appmsg.Service
+// SelfSends authorises a spa user's send to themselves
+// (applications.Service.AuthorizeSelfSend) and returns the recipient.
+type SelfSends interface {
+	AuthorizeSelfSend(ctx context.Context, in applications.SelfSend) (string, error)
 }
 
-// NewMessageHandler builds the handler.
-func NewMessageHandler(svc *appmsg.Service) *MessageHandler { return &MessageHandler{svc: svc} }
+// MessageHandler serves sends and the message log. Lists and gets never
+// carry bodies; GET /messages/:id/body is its own permission (step-up) and
+// is audited. Sends take an Idempotency-Key.
+type MessageHandler struct {
+	svc         *appmsg.Service
+	self        SelfSends
+	idempotency gin.HandlerFunc
+}
+
+// NewMessageHandler builds the handler. idempotency is the Idempotency-Key
+// middleware of the send routes (nil: none).
+func NewMessageHandler(svc *appmsg.Service, self SelfSends, idempotency gin.HandlerFunc) *MessageHandler {
+	if idempotency == nil {
+		idempotency = func(c *gin.Context) { c.Next() }
+	}
+	return &MessageHandler{svc: svc, self: self, idempotency: idempotency}
+}
 
 // Mount registers the routes.
 func (h *MessageHandler) Mount(api *gin.RouterGroup, g middleware.Guard) {
-	api.POST("/messages/send", g.Require(access.PermMessagesOperate), h.Send)
-	api.POST("/messages/batch", g.Require(access.PermMessagesOperate), h.Batch)
+	api.POST("/messages/send", g.Require(access.PermMessagesSend), h.idempotency, h.Send)
+	api.POST("/messages/batch", g.Require(access.PermMessagesSend), h.idempotency, h.Batch)
+	api.POST("/messages/self", g.Require(access.PermMessagesSendSelf), h.SelfSend)
 	api.GET("/messages", g.Require(access.PermMessagesRead), h.List)
 	api.GET("/messages/:id", g.Require(access.PermMessagesRead), h.Get)
 	api.GET("/messages/:id/body", g.Require(access.PermMessageBodies), h.Body)
@@ -50,7 +67,6 @@ type sendRequest struct {
 	Tags           []string       `json:"tags"`
 	Metadata       map[string]any `json:"metadata"`
 	Priority       int            `json:"priority"`
-	IdempotencyKey string         `json:"idempotency_key"`
 	ScheduleAt     *time.Time     `json:"schedule_at"`
 	Type           string         `json:"type"`
 }
@@ -59,18 +75,16 @@ func (r sendRequest) input(tenantID string) appmsg.SendInput {
 	return appmsg.SendInput{TenantID: tenantID, FromName: r.FromName, FromEmail: r.FromEmail, ToEmail: r.ToEmail, ToName: r.ToName,
 		ReplyTo: r.ReplyTo, Subject: r.Subject, HTML: r.HTMLBody, Text: r.TextBody, TemplateSlug: r.TemplateSlug,
 		TemplateID: r.TemplateID, Locale: r.TemplateLocale, TemplateData: r.TemplateVars, Tags: r.Tags, Metadata: r.Metadata,
-		Priority: r.Priority, IdempotencyKey: r.IdempotencyKey, ScheduleAt: r.ScheduleAt, Type: domainmsg.Type(r.Type)}
+		Priority: r.Priority, ScheduleAt: r.ScheduleAt, Type: domainmsg.Type(r.Type)}
 }
 
-// Send is POST /messages/send. The Idempotency-Key header stands in for
-// idempotency_key.
+// Send is POST /messages/send. An application's send follows its rules
+// (message types, senders, stream, limits); a retry with the same
+// Idempotency-Key gets the first response.
 func (h *MessageHandler) Send(c *gin.Context) {
 	var req sendRequest
 	if !bind(c, &req) {
 		return
-	}
-	if req.IdempotencyKey == "" {
-		req.IdempotencyKey = c.GetHeader("Idempotency-Key")
 	}
 	r, err := h.svc.Send(c.Request.Context(), req.input(middleware.PrincipalFrom(c).TenantID))
 	if err != nil {
@@ -101,10 +115,49 @@ func (h *MessageHandler) Batch(c *gin.Context) {
 	response.Created(c, r)
 }
 
+// selfSendRequest is a browser user's send: a browser-allowed template and
+// its variables, never a recipient, a sender or content.
+type selfSendRequest struct {
+	Template  string         `json:"template"`
+	Locale    string         `json:"locale"`
+	Variables map[string]any `json:"variables"`
+}
+
+// SelfSend is POST /messages/self: a spa application's signed-in user
+// sends one of its browser_allowed templates to their own verified
+// address, within the per-user hourly limit.
+func (h *MessageHandler) SelfSend(c *gin.Context) {
+	var req selfSendRequest
+	if !bind(c, &req) {
+		return
+	}
+	ctx := c.Request.Context()
+	to, err := h.self.AuthorizeSelfSend(ctx, applications.SelfSend{TemplateSlug: req.Template, Origin: c.GetHeader("Origin")})
+	if err != nil {
+		response.FromError(c, err)
+		return
+	}
+	data := req.Variables
+	if data == nil {
+		data = map[string]any{}
+	}
+	data["email"] = to
+	r, err := h.svc.Send(ctx, appmsg.SendInput{TenantID: middleware.PrincipalFrom(c).TenantID, TemplateSlug: req.Template,
+		Locale: req.Locale, ToEmail: to, TemplateData: data})
+	if err != nil {
+		response.FromError(c, err)
+		return
+	}
+	response.Created(c, r)
+}
+
 // messageView is the console's Message with the delivery fields. The
 // subject and template data have secret values masked; no body.
 type messageView struct {
 	ID                string         `json:"id"`
+	ApplicationID     string         `json:"application_id,omitempty"`
+	Sandbox           bool           `json:"sandbox"`
+	Stream            string         `json:"stream"`
 	CampaignID        string         `json:"campaign_id,omitempty"`
 	FromName          string         `json:"from_name"`
 	FromEmail         string         `json:"from_email"`
@@ -147,7 +200,7 @@ func messageViewOf(v appmsg.View) messageView {
 	if tags == nil {
 		tags = []string{}
 	}
-	return messageView{ID: m.ID, CampaignID: m.CampaignID, FromName: m.FromName, FromEmail: m.FromEmail, ToEmail: m.ToEmail,
+	return messageView{ID: m.ID, ApplicationID: m.ApplicationID, Sandbox: m.Sandbox, Stream: string(m.Stream), CampaignID: m.CampaignID, FromName: m.FromName, FromEmail: m.FromEmail, ToEmail: m.ToEmail,
 		ToName: m.ToName, ReplyTo: m.ReplyTo, Subject: v.MaskedSubject, Type: string(m.Type), Status: string(m.Status),
 		Priority: int(m.Priority), Tags: tags, Metadata: m.Metadata, Topic: m.Topic, TemplateID: m.TemplateID,
 		TemplateVersionID: m.TemplateVersionID, Locale: m.Locale, TemplateData: v.MaskedTemplateData, EventID: m.EventID,
@@ -157,7 +210,7 @@ func messageViewOf(v appmsg.View) messageView {
 		CancelledAt: m.CancelledAt, BodyPurgedAt: m.BodyPurgedAt, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt}
 }
 
-// List is GET /messages?status&type&topic&to&from&until.
+// List is GET /messages?status&type&topic&to&from&until&application_id.
 func (h *MessageHandler) List(c *gin.Context) {
 	from, err := timeQuery(c, "from")
 	if err != nil {
@@ -171,7 +224,7 @@ func (h *MessageHandler) List(c *gin.Context) {
 	}
 	pg := page(c)
 	list, total, err := h.svc.List(c.Request.Context(), appmsg.Filter{TenantID: middleware.PrincipalFrom(c).TenantID,
-		Status: c.Query("status"), Type: c.Query("type"), Topic: c.Query("topic"), To: c.Query("to"), From: from, Until: until,
+		ApplicationID: c.Query("application_id"), Status: c.Query("status"), Type: c.Query("type"), Topic: c.Query("topic"), To: c.Query("to"), From: from, Until: until,
 		Limit: pg.Limit, Offset: pg.Offset})
 	if err != nil {
 		response.FromError(c, err)

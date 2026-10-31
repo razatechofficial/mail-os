@@ -98,7 +98,7 @@ func otpMessage() domainmsg.Message {
 }
 
 func messageHandler(a *recAudit) *MessageHandler {
-	return NewMessageHandler(appmsg.NewService(appmsg.Deps{Repo: fakeMsgRepo{m: otpMessage()}, Tenants: nopTenants{}, Audit: a}, appmsg.Config{}))
+	return NewMessageHandler(appmsg.NewService(appmsg.Deps{Repo: fakeMsgRepo{m: otpMessage()}, Tenants: nopTenants{}, Audit: a}, appmsg.Config{}), nil, nil)
 }
 
 func TestBodyNeedsRoleAndStepUp(t *testing.T) {
