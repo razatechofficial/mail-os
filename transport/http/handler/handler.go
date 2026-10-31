@@ -4,15 +4,23 @@
 package handler
 
 import (
+	"context"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	domainapp "github.com/razatechofficial/mail-os/domain/application"
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
 	"github.com/razatechofficial/mail-os/pkg/pagination"
 	"github.com/razatechofficial/mail-os/transport/http/response"
 )
+
+// ApplicationReader reads one of the tenant's applications, to check an
+// application a webhook or suppression is scoped to.
+type ApplicationReader interface {
+	Get(ctx context.Context, tenantID, id string) (domainapp.Application, error)
+}
 
 // bind decodes a JSON body; a malformed body is 400 BAD_REQUEST, an
 // oversized one 413.
