@@ -29,12 +29,13 @@ func (r *WebhookRepository) SealedColumn() appkm.SealedColumn {
 }
 
 const webhookCols = `w.id, w.org_id, w.url, COALESCE(w.events, '{}'), w.is_active, COALESCE(w.created_by, ''),
-	COALESCE(w.updated_by, ''), w.created_at, w.updated_at, w.secret`
+	COALESCE(w.updated_by, ''), w.created_at, w.updated_at, w.secret, COALESCE(w.application_id, '')`
 
 func scanWebhook(row pgx.Row) (app.Stored, error) {
 	var s app.Stored
 	w := &s.Webhook
-	err := row.Scan(&w.ID, &w.OrgID, &w.URL, &w.Events, &w.Active, &w.CreatedBy, &w.UpdatedBy, &w.CreatedAt, &w.UpdatedAt, &s.Sealed)
+	err := row.Scan(&w.ID, &w.OrgID, &w.URL, &w.Events, &w.Active, &w.CreatedBy, &w.UpdatedBy, &w.CreatedAt, &w.UpdatedAt, &s.Sealed,
+		&w.ApplicationID)
 	return s, err
 }
 
@@ -42,9 +43,9 @@ func scanWebhook(row pgx.Row) (app.Stored, error) {
 func (r *WebhookRepository) Create(ctx context.Context, s app.Stored) error {
 	w := s.Webhook
 	_, err := QuerierFromContext(ctx, r.db).Exec(ctx, `
-		INSERT INTO webhooks (id, org_id, url, secret, events, is_active, created_by, updated_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9, $10)`,
-		w.ID, w.OrgID, w.URL, s.Sealed, nonNil(w.Events), w.Active, w.CreatedBy, w.UpdatedBy, w.CreatedAt, w.UpdatedAt)
+		INSERT INTO webhooks (id, org_id, url, secret, events, is_active, created_by, updated_by, created_at, updated_at, application_id)
+		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9, $10, NULLIF($11, ''))`,
+		w.ID, w.OrgID, w.URL, s.Sealed, nonNil(w.Events), w.Active, w.CreatedBy, w.UpdatedBy, w.CreatedAt, w.UpdatedAt, w.ApplicationID)
 	return err
 }
 
@@ -101,10 +102,11 @@ func (r *WebhookRepository) List(ctx context.Context, tenantID string, limit, of
 	return list, total, err
 }
 
-// Subscribed lists the tenant's active webhooks for event.
-func (r *WebhookRepository) Subscribed(ctx context.Context, tenantID, event string) ([]domain.Webhook, error) {
+// Subscribed lists the tenant's active webhooks for event: tenant-wide
+// ones, and the application's when applicationID is set.
+func (r *WebhookRepository) Subscribed(ctx context.Context, tenantID, applicationID, event string) ([]domain.Webhook, error) {
 	return r.scan(ctx, `SELECT `+webhookCols+` FROM webhooks w WHERE w.org_id = $1 AND w.is_active AND w.deleted_at IS NULL
-		AND $2 = ANY(w.events)`, tenantID, event)
+		AND $2 = ANY(w.events) AND (w.application_id IS NULL OR ($3 <> '' AND w.application_id = $3))`, tenantID, event, applicationID)
 }
 
 // CreateDelivery inserts a pending delivery.
