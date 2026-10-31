@@ -13,6 +13,7 @@ import (
 	grpclib "google.golang.org/grpc"
 
 	"github.com/razatechofficial/mail-os/application/auditlog"
+	"github.com/razatechofficial/mail-os/application/campaign"
 	appkm "github.com/razatechofficial/mail-os/application/keymanager"
 	"github.com/razatechofficial/mail-os/application/tenant"
 	"github.com/razatechofficial/mail-os/config"
@@ -60,6 +61,10 @@ type Container struct {
 	E2ESink *mailer.E2ESink
 	// AuditStream publishes the audit outbox (FEATURE_AUDIT_STREAM).
 	AuditStream *kafka.Producer
+	// CampaignSender hands campaign messages to the messaging slice. Its
+	// builder sets it before buildMarketing runs; nil leaves campaign
+	// launch answering 503.
+	CampaignSender campaign.CampaignSender
 
 	// Routes are the REST route sets; GRPCServices register on the gRPC
 	// server; Tasks register worker handlers and schedules; Consumers run
@@ -80,6 +85,7 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 	}
 	for _, build := range []func(context.Context) error{
 		c.buildCore,
+		c.buildMarketing,
 	} {
 		if err := build(ctx); err != nil {
 			c.Close()
