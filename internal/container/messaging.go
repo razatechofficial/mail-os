@@ -98,17 +98,15 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 	deps := appmessage.Deps{Repo: postgres.NewMessageRepository(c.DB), Queue: queue, Suppressions: suppressions, Tenants: c.Tenants,
 		Render: renderContent, Sender: routerSender{router}, Signer: c.SendingDomains, Webhooks: webhooks, Stats: stats, Audit: c.Audit}
 	if c.Templates != nil {
-		deps.Templates = c.Templates
-	}
-	if c.TemplateVersions != nil {
-		deps.Versions = c.TemplateVersions
-	}
-	if c.Branding != nil {
-		deps.Branding = c.Branding
+		deps.Templates, deps.Versions, deps.Branding = c.Templates, c.Templates, c.Templates
 	}
 	c.Messages = appmessage.NewService(deps, appmessage.Config{MaxAttempts: cfg.Worker.MaxRetry + 1,
 		RetentionDays: cfg.Retention.MessageDays, PurgeBatch: cfg.Retention.PurgeBatch, DefaultFrom: cfg.SMTP.FromAddr,
 		StaleSending: 3*cfg.Worker.SendTimeout + time.Minute})
+
+	if c.Templates != nil {
+		c.Templates.SetTestSend(c.Messages, c.SendingDomains)
+	}
 
 	c.Routes = append(c.Routes,
 		handler.NewMessageHandler(c.Messages),
