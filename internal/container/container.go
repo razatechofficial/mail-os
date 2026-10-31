@@ -14,6 +14,7 @@ import (
 
 	"github.com/razatechofficial/mail-os/application/auditlog"
 	appkm "github.com/razatechofficial/mail-os/application/keymanager"
+	apptemplate "github.com/razatechofficial/mail-os/application/template"
 	"github.com/razatechofficial/mail-os/application/tenant"
 	"github.com/razatechofficial/mail-os/config"
 	"github.com/razatechofficial/mail-os/domain/access"
@@ -49,6 +50,8 @@ type Container struct {
 	Grants     access.ServiceGrants
 	Tenants    *tenant.Service
 	TenantRepo *postgres.TenantRepository
+	// Templates resolves published template versions for sends.
+	Templates *apptemplate.Service
 
 	Auth     *middleware.Auth
 	Guard    middleware.Guard
@@ -80,6 +83,7 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 	}
 	for _, build := range []func(context.Context) error{
 		c.buildCore,
+		c.buildTemplates,
 	} {
 		if err := build(ctx); err != nil {
 			c.Close()

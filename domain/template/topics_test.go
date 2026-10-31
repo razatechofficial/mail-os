@@ -51,9 +51,14 @@ func TestTopicVariables(t *testing.T) {
 	if !ok {
 		t.Fatal("security notice missing")
 	}
-	for _, k := range []string{"email", "user_uuid", "kind", "credential", "ip", "user_agent", "occurred_at", "link", "brand.name", "brand.dir"} {
+	for _, k := range []string{"email", "user_uuid", "kind", "credential", "ip", "user_agent", "occurred_at", "link", "brand.name", "brand.support_text"} {
 		if _, ok := notice.Variable(k); !ok {
 			t.Errorf("security notice lacks %s", k)
+		}
+	}
+	for _, gone := range []string{"brand.locale", "brand.dir"} {
+		if _, ok := notice.Variable(gone); ok {
+			t.Errorf("%s offered; IAM no longer sends it", gone)
 		}
 	}
 	code, _ := TopicByKey(TopicMFAEmailCode)
