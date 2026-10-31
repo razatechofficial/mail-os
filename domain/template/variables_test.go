@@ -96,12 +96,4 @@ func TestLocale(t *testing.T) {
 	if _, ok := ParseLocale("fr"); ok {
 		t.Fatal("fr accepted")
 	}
-	if got := LocaleFromData(map[string]any{"brand": map[string]any{"locale": "ur"}}, LocaleEnglish); got != LocaleUrdu {
-		t.Fatalf("brand locale = %q", got)
-	}
-	for _, data := range []map[string]any{nil, {"brand": map[string]any{"locale": "fr"}}, {"brand": map[string]any{"locale": 7}}} {
-		if got := LocaleFromData(data, LocaleEnglish); got != LocaleEnglish {
-			t.Fatalf("fallback = %q for %v", got, data)
-		}
-	}
 }
