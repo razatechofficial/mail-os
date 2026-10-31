@@ -255,7 +255,8 @@ func TestTemplateMigrationsDownUp(t *testing.T) {
 	}
 	defer func() { _ = m.Close() }()
 	top, _, _ := m.Version()
-	for range 4 {
+	// Step down past the template migrations, whatever was added after them.
+	for v, _, _ := m.Version(); v >= 20261031100000; v, _, _ = m.Version() {
 		if err := m.Down(); err != nil {
 			t.Fatal(err)
 		}
