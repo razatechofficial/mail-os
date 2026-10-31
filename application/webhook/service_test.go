@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -49,10 +50,11 @@ func (r *memRepo) Get(_ context.Context, t, id string) (Stored, error) {
 func (r *memRepo) List(context.Context, string, int, int) ([]domain.Webhook, int, error) {
 	return nil, 0, nil
 }
-func (r *memRepo) Subscribed(_ context.Context, t, event string) ([]domain.Webhook, error) {
+func (r *memRepo) Subscribed(_ context.Context, t, app, event string) ([]domain.Webhook, error) {
 	var out []domain.Webhook
 	for _, s := range r.hooks {
-		if s.Webhook.OrgID == t && s.Webhook.Subscribes(event) {
+		scope := s.Webhook.ApplicationID == "" || (app != "" && s.Webhook.ApplicationID == app)
+		if s.Webhook.OrgID == t && scope && s.Webhook.Subscribes(event) {
 			out = append(out, s.Webhook)
 		}
 	}
@@ -109,20 +111,53 @@ func TestNotifyAndDeliverSigned(t *testing.T) {
 	if err != nil || !strings.HasPrefix(secret, "whsec_") || !strings.HasPrefix(repo.hooks[w.ID].Sealed, "km1.") {
 		t.Fatal(w, err)
 	}
-	if err := svc.Notify(context.Background(), "t1", domain.EventFailed, "m1", nil); err != nil || len(q.ids) != 0 {
+	if err := svc.Notify(context.Background(), "t1", "", domain.EventFailed, "m1", nil); err != nil || len(q.ids) != 0 {
 		t.Fatal("unsubscribed event queued")
 	}
-	if err := svc.Notify(context.Background(), "t1", domain.EventSent, "m1", map[string]any{"message_id": "m1"}); err != nil || len(q.ids) != 1 {
+	if err := svc.Notify(context.Background(), "t1", "", domain.EventSent, "m1", map[string]any{"message_id": "m1"}); err != nil || len(q.ids) != 1 {
 		t.Fatal(err)
 	}
 	if err := svc.Deliver(context.Background(), q.ids[0], false); err != nil {
 		t.Fatal(err)
 	}
-	if !domain.Verify(secret, p.headers[domain.SignatureHeader], p.body, time.Now(), time.Minute) {
+	if !domain.Verify(secret, p.headers[domain.IDHeader], p.headers[domain.TimestampHeader], p.headers[domain.SignatureHeader],
+		p.body, time.Now(), time.Minute) || p.headers[domain.IDHeader] != q.ids[0] {
 		t.Fatal("signature does not verify with the secret")
+	}
+	var body struct {
+		Type string         `json:"type"`
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(p.body, &body); err != nil || body.Type != domain.EventSent || body.Data["message_id"] != "m1" {
+		t.Fatalf("payload %s", p.body)
 	}
 	if d := repo.deliveries[q.ids[0]]; d.Status != domain.DeliveryDelivered || d.Attempts != 1 {
 		t.Fatalf("%+v", d)
+	}
+}
+
+// An application's endpoint gets that application's events only; a
+// tenant-wide endpoint gets every application's.
+func TestNotifyApplicationScope(t *testing.T) {
+	repo := &memRepo{hooks: map[string]Stored{}, deliveries: map[string]domain.Delivery{}}
+	q := &memQueue{}
+	svc := NewService(repo, fakeCipher{}, q, &poster{status: 204}, nopAudit{}, Config{})
+	scoped, _, err := svc.Create(context.Background(), "t1", Input{ApplicationID: "app-1", URL: "https://hooks.bank.example/a",
+		Events: []string{domain.EventSent}}, "a")
+	if err != nil || scoped.ApplicationID != "app-1" {
+		t.Fatal(scoped, err)
+	}
+	if _, _, err := svc.Create(context.Background(), "t1", Input{URL: "https://hooks.bank.example/all", Events: []string{domain.EventSent}}, "a"); err != nil {
+		t.Fatal(err)
+	}
+	for app, want := range map[string]int{"app-1": 2, "app-2": 1, "": 1} {
+		before := len(q.ids)
+		if err := svc.Notify(context.Background(), "t1", app, domain.EventSent, "m", nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := len(q.ids) - before; got != want {
+			t.Errorf("application %q: %d deliveries, want %d", app, got, want)
+		}
 	}
 }
 
@@ -131,7 +166,7 @@ func TestDeliverRetriesAndGivesUp(t *testing.T) {
 	q, p := &memQueue{}, &poster{status: 503}
 	svc := NewService(repo, fakeCipher{}, q, p, nopAudit{}, Config{})
 	_, _, _ = svc.Create(context.Background(), "t1", Input{URL: "https://hooks.bank.example/m", Secret: "a-chosen-secret-0123", Events: []string{domain.EventSent}}, "a")
-	_ = svc.Notify(context.Background(), "t1", domain.EventSent, "m1", nil)
+	_ = svc.Notify(context.Background(), "t1", "", domain.EventSent, "m1", nil)
 	var de *DeliveryError
 	if err := svc.Deliver(context.Background(), q.ids[0], false); !errors.As(err, &de) || de.Status != 503 {
 		t.Fatal(err)
@@ -141,7 +176,7 @@ func TestDeliverRetriesAndGivesUp(t *testing.T) {
 	}
 	// A 4xx refusal is final at once.
 	p.status = 410
-	_ = svc.Notify(context.Background(), "t1", domain.EventSent, "m2", nil)
+	_ = svc.Notify(context.Background(), "t1", "", domain.EventSent, "m2", nil)
 	if err := svc.Deliver(context.Background(), q.ids[1], false); err != nil || repo.deliveries[q.ids[1]].Status != domain.DeliveryFailed {
 		t.Fatal(err)
 	}
