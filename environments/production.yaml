@@ -1,5 +1,6 @@
 # Production defaults. Everything secret or deployment-specific (issuer,
-# hosts, certificates, KEY_MANAGER_MASTER_KEY, MAILOS_SERVICE_CLIENTS)
+# hosts, certificates, KEY_MANAGER_MASTER_KEY, IAM_SERVICE_CLIENT_ID and
+# IAM_SERVICE_TENANT_ID)
 # comes from the environment (Vault through External Secrets).
 app:
   env: production
