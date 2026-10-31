@@ -34,6 +34,13 @@ BASE_URL="http://127.0.0.1:${HTTP_PORT}"
 IAM_URL="http://127.0.0.1:${IAM_PORT}"
 # The service client IAM calls MailOS as (contract §1, §4).
 IAM_SERVICE_CLIENT="mailos-iam"
+# A second service client granted one topic only, for the allow-list tests.
+NARROW_SERVICE_CLIENT="e2e-narrow"
+NARROW_TOPIC="iam.auth.mfa_email_code_requested"
+# The console's OIDC client at the fake IAM (its Playwright suite signs in through it).
+OIDC_CLIENT="mailos-console"
+# How long to wait for each process to answer (a fresh binary can start slowly).
+READY_SECONDS="${MAILOS_E2E_READY_SECONDS:-60}"
 
 mkdir -p "$WORK/bin" "$WORK/keys"
 chmod 700 "$WORK/keys"
@@ -54,6 +61,7 @@ keys() {
   [ -f "$k/master.key" ] || secret 32 > "$k/master.key"
   [ -f "$k/hooks.token" ] || secret 36 > "$k/hooks.token"
   [ -f "$k/iam-mint.token" ] || secret 36 > "$k/iam-mint.token"
+  [ -f "$k/oidc-client.secret" ] || secret 36 > "$k/oidc-client.secret"
   chmod 600 "$k"/*
 }
 
@@ -84,7 +92,7 @@ IAM_ISSUER=$IAM_URL
 IAM_AUDIENCE=mailos
 IAM_CONSOLE_AUDIENCES=mailos-console
 IAM_JWKS_CACHE_TTL=1m
-MAILOS_SERVICE_CLIENTS=$IAM_SERVICE_CLIENT=iam.*
+MAILOS_SERVICE_CLIENTS='$IAM_SERVICE_CLIENT=iam.*;$NARROW_SERVICE_CLIENT=$NARROW_TOPIC'
 KEY_MANAGER_MASTER_KEY=$(cat "$k/master.key")
 CORS_ORIGINS=$CONSOLE_ORIGIN
 FEATURE_PUBSUB_INGEST=false
@@ -108,7 +116,7 @@ load_env() {
 # wait_http waits for url to answer 2xx while the process in pidfile lives.
 wait_http() {
   local name="$1" url="$2" pidfile="$3" log="$4"
-  for _ in $(seq 1 120); do
+  for _ in $(seq 1 $((READY_SECONDS * 2))); do
     if curl -fsS "$url" >/dev/null 2>&1; then return 0; fi
     if ! kill -0 "$(cat "$pidfile")" 2>/dev/null; then
       echo "e2e: $name exited:"; tail -30 "$log"; exit 1
@@ -131,7 +139,9 @@ up() {
   down >/dev/null 2>&1 || true
 
   echo "e2e: starting the fake IAM on $IAM_URL"
-  start fakeiam "$WORK/bin/fakeiam" -addr "127.0.0.1:$IAM_PORT" -mint-token-file "$WORK/keys/iam-mint.token"
+  start fakeiam "$WORK/bin/fakeiam" -addr "127.0.0.1:$IAM_PORT" -mint-token-file "$WORK/keys/iam-mint.token" \
+    -oidc-client-id "$OIDC_CLIENT" -oidc-client-secret-file "$WORK/keys/oidc-client.secret" \
+    -oidc-redirect-uris "$CONSOLE_ORIGIN/api/auth/callback" -oidc-post-logout-uris "$CONSOLE_ORIGIN/"
   wait_http "fake IAM" "$IAM_URL/.well-known/openid-configuration" "$WORK/fakeiam.pid" "$WORK/fakeiam.log"
 
   load_env
@@ -155,6 +165,9 @@ print_env() {
   echo "MAILOS_E2E_HOOK_TOKEN=$(cat "$WORK/keys/hooks.token")"
   echo "MAILOS_E2E_IAM_URL=$IAM_URL"
   echo "MAILOS_E2E_IAM_TOKEN=$(cat "$WORK/keys/iam-mint.token")"
+  echo "MAILOS_E2E_NARROW_CLIENT=$NARROW_SERVICE_CLIENT"
+  echo "MAILOS_E2E_OIDC_CLIENT_ID=$OIDC_CLIENT"
+  echo "MAILOS_E2E_OIDC_CLIENT_SECRET=$(cat "$WORK/keys/oidc-client.secret")"
 }
 
 run_tests() {
