@@ -36,11 +36,11 @@ func (h *SuppressionHandler) Mount(api *gin.RouterGroup, g middleware.Guard) {
 type suppressionView struct {
 	ID            string    `json:"id"`
 	ApplicationID string    `json:"application_id"`
-	Email     string    `json:"email"`
-	Type      string    `json:"type"`
-	Reason    string    `json:"reason"`
-	Source    string    `json:"source"`
-	CreatedAt time.Time `json:"created_at"`
+	Email         string    `json:"email"`
+	Type          string    `json:"type"`
+	Reason        string    `json:"reason"`
+	Source        string    `json:"source"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 func suppressionViewOf(s domain.Suppression) suppressionView {
