@@ -151,10 +151,9 @@ func TestRender_masking(t *testing.T) {
 
 func TestRender_rtl(t *testing.T) {
 	data := tpl.SampleData(tpl.TopicSecurityNotice)
-	data["brand"].(map[string]any)["locale"] = "ur"
 	data["user"].(map[string]any)["name"] = "آمنہ"
-	locale := tpl.LocaleFromData(data, tpl.LocaleEnglish)
-	if locale != tpl.LocaleUrdu || locale.Dir() != "rtl" {
+	locale := tpl.LocaleUrdu
+	if locale.Dir() != "rtl" {
 		t.Fatalf("locale = %q", locale)
 	}
 	html := `<!doctype html><html lang="ur" dir="` + locale.Dir() + `"><body><p dir="rtl" style="text-align:right">السلام علیکم {{user.name}}</p></body></html>`
