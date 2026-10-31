@@ -39,6 +39,26 @@ func TestUserToken(t *testing.T) {
 	}
 }
 
+// A browser application's token carries its scopes and the user's
+// verified address (IAM releases email and email_verified with the email
+// scope).
+func TestUserTokenScopesAndEmail(t *testing.T) {
+	iam, v := newVerifier(t)
+	raw := iam.UserToken(fakeiam.User{Tenant: tenant, ClientID: "portal-web", Extra: map[string]any{
+		"scope": "openid email mailos.send.self", "email": "ana@example.com", "email_verified": true}})
+	p, err := v.Principal(context.Background(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.HasScope("mailos.send.self") || len(p.Scopes) != 3 || p.Email != "ana@example.com" || !p.EmailVerified || p.ClientID != "portal-web" {
+		t.Fatalf("principal %+v", p)
+	}
+	unverified := iam.UserToken(fakeiam.User{Tenant: tenant, Extra: map[string]any{"email": "ana@example.com", "email_verified": "true"}})
+	if p, err := v.Principal(context.Background(), unverified); err != nil || p.EmailVerified {
+		t.Fatalf("a string email_verified counted as verified: %+v %v", p, err)
+	}
+}
+
 func TestConsoleAudienceAccepted(t *testing.T) {
 	iam, v := newVerifier(t)
 	raw := iam.UserToken(fakeiam.User{Tenant: tenant, Audience: []string{"mailos-console"}})
