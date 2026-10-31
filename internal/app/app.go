@@ -31,7 +31,7 @@ func Router(c *container.Container) *gin.Engine {
 		Ready: func(g *gin.Context) error { return c.Ready(g.Request.Context()) },
 	}
 	if c.E2ESink != nil {
-		deps.Hooks = func(r *gin.Engine) { e2ehooks.Mount(r, c.Cfg.E2EHooks.Token, c.E2ESink) }
+		deps.Hooks = func(r *gin.Engine) { e2ehooks.Mount(r, c.Cfg.E2EHooks.Token, c.E2ESink, c.E2EZone) }
 	}
 	return transporthttp.NewRouter(c.Cfg, deps, c.Routes...)
 }
