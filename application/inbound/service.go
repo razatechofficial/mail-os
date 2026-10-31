@@ -4,6 +4,10 @@
 // sender and tenant, checked against the topic catalogue, recorded once per
 // (tenant, event id) and handed to the Dispatcher, which turns it into a
 // message. A redelivered event is accepted again without a second message.
+//
+// The sender is an application (application/applications): its IAM client
+// must be a registered, active server application of the tenant, allowed
+// to send the topic. There is no other allow-list.
 package inbound
 
 import (
@@ -19,6 +23,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/razatechofficial/mail-os/domain/access"
+	domainapp "github.com/razatechofficial/mail-os/domain/application"
 	"github.com/razatechofficial/mail-os/domain/event"
 	"github.com/razatechofficial/mail-os/domain/template"
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
@@ -40,12 +45,13 @@ const (
 
 // Delivery is an accepted event for the Dispatcher.
 type Delivery struct {
-	TenantID string
-	OrgID    string
-	Topic    string
-	EventID  string
-	Source   string
-	ClientID string
+	TenantID      string
+	OrgID         string
+	ApplicationID string
+	Topic         string
+	EventID       string
+	Source        string
+	ClientID      string
 	// Data is the event data, numbers as json.Number. The recipient is
 	// data.email.
 	Data map[string]any
@@ -60,11 +66,12 @@ type Dispatcher interface {
 
 // Record is a received event, kept for idempotency.
 type Record struct {
-	TenantID  string
-	EventID   string
-	Topic     string
-	ClientID  string
-	Transport string
+	TenantID      string
+	EventID       string
+	Topic         string
+	ClientID      string
+	ApplicationID string
+	Transport     string
 	// DataSHA256 is the hash of the type and data, to tell a redelivery
 	// from another event reusing the id.
 	DataSHA256 string
@@ -90,6 +97,13 @@ type Transactor interface {
 // tenant MailOS is disabled for.
 type TenantEnsurer interface {
 	Ensure(ctx context.Context, tenantID string) error
+}
+
+// Authorizer decides whether the caller's application may publish a
+// topic for a tenant (applications.Service.AuthorizeEvent), and returns
+// the principal acting for the application's tenant.
+type Authorizer interface {
+	AuthorizeEvent(ctx context.Context, p access.Principal, topic, tenant string) (domainapp.Application, access.Principal, error)
 }
 
 // Auditor records acceptances and refusals.
@@ -121,7 +135,7 @@ const RefusedMessage = "this service may not publish the event for this tenant"
 
 // Service is the inbound event use case.
 type Service struct {
-	grants     access.ServiceGrants
+	apps       Authorizer
 	tenants    TenantEnsurer
 	store      Store
 	tx         Transactor
@@ -131,8 +145,8 @@ type Service struct {
 }
 
 // NewService builds the use case.
-func NewService(grants access.ServiceGrants, tenants TenantEnsurer, store Store, tx Transactor, dispatcher Dispatcher, audit Auditor) *Service {
-	return &Service{grants: grants, tenants: tenants, store: store, tx: tx, dispatcher: dispatcher, audit: audit, now: time.Now}
+func NewService(apps Authorizer, tenants TenantEnsurer, store Store, tx Transactor, dispatcher Dispatcher, audit Auditor) *Service {
+	return &Service{apps: apps, tenants: tenants, store: store, tx: tx, dispatcher: dispatcher, audit: audit, now: time.Now}
 }
 
 // Dispatch authorises, validates, records and dispatches one event. A
@@ -142,20 +156,23 @@ func (s *Service) Dispatch(ctx context.Context, in In) (Result, error) {
 	ev := in.Event
 	p, ok := access.FromContext(ctx)
 	if !ok || !p.IsService() {
-		return Result{}, s.refuse(ctx, in, access.ErrNotServiceCaller)
+		return Result{}, s.refuse(ctx, in, domainapp.ErrNotService)
 	}
 	if err := ev.Validate(); err != nil {
 		return Result{}, apperrors.Invalid("type", "invalid_event", err.Error())
 	}
 	if in.TopicHint != "" && in.TopicHint != ev.Type {
-		return Result{}, s.refuse(ctx, in, access.ErrTopicNotAllowed)
+		return Result{}, s.refuse(ctx, in, domainapp.ErrTypeNotAllowed)
 	}
-	tenant, err := s.grants.Authorize(p, ev.Type, ev.TenantUUID)
+	_, p, err := s.apps.AuthorizeEvent(ctx, p, ev.Type, ev.TenantUUID)
 	if err != nil {
-		return Result{}, s.refuse(ctx, in, err)
+		if domainapp.Reason(err) != "" {
+			return Result{}, s.refuse(ctx, in, err)
+		}
+		return Result{}, err
 	}
-	// Audit rows and the dispatch act for the authorised tenant.
-	p.TenantID = tenant
+	// Audit rows and the dispatch act for the application's tenant.
+	tenant := p.TenantID
 	if ev.OrganizationUUID != "" {
 		p.OrgID = ev.OrganizationUUID
 	}
@@ -180,7 +197,7 @@ func (s *Service) Dispatch(ctx context.Context, in In) (Result, error) {
 		eventID = uuid.Must(uuid.NewV7()).String()
 	}
 	rec := Record{
-		TenantID: tenant, EventID: eventID, Topic: ev.Type, ClientID: p.ClientID, Transport: in.Transport,
+		TenantID: tenant, EventID: eventID, Topic: ev.Type, ClientID: p.ClientID, ApplicationID: p.ApplicationID, Transport: in.Transport,
 		DataSHA256: dataHash(ev), ReceivedAt: s.now().UTC(),
 	}
 	var res Result
@@ -197,7 +214,7 @@ func (s *Service) Dispatch(ctx context.Context, in In) (Result, error) {
 			return s.accepted(ctx, in, res)
 		}
 		messageID, err := s.dispatcher.Dispatch(ctx, Delivery{
-			TenantID: tenant, OrgID: p.OrgID, Topic: ev.Type, EventID: eventID, Source: ev.Source,
+			TenantID: tenant, OrgID: p.OrgID, ApplicationID: p.ApplicationID, Topic: ev.Type, EventID: eventID, Source: ev.Source,
 			ClientID: p.ClientID, Data: data,
 		})
 		if err != nil {
@@ -210,6 +227,12 @@ func (s *Service) Dispatch(ctx context.Context, in In) (Result, error) {
 		return s.accepted(ctx, in, res)
 	})
 	if err != nil {
+		// The send was refused inside the transaction (sender, limits):
+		// its audit row rolled back with it, so the event's refusal is
+		// recorded now.
+		if domainapp.Reason(err) != "" {
+			return Result{}, s.refused(ctx, in, err)
+		}
 		return Result{}, err
 	}
 	return res, nil
@@ -220,37 +243,54 @@ func (s *Service) Dispatch(ctx context.Context, in In) (Result, error) {
 func (s *Service) accepted(ctx context.Context, in In, r Result) error {
 	return s.audit.Append(ctx, "event", r.EventID, AuditAccepted, map[string]any{
 		"topic": in.Event.Type, "event_id": r.EventID, "message_id": r.DeliveryID,
-		"transport": in.Transport, "duplicate": r.Duplicate,
+		"transport": in.Transport, "duplicate": r.Duplicate, "application_id": applicationOf(ctx),
 	})
+}
+
+func applicationOf(ctx context.Context) string {
+	p, _ := access.FromContext(ctx)
+	return p.ApplicationID
 }
 
 // refuse audits a refusal (except over Kafka, whose consumer audits it as a
 // rejected message) and returns the 403 wrapping reason.
 func (s *Service) refuse(ctx context.Context, in In, reason error) error {
+	if err := s.auditRefusal(ctx, in, reason); err != nil {
+		return err
+	}
+	return apperrors.Wrap(reason, apperrors.KindForbidden, apperrors.CodeForbidden, RefusedMessage)
+}
+
+// refused audits a send the application refused while dispatching, and
+// returns that refusal (a 403 or a 429) unchanged.
+func (s *Service) refused(ctx context.Context, in In, err error) error {
+	if aerr := s.auditRefusal(ctx, in, err); aerr != nil {
+		return aerr
+	}
+	return err
+}
+
+func (s *Service) auditRefusal(ctx context.Context, in In, reason error) error {
 	if in.Transport != TransportKafka {
-		meta := map[string]any{"reason": access.Reason(reason), "topic": in.Event.Type, "transport": in.Transport}
+		meta := map[string]any{"reason": domainapp.Reason(reason), "topic": in.Event.Type, "transport": in.Transport}
+		if id := applicationOf(ctx); id != "" {
+			meta["application_id"] = id
+		}
 		if in.Event.ID != "" {
 			meta["event_id"] = in.Event.ID
 		}
 		if in.Event.TenantUUID != "" {
 			meta["requested_tenant"] = in.Event.TenantUUID
 		}
-		if err := s.audit.Append(ctx, "event", in.Event.ID, AuditRefused, meta); err != nil {
-			return err
-		}
+		return s.audit.Append(ctx, "event", in.Event.ID, AuditRefused, meta)
 	}
-	return apperrors.Wrap(reason, apperrors.KindForbidden, apperrors.CodeForbidden, RefusedMessage)
+	return nil
 }
 
-// IsRefusal reports whether err is a refused event, and why.
-func IsRefusal(err error) (reason error, ok bool) {
-	for _, r := range []error{access.ErrUnknownClient, access.ErrTopicNotAllowed, access.ErrTenantMismatch,
-		access.ErrNoTenant, access.ErrNotServiceCaller} {
-		if errors.Is(err, r) {
-			return r, true
-		}
-	}
-	return nil, false
+// IsRefusal reports whether err is a refused event, and its stable reason.
+func IsRefusal(err error) (reason string, ok bool) {
+	r := domainapp.Reason(err)
+	return r, r != ""
 }
 
 func decodeData(raw json.RawMessage) (map[string]any, error) {
