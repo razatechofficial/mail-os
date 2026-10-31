@@ -43,7 +43,9 @@ func (f *fake) Get(_ context.Context, t, id string) (domain.Campaign, error) {
 	}
 	return c, nil
 }
-func (f *fake) Lock(ctx context.Context, t, id string) (domain.Campaign, error) { return f.Get(ctx, t, id) }
+func (f *fake) Lock(ctx context.Context, t, id string) (domain.Campaign, error) {
+	return f.Get(ctx, t, id)
+}
 func (f *fake) List(context.Context, string, Filter) ([]domain.Campaign, int, error) {
 	return nil, 0, nil
 }
@@ -87,8 +89,12 @@ func (f *fake) AddCounts(_ context.Context, id string, sent, failed int) error {
 	return nil
 }
 
-func (f *fake) TemplateExists(_ context.Context, t, id string) (bool, error) { return f.templates[id] == t, nil }
-func (f *fake) ListExists(_ context.Context, t, id string) (bool, error)     { return f.lists[id] == t, nil }
+func (f *fake) TemplateExists(_ context.Context, t, id string) (bool, error) {
+	return f.templates[id] == t, nil
+}
+func (f *fake) ListExists(_ context.Context, t, id string) (bool, error) {
+	return f.lists[id] == t, nil
+}
 
 func (f *fake) Pending(_ context.Context, _, campaignID, listID string, limit int) ([]Recipient, error) {
 	f.pending++
@@ -423,4 +429,6 @@ func TestEnqueueFailureDoesNotFailLaunch(t *testing.T) {
 
 type failingQueue struct{}
 
-func (failingQueue) EnqueueFanout(context.Context, string, string) error { return errors.New("redis down") }
+func (failingQueue) EnqueueFanout(context.Context, string, string) error {
+	return errors.New("redis down")
+}

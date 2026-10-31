@@ -15,7 +15,9 @@ import (
 
 type deliverFunc func(ctx context.Context, tenantID, id string) error
 
-func (f deliverFunc) Deliver(ctx context.Context, tenantID, id string) error { return f(ctx, tenantID, id) }
+func (f deliverFunc) Deliver(ctx context.Context, tenantID, id string) error {
+	return f(ctx, tenantID, id)
+}
 
 func TestMessageSendHonoursRetryAfterAndRetriesMissing(t *testing.T) {
 	task := asynq.NewTask(TypeMessageSend, []byte(`{"tenant_id":"t1","message_id":"m1"}`))
