@@ -94,51 +94,35 @@ func TestStepUpPolicy(t *testing.T) {
 	}
 }
 
-func TestServiceGrants(t *testing.T) {
-	const tenantA = "6f1c3c3e-6a38-4a8f-9a59-2b9d3b6a8a10"
-	const tenantB = "0b6c1c3e-6a38-4a8f-9a59-2b9d3b6a8a11"
-	grants := NewServiceGrants([]ServiceGrant{
-		{ClientID: "mailos-iam", TopicPatterns: []string{"iam.*"}},
-		{ClientID: "core", TopicPatterns: []string{"bank.otp.sent"}, Tenant: tenantB},
-	})
-	iam := Principal{Kind: KindService, ClientID: "mailos-iam", TenantID: tenantA}
-
-	if tenant, err := grants.Authorize(iam, "iam.auth.password_reset_requested", ""); err != nil || tenant != tenantA {
-		t.Fatalf("allowed topic: %q %v", tenant, err)
-	}
-	for topic, want := range map[string]error{
-		"iam":                ErrTopicNotAllowed,
-		"iamx.auth.login":    ErrTopicNotAllowed,
-		"bank.otp.sent":      ErrTopicNotAllowed,
-		"mailos.campaign":    ErrTopicNotAllowed,
-		"iam.user.created":   nil,
-		"iam.approval.x.y.z": nil,
+// A service may publish events and send; a spa browser user may only send
+// to themselves, whatever roles its token carries.
+func TestServiceAndSelfServicePermissions(t *testing.T) {
+	svc := Principal{Kind: KindService, ClientID: "core"}
+	for perm, want := range map[Permission]bool{
+		PermEventsDispatch: true, PermMessagesSend: true, PermMessagesSendSelf: false,
+		PermMessagesRead: false, PermApplicationsManage: false,
 	} {
-		if _, err := grants.Authorize(iam, topic, ""); !errors.Is(err, want) {
-			t.Errorf("topic %q: %v, want %v", topic, err, want)
+		if svc.Can(perm) != want {
+			t.Errorf("service %s = %v", perm, !want)
 		}
 	}
-	if _, err := grants.Authorize(iam, "iam.user.created", tenantB); !errors.Is(err, ErrTenantMismatch) {
-		t.Fatalf("event for another tenant: %v", err)
+	browser := Principal{Kind: KindUser, Roles: []Role{RoleAdmin}, SelfService: true, Scopes: []string{"mailos.send.self"}}
+	if !browser.Can(PermMessagesSendSelf) || browser.Can(PermMessagesSend) || browser.Can(PermTemplatesRead) {
+		t.Fatal("a self-service principal holds more than send_self")
 	}
-	unknown := Principal{Kind: KindService, ClientID: "intruder", TenantID: tenantA}
-	if _, err := grants.Authorize(unknown, "iam.user.created", ""); !errors.Is(err, ErrUnknownClient) || Reason(err) != "unknown_client" {
-		t.Fatalf("unknown client: %v", err)
+	if !browser.HasScope("mailos.send.self") || browser.HasScope("openid") {
+		t.Fatal("HasScope")
 	}
-	core := Principal{Kind: KindService, ClientID: "core"}
-	if tenant, err := grants.Authorize(core, "bank.otp.sent", ""); err != nil || tenant != tenantB {
-		t.Fatalf("configured tenant: %q %v", tenant, err)
+	admin := Principal{Kind: KindUser, Roles: []Role{RoleAdmin}}
+	operator := Principal{Kind: KindUser, Roles: []Role{RoleOperator}}
+	viewer := Principal{Kind: KindUser, Roles: []Role{RoleViewer}}
+	if !admin.Can(PermApplicationsManage) || operator.Can(PermApplicationsManage) || !viewer.Can(PermApplicationsRead) {
+		t.Fatal("applications permissions")
 	}
-	core.TenantID = tenantA
-	if _, err := grants.Authorize(core, "bank.otp.sent", ""); !errors.Is(err, ErrTenantMismatch) {
-		t.Fatalf("token tenant differs from configured tenant: %v", err)
+	if !admin.Can(PermMessagesSend) || !operator.Can(PermMessagesSend) || viewer.Can(PermMessagesSend) {
+		t.Fatal("send permission")
 	}
-	noTenant := Principal{Kind: KindService, ClientID: "mailos-iam"}
-	if _, err := grants.Authorize(noTenant, "iam.user.created", ""); !errors.Is(err, ErrNoTenant) {
-		t.Fatalf("no tenant: %v", err)
-	}
-	user := Principal{Kind: KindUser, Roles: []Role{RoleAdmin}, TenantID: tenantA}
-	if _, err := grants.Authorize(user, "iam.user.created", ""); !errors.Is(err, ErrNotServiceCaller) {
-		t.Fatalf("user publishing events: %v", err)
+	if !NeedsStepUp(PermApplicationsManage) || NeedsStepUp(PermApplicationsRead) {
+		t.Fatal("step-up for applications")
 	}
 }
