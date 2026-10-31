@@ -11,6 +11,8 @@ service MailService {
   rpc BatchSend(BatchSendRequest) returns (BatchSendResponse);
   rpc GetMessage(GetMessageRequest) returns (Message);
   rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
+  // IAM and other services publish domain events; MailOS maps type → template.
+  rpc DispatchEvent(DispatchEventRequest) returns (DispatchEventResponse);
 }
 
 message SendEmailRequest {
@@ -56,6 +58,18 @@ message ListMessagesRequest {
 message ListMessagesResponse {
   repeated Message messages = 1;
   PaginationMeta meta = 2;
+}
+
+// Domain event envelope: type is the topic (e.g. iam.auth.invite_requested), data is JSON context.
+message DispatchEventRequest {
+  string type = 1;
+  string source = 2;
+  bytes data = 3;
+}
+
+message DispatchEventResponse {
+  bool accepted = 1;
+  string delivery_id = 2;
 }
 
 message Message {
