@@ -225,7 +225,10 @@ type TemplatedSend struct {
 	Data           map[string]any
 	Tags           []string
 	Type           domainmsg.Type
+	// CampaignID links a campaign's message to its campaign.
+	CampaignID string
 
+	actor      *domainmsg.Actor
 	replyTo    string
 	metadata   map[string]any
 	priority   int
@@ -280,7 +283,10 @@ func (s *Service) SendTemplated(ctx context.Context, in TemplatedSend) (domainms
 		ReplyTo: in.replyTo, Type: typ, Priority: domainmsg.Priority(in.priority), Tags: in.Tags, Metadata: in.metadata,
 		Topic: topic, TemplateID: tpl.ID, TemplateVersionID: ver.ID, Locale: string(ver.Locale), TemplateData: data,
 		SecretKeys: secretKeys, EventID: in.EventID, IdempotencyKey: in.IdempotencyKey, Actor: actorOf(ctx),
-		CreatedAt: now, UpdatedAt: now,
+		CampaignID: in.CampaignID, CreatedAt: now, UpdatedAt: now,
+	}
+	if in.actor != nil {
+		m.Actor = *in.actor
 	}
 	if in.Source != "" {
 		m.Metadata = maps.Clone(m.Metadata)

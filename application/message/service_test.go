@@ -2,10 +2,13 @@ package message
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/razatechofficial/mail-os/application/campaign"
+	"github.com/razatechofficial/mail-os/application/inbound"
 	"github.com/razatechofficial/mail-os/domain/access"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
 	"github.com/razatechofficial/mail-os/domain/sendingdomain"
@@ -284,5 +287,34 @@ func TestBatchLimitsAndPartialFailure(t *testing.T) {
 	m, _ := f.repo.Get(context.Background(), tenant, id)
 	if err != nil || status != "queued" || m.Tags[len(m.Tags)-1] != "test" {
 		t.Fatal(id, status, err)
+	}
+}
+
+func TestDispatchAndCampaignSend(t *testing.T) {
+	f := newFixture(t)
+	id, err := f.svc.Dispatch(context.Background(), inbound.Delivery{TenantID: tenant, Topic: domaintemplate.TopicMFAEmailCode,
+		EventID: "evt-9", Source: "iam", ClientID: "iam-service", OrgID: "org-1",
+		Data: map[string]any{"email": "ana@example.com", "code": "482913", "purpose": "sign_in", "expires_in_minutes": json.Number("10")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ := f.repo.Get(context.Background(), tenant, id)
+	if m.ToEmail != "ana@example.com" || m.EventID != "evt-9" || m.Actor != (domainmsg.Actor{Type: domainmsg.ActorService, ID: "iam-service"}) ||
+		m.Metadata["iam_org_id"] != "org-1" || m.Metadata["source"] != "iam" {
+		t.Fatalf("%+v", m)
+	}
+	if _, err := f.svc.Dispatch(context.Background(), inbound.Delivery{TenantID: tenant, Topic: domaintemplate.TopicMFAEmailCode,
+		Data: map[string]any{"code": "1"}}); apperrors.KindOf(err) != apperrors.KindInvalidInput {
+		t.Fatal("event without a recipient accepted")
+	}
+	id, err = f.svc.SendCampaignMessage(context.Background(), campaign.CampaignMessage{TenantID: tenant, CampaignID: "c1",
+		TemplateID: "tpl-1", To: "bob@example.com", FromEmail: "news@bank.example",
+		Data: map[string]any{"contact": map[string]any{"email": "bob@example.com"}, "campaign": map[string]any{"name": "Autumn"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ = f.repo.Get(context.Background(), tenant, id)
+	if m.Type != domainmsg.TypeMarketing || m.CampaignID != "c1" || m.Topic != domaintemplate.TopicCampaign {
+		t.Fatalf("%+v", m)
 	}
 }
