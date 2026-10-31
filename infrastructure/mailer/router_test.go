@@ -16,7 +16,9 @@ type fakeSource struct {
 	err  error
 }
 
-func (f *fakeSource) ActiveProviders(context.Context, string) ([]Configured, error) { return f.list, f.err }
+func (f *fakeSource) ActiveProviders(context.Context, string) ([]Configured, error) {
+	return f.list, f.err
+}
 
 // fakeSender answers with err (nil for success) and counts calls.
 type fakeSender struct {

@@ -198,4 +198,3 @@ func order(list []Configured) []Configured {
 	}
 	return out
 }
-
