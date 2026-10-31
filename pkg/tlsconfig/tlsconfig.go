@@ -39,13 +39,6 @@ var cipherSuites = []uint16{
 	tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
 }
 
-func minVersion(v string) uint16 {
-	if v == "1.3" {
-		return tls.VersionTLS13
-	}
-	return tls.VersionTLS12
-}
-
 // NewServer loads the key pair and, for mutual TLS, the client CA. The key
 // pair is reread on each handshake from the files, so a certificate
 // rotated on disk (cert-manager) is served without a restart.
@@ -54,7 +47,7 @@ func NewServer(s Server) (*tls.Config, error) {
 		return nil, fmt.Errorf("tls key pair: %w", err)
 	}
 	cfg := &tls.Config{
-		MinVersion:   minVersion(s.MinVersion),
+		MinVersion:   tls.VersionTLS12,
 		CipherSuites: cipherSuites,
 		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 			c, err := tls.LoadX509KeyPair(s.CertFile, s.KeyFile)
@@ -63,6 +56,9 @@ func NewServer(s Server) (*tls.Config, error) {
 			}
 			return &c, nil
 		},
+	}
+	if s.MinVersion == "1.3" {
+		cfg.MinVersion = tls.VersionTLS13
 	}
 	switch strings.ToLower(s.ClientAuth) {
 	case "", ClientAuthNone:
