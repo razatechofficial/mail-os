@@ -67,6 +67,18 @@ const (
 	TopicLifecycleEmail    = "iam.lifecycle.email"
 )
 
+// Tenant domain topics (contract §7): one event per tenant administrator,
+// payload pkg/events.DomainNotice.
+const (
+	TopicDomainVerified           = "iam.domain.verified"
+	TopicDomainClaimExpiring      = "iam.domain.claim_expiring"
+	TopicDomainClaimReleased      = "iam.domain.claim_released"
+	TopicDomainVerificationLapsed = "iam.domain.verification_lapsed"
+	TopicDomainTransferRequested  = "iam.domain.transfer_requested"
+	TopicDomainTransferred        = "iam.domain.transferred"
+	TopicDomainRevoked            = "iam.domain.revoked"
+)
+
 // TopicCampaign is MailOS's own topic: a campaign sent to contacts.
 const TopicCampaign = "mailos.campaign"
 
@@ -186,6 +198,31 @@ var catalogue = []topicSpec{
 			req("body", "Body", KindText, "Your account is ready."),
 			req("occurred_at", "When", KindDatetime, "2026-10-31T09:30:00Z"),
 		}}},
+	domainTopic(TopicDomainVerified, "Domain verified", "The tenant proved control of a domain for the first time",
+		req("domain_id", "Domain ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000004")),
+	domainTopic(TopicDomainClaimExpiring, "Domain claim expiring", "An unverified domain claim expires soon",
+		req("domain_id", "Domain ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000004"),
+		req("expires_at", "Expires", KindDatetime, "2026-11-01T09:30:00Z")),
+	domainTopic(TopicDomainClaimReleased, "Domain claim released", "The tenant's unverified domain claim is gone",
+		req("domain_id", "Domain ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000004"),
+		req("reason", "Reason", KindText, "expired")),
+	domainTopic(TopicDomainVerificationLapsed, "Domain verification lapsed", "Re-verification failed and the domain is an expiring claim again",
+		req("domain_id", "Domain ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000004"),
+		req("reason", "Reason", KindText, "dns_record_missing"),
+		req("expires_at", "Expires", KindDatetime, "2026-11-07T09:30:00Z")),
+	domainTopic(TopicDomainTransferRequested, "Domain transfer requested", "A platform operator opened a transfer of a domain to this tenant",
+		req("reason", "Reason", KindText, "Merger of the two workspaces"),
+		req("dns_name", "DNS record name", KindText, "_iam-challenge.example.com"),
+		req("dns_value", "DNS record value", KindText, "iam-domain-verification=3f2a9c"),
+		req("expires_at", "Expires", KindDatetime, "2026-11-07T09:30:00Z")),
+	domainTopic(TopicDomainTransferred, "Domain transferred", "A domain moved between tenants after approval and a fresh DNS proof",
+		req("domain_id", "Domain ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000004"),
+		req("reason", "Reason", KindText, "Merger of the two workspaces"),
+		req("direction", "Direction", KindText, "to"),
+		opt("other_tenant_name", "Other tenant", KindText, "Averox Labs")),
+	domainTopic(TopicDomainRevoked, "Domain revoked", "A platform operator removed a verified domain from this tenant",
+		req("domain_id", "Domain ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000004"),
+		req("reason", "Reason", KindText, "Ownership dispute upheld")),
 	{Topic: Topic{Key: TopicCampaign, Name: "Campaign", Source: SourceMailOS,
 		Description: "A marketing campaign sent to a contact list",
 		Variables: []Variable{
@@ -193,6 +230,20 @@ var catalogue = []topicSpec{
 			opt("contact.first_name", "First name", KindText, "Amna"),
 			opt("contact.last_name", "Last name", KindText, "Khan"),
 		}}},
+}
+
+// domainTopic is a §7 topic: the fields every DomainNotice carries, then
+// the topic's own.
+func domainTopic(key, name, description string, extra ...Variable) topicSpec {
+	vars := []Variable{recipientEmail,
+		req("user_id", "User ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000001"),
+		req("tenant_id", "Tenant ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000003"),
+		opt("tenant_name", "Tenant", KindText, "Averox"),
+		req("domain", "Domain", KindText, "example.com"),
+		req("occurred_at", "When", KindDatetime, "2026-10-31T09:30:00Z"),
+		req("link", "Domains page", KindURL, "https://iam.example.com/settings/domains"),
+	}
+	return topicSpec{Topic: Topic{Key: key, Name: name, Description: description, Source: SourceIAM, Variables: append(vars, extra...)}}
 }
 
 // topics is the catalogue with the shared variables added, by key.
