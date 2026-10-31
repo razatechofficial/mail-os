@@ -13,7 +13,8 @@ func TestTopicsCatalogue(t *testing.T) {
 	ts := Topics()
 	want := []string{TopicSecurityNotice, TopicApprovalRequested, TopicInvite, TopicMagicLink, TopicPasswordReset,
 		TopicEmailVerification, TopicMFAEmailCode, TopicPasskeyEnrolment, TopicDeletionRequested, TopicAccessReview,
-		TopicLifecycleEmail, TopicCampaign}
+		TopicLifecycleEmail, TopicDomainVerified, TopicDomainClaimExpiring, TopicDomainClaimReleased,
+		TopicDomainVerificationLapsed, TopicDomainTransferRequested, TopicDomainTransferred, TopicDomainRevoked, TopicCampaign}
 	var keys []string
 	for _, tp := range ts {
 		keys = append(keys, tp.Key)
@@ -177,6 +178,38 @@ func assertCodes(t *testing.T, errs []apperrors.FieldError, want map[string]stri
 	for f, c := range want {
 		if got[f] != c {
 			t.Fatalf("%s = %q, want %q (all: %+v)", f, got[f], c, errs)
+		}
+	}
+}
+
+// The §7 domain topics take IAM's DomainNotice as it is sent: every topic
+// its own fields, the tenant name optional.
+func TestDomainTopics(t *testing.T) {
+	base := map[string]any{"email": "admin@example.com", "user_id": "u1", "tenant_id": "t1", "domain": "example.com",
+		"occurred_at": "2026-10-31T09:30:00Z", "link": "https://iam.example.com/settings/domains"}
+	extra := map[string]map[string]any{
+		TopicDomainVerified:           {"domain_id": "d1"},
+		TopicDomainClaimExpiring:      {"domain_id": "d1", "expires_at": "2026-11-01T09:30:00Z"},
+		TopicDomainClaimReleased:      {"domain_id": "d1", "reason": "verified_elsewhere"},
+		TopicDomainVerificationLapsed: {"domain_id": "d1", "reason": "parent_lapsed", "expires_at": "2026-11-07T09:30:00Z"},
+		TopicDomainTransferRequested:  {"reason": "merger", "dns_name": "_iam.example.com", "dns_value": "abc", "expires_at": "2026-11-07T09:30:00Z"},
+		TopicDomainTransferred:        {"domain_id": "d1", "reason": "merger", "direction": "from"},
+		TopicDomainRevoked:            {"domain_id": "d1", "reason": "dispute"},
+	}
+	for topic, fields := range extra {
+		data := map[string]any{}
+		for k, v := range base {
+			data[k] = v
+		}
+		for k, v := range fields {
+			data[k] = v
+		}
+		if errs := ValidateData(topic, data); len(errs) != 0 {
+			t.Errorf("%s: %v", topic, errs)
+		}
+		delete(data, "domain")
+		if errs := ValidateData(topic, data); len(errs) != 1 || errs[0].Field != "data.domain" {
+			t.Errorf("%s without domain: %v", topic, errs)
 		}
 	}
 }
