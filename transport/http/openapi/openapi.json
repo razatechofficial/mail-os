@@ -83,6 +83,371 @@
           "error"
         ],
         "type": "object"
+      },
+      "Template": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "slug": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "transactional",
+              "marketing",
+              "notification"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "topic": {
+            "type": "string"
+          },
+          "default_locale": {
+            "type": "string",
+            "enum": [
+              "en",
+              "ur"
+            ]
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TemplateInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "slug": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "transactional",
+              "marketing",
+              "notification"
+            ]
+          },
+          "topic": {
+            "type": "string"
+          },
+          "default_locale": {
+            "type": "string",
+            "enum": [
+              "en",
+              "ur"
+            ]
+          },
+          "is_active": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Draft": {
+        "type": "object",
+        "properties": {
+          "locale": {
+            "type": "string",
+            "enum": [
+              "en",
+              "ur"
+            ]
+          },
+          "subject": {
+            "type": "string",
+            "maxLength": 998
+          },
+          "preheader": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "design": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Designer node tree, root \"email\" (max 512 KiB)."
+          },
+          "html_body": {
+            "type": "string",
+            "description": "Compiled HTML (max 1 MiB); sanitised on save."
+          },
+          "text_body": {
+            "type": "string",
+            "description": "Plain text (max 256 KiB)."
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "template_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "updated_by": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DraftInput": {
+        "type": "object",
+        "required": [
+          "locale",
+          "revision",
+          "subject",
+          "html_body",
+          "text_body"
+        ],
+        "properties": {
+          "locale": {
+            "type": "string",
+            "enum": [
+              "en",
+              "ur"
+            ]
+          },
+          "subject": {
+            "type": "string",
+            "maxLength": 998
+          },
+          "preheader": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "design": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Designer node tree, root \"email\" (max 512 KiB)."
+          },
+          "html_body": {
+            "type": "string",
+            "description": "Compiled HTML (max 1 MiB); sanitised on save."
+          },
+          "text_body": {
+            "type": "string",
+            "description": "Plain text (max 256 KiB)."
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "revision": {
+            "type": "integer"
+          }
+        }
+      },
+      "Version": {
+        "type": "object",
+        "description": "Immutable once published.",
+        "properties": {
+          "locale": {
+            "type": "string",
+            "enum": [
+              "en",
+              "ur"
+            ]
+          },
+          "subject": {
+            "type": "string",
+            "maxLength": 998
+          },
+          "preheader": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "design": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Designer node tree, root \"email\" (max 512 KiB)."
+          },
+          "html_body": {
+            "type": "string",
+            "description": "Compiled HTML (max 1 MiB); sanitised on save."
+          },
+          "text_body": {
+            "type": "string",
+            "description": "Plain text (max 256 KiB)."
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "template_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "published"
+            ]
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "published_by": {
+            "type": "string"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Topic": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "iam",
+              "mailos"
+            ]
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "url",
+                    "email",
+                    "datetime",
+                    "number",
+                    "secret"
+                  ]
+                },
+                "sample": {}
+              }
+            }
+          }
+        }
+      },
+      "Branding": {
+        "type": "object",
+        "properties": {
+          "company_name": {
+            "type": "string"
+          },
+          "logo_url": {
+            "type": "string"
+          },
+          "logo_alt": {
+            "type": "string"
+          },
+          "primary_color": {
+            "type": "string"
+          },
+          "background_color": {
+            "type": "string"
+          },
+          "content_background_color": {
+            "type": "string"
+          },
+          "text_color": {
+            "type": "string"
+          },
+          "link_color": {
+            "type": "string"
+          },
+          "font_family": {
+            "type": "string"
+          },
+          "company_address": {
+            "type": "string"
+          },
+          "footer_text": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
       }
     },
     "securitySchemes": {
@@ -103,6 +468,7 @@
   "paths": {
     "/api/v1/analytics/audit-logs": {
       "get": {
+        "description": "The tenant's audit events in IAM's format, newest first. Each read is audited (audit_log.viewed). Permission: `audit:read`.",
         "operationId": "get_analytics_audit_logs",
         "responses": {
           "default": {
@@ -118,12 +484,12 @@
         "tags": [
           "analytics"
         ],
-        "description": "The tenant's audit events in IAM's format, newest first. Each read is audited (audit_log.viewed). Permission: `audit:read`.",
         "x-permission": "audit:read"
       }
     },
     "/api/v1/analytics/audit-logs/export": {
       "get": {
+        "description": "Up to 10,000 events; audited as audit_log.exported. Permission: `audit:export`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
         "operationId": "get_analytics_audit_logs_export",
         "responses": {
           "default": {
@@ -139,13 +505,13 @@
         "tags": [
           "analytics"
         ],
-        "description": "Up to 10,000 events; audited as audit_log.exported. Permission: `audit:export`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
-        "x-step-up": true,
-        "x-permission": "audit:export"
+        "x-permission": "audit:export",
+        "x-step-up": true
       }
     },
     "/api/v1/keys/encryption": {
       "get": {
+        "description": "Per purpose (provider, dkim, webhook): keys, state and how many values each seals. Never key material. Permission: `settings:manage`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
         "operationId": "get_keys_encryption",
         "responses": {
           "default": {
@@ -161,13 +527,13 @@
         "tags": [
           "keys"
         ],
-        "description": "Per purpose (provider, dkim, webhook): keys, state and how many values each seals. Never key material. Permission: `settings:manage`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
-        "x-step-up": true,
-        "x-permission": "settings:manage"
+        "x-permission": "settings:manage",
+        "x-step-up": true
       }
     },
     "/api/v1/keys/encryption/{purpose}/rotate": {
       "post": {
+        "description": "Retires the active key; the schedule re-encrypts what it sealed and then destroys it. Permission: `settings:manage`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
         "operationId": "post_keys_encryption_purpose_rotate",
         "parameters": [
           {
@@ -193,13 +559,13 @@
         "tags": [
           "keys"
         ],
-        "description": "Retires the active key; the schedule re-encrypts what it sealed and then destroys it. Permission: `settings:manage`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
-        "x-step-up": true,
-        "x-permission": "settings:manage"
+        "x-permission": "settings:manage",
+        "x-step-up": true
       }
     },
     "/api/v1/me": {
       "get": {
+        "description": "The token's subject, tenant, MailOS roles and the permissions they grant. Permission: `templates:read`.",
         "operationId": "get_me",
         "responses": {
           "default": {
@@ -215,7 +581,6 @@
         "tags": [
           "me"
         ],
-        "description": "The token's subject, tenant, MailOS roles and the permissions they grant. Permission: `templates:read`.",
         "x-permission": "templates:read"
       }
     },
@@ -237,6 +602,7 @@
     },
     "/api/v1/organizations": {
       "get": {
+        "description": "The caller's own tenant only; tenants come from IAM and are provisioned on first use. Permission: `settings:read`.",
         "operationId": "get_organizations",
         "responses": {
           "default": {
@@ -252,12 +618,12 @@
         "tags": [
           "organizations"
         ],
-        "description": "The caller's own tenant only; tenants come from IAM and are provisioned on first use. Permission: `settings:read`.",
         "x-permission": "settings:read"
       }
     },
     "/api/v1/organizations/{id}": {
       "get": {
+        "description": "The caller's own tenant; any other id is 404. Permission: `settings:read`.",
         "operationId": "get_organizations_id",
         "parameters": [
           {
@@ -283,12 +649,740 @@
         "tags": [
           "organizations"
         ],
-        "description": "The caller's own tenant; any other id is 404. Permission: `settings:read`.",
         "x-permission": "settings:read"
+      }
+    },
+    "/api/v1/template-branding": {
+      "get": {
+        "operationId": "get_template_branding",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Branding"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get branding",
+        "tags": [
+          "template-branding"
+        ],
+        "x-permission": "templates:read",
+        "description": "Permission: `templates:read`."
+      },
+      "put": {
+        "operationId": "put_template_branding",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Branding"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update branding",
+        "tags": [
+          "template-branding"
+        ],
+        "x-permission": "branding:edit",
+        "description": "Permission: `branding:edit`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Branding"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/template-topics": {
+      "get": {
+        "operationId": "get_template_topics",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Topic"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Template topics and variables",
+        "tags": [
+          "template-topics"
+        ],
+        "x-permission": "templates:read",
+        "description": "Static catalogue built from IAM's events; secret variables are masked in previews and message views. Permission: `templates:read`."
+      }
+    },
+    "/api/v1/templates": {
+      "get": {
+        "operationId": "get_templates",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Template"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List templates",
+        "tags": [
+          "templates"
+        ],
+        "x-permission": "templates:read",
+        "description": "Permission: `templates:read`."
+      },
+      "post": {
+        "operationId": "post_templates",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Template"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create template",
+        "tags": [
+          "templates"
+        ],
+        "x-permission": "templates:edit",
+        "description": "Permission: `templates:edit`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/templates/{id}": {
+      "delete": {
+        "operationId": "delete_templates_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete template",
+        "tags": [
+          "templates"
+        ],
+        "x-permission": "templates:delete",
+        "description": "Permission: `templates:delete`."
+      },
+      "get": {
+        "operationId": "get_templates_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Template"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get template",
+        "tags": [
+          "templates"
+        ],
+        "x-permission": "templates:read",
+        "description": "Another tenant's template is 404. Permission: `templates:read`."
+      },
+      "put": {
+        "operationId": "put_templates_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Template"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update template",
+        "tags": [
+          "templates"
+        ],
+        "x-permission": "templates:edit",
+        "description": "Permission: `templates:edit`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/templates/{id}/active-version": {
+      "get": {
+        "operationId": "get_templates_id_active_version",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Version"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Active version",
+        "tags": [
+          "templates"
+        ],
+        "x-permission": "templates:read",
+        "description": "?locale= (defaults to default_locale); 404 when none is published. Permission: `templates:read`."
+      }
+    },
+    "/api/v1/templates/{id}/draft": {
+      "get": {
+        "operationId": "get_templates_id_draft",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Draft"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get draft",
+        "tags": [
+          "templates"
+        ],
+        "x-permission": "templates:read",
+        "description": "?locale=en|ur. Revision 0 when none is saved, seeded from the active version. Permission: `templates:read`."
+      },
+      "put": {
+        "operationId": "put_templates_id_draft",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Draft"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Save draft",
+        "tags": [
+          "templates"
+        ],
+        "x-permission": "templates:edit",
+        "description": "409 CONFLICT when revision is stale; 422 VALIDATION with details; unknown variables come back as meta.warnings. Raw HTML design nodes only for mailos_admin with FEATURE_RAW_HTML_BLOCKS. Permission: `templates:edit`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/templates/{id}/preview": {
+      "post": {
+        "operationId": "post_templates_id_preview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Preview",
+        "tags": [
+          "templates"
+        ],
+        "x-permission": "templates:edit",
+        "description": "Renders unsaved content with data; variables HTML-escaped by context. Rate limited per user. Permission: `templates:edit`."
+      }
+    },
+    "/api/v1/templates/{id}/publish": {
+      "post": {
+        "operationId": "post_templates_id_publish",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Version"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Publish draft",
+        "tags": [
+          "templates"
+        ],
+        "x-permission": "templates:publish",
+        "description": "Body {locale, revision}. Creates an immutable version, active for its locale only. 403 FOUR_EYES_REQUIRED when the tenant requires four-eyes and the publisher last edited the draft. Permission: `templates:publish`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "x-step-up": true
+      }
+    },
+    "/api/v1/templates/{id}/test-send": {
+      "post": {
+        "operationId": "post_templates_id_test_send",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Test send",
+        "tags": [
+          "templates"
+        ],
+        "x-permission": "templates:edit",
+        "description": "Renders the saved draft, subject prefixed [Test], from a verified sending domain. Audited; rate limited per user. Permission: `templates:edit`."
+      }
+    },
+    "/api/v1/templates/{id}/versions": {
+      "get": {
+        "operationId": "get_templates_id_versions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Version"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List versions",
+        "tags": [
+          "templates"
+        ],
+        "x-permission": "templates:read",
+        "description": "?locale=; newest first. Permission: `templates:read`."
+      }
+    },
+    "/api/v1/templates/{id}/versions/{version}/restore": {
+      "post": {
+        "operationId": "post_templates_id_versions_version_restore",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Draft"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Restore version into draft",
+        "tags": [
+          "templates"
+        ],
+        "x-permission": "templates:edit",
+        "description": "Body {locale, revision}. Permission: `templates:edit`."
       }
     },
     "/api/v1/tenant/settings": {
       "get": {
+        "description": "Four-eyes publishing and message retention. Permission: `settings:read`.",
         "operationId": "get_tenant_settings",
         "responses": {
           "default": {
@@ -304,10 +1398,10 @@
         "tags": [
           "tenant"
         ],
-        "description": "Four-eyes publishing and message retention. Permission: `settings:read`.",
         "x-permission": "settings:read"
       },
       "put": {
+        "description": "Audited with before and after. Permission: `settings:manage`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
         "operationId": "put_tenant_settings",
         "responses": {
           "default": {
@@ -323,9 +1417,8 @@
         "tags": [
           "tenant"
         ],
-        "description": "Audited with before and after. Permission: `settings:manage`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
-        "x-step-up": true,
-        "x-permission": "settings:manage"
+        "x-permission": "settings:manage",
+        "x-step-up": true
       }
     }
   },
