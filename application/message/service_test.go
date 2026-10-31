@@ -7,9 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/razatechofficial/mail-os/application/applications/appstest"
 	"github.com/razatechofficial/mail-os/application/campaign"
 	"github.com/razatechofficial/mail-os/application/inbound"
 	"github.com/razatechofficial/mail-os/domain/access"
+	domainapp "github.com/razatechofficial/mail-os/domain/application"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
 	"github.com/razatechofficial/mail-os/domain/sendingdomain"
 	"github.com/razatechofficial/mail-os/domain/suppression"
@@ -28,6 +30,9 @@ type fixture struct {
 	notifier *memNotifier
 	stats    *memStats
 	audit    *memAudit
+	// apps are the registry's applications: core (live, iam.auth.* topics,
+	// raw content) and sandbox (sandboxed, broadcast).
+	core, sandbox domainapp.Application
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -39,7 +44,12 @@ func newFixture(t *testing.T) *fixture {
 		ver: domaintemplate.Version{ID: "ver-3", TemplateID: "tpl-1", Locale: "en", Subject: "{{brand.company_name}} code {{code}}",
 			HTMLBody: "<p>Your code is {{code}}</p>", TextBody: "Your code is {{code}}"},
 	}
-	f.svc = NewService(Deps{Repo: f.repo, Queue: f.queue, Suppressions: f.sups, Tenants: memTenants{}, Templates: tpls,
+	f.core = appstest.Server("core", tenant, "iam.auth.*", "raw")
+	f.core.System, f.core.Senders, f.core.DefaultFromEmail, f.core.RatePerMinute, f.core.DailyQuota =
+		false, []string{"*@bank.example"}, "otp@bank.example", 100, 2
+	f.sandbox = appstest.Server("sandbox", tenant, "mfa-code")
+	f.sandbox.Environment, f.sandbox.Stream = domainapp.EnvSandbox, domainapp.StreamBroadcast
+	f.svc = NewService(Deps{Applications: appstest.New(f.core, f.sandbox), Repo: f.repo, Queue: f.queue, Suppressions: f.sups, Tenants: memTenants{}, Templates: tpls,
 		Versions: tpls, Branding: tpls, Render: fakeRender, Sender: f.sender, Signer: memSigner{},
 		Webhooks: f.notifier, Stats: f.stats, Audit: f.audit}, Config{MaxAttempts: 3, RetentionDays: 30})
 	return f
@@ -317,4 +327,95 @@ func TestDispatchAndCampaignSend(t *testing.T) {
 	if m.Type != domainmsg.TypeMarketing || m.CampaignID != "c1" || m.Topic != domaintemplate.TopicCampaign {
 		t.Fatalf("%+v", m)
 	}
+}
+
+func appCtx(a domainapp.Application) context.Context {
+	return access.WithPrincipal(context.Background(), access.Principal{Kind: access.KindService, Subject: "client:" + a.ClientID,
+		ClientID: a.ClientID, TenantID: tenant, ApplicationID: a.ID})
+}
+
+// An application's send takes its default sender, carries its id, and is
+// refused outside its message types and senders and over its quota.
+func TestApplicationSendRules(t *testing.T) {
+	f := newFixture(t)
+	ctx := appCtx(f.core)
+	in := direct()
+	in.FromEmail = ""
+	r, err := f.svc.Send(ctx, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := f.repo.msgs[r.MessageID]
+	if m.ApplicationID != f.core.ID || m.FromEmail != "otp@bank.example" || m.Stream != domainmsg.StreamTransactional || m.Sandbox {
+		t.Fatalf("%+v", m)
+	}
+	tpl := SendInput{TenantID: tenant, TemplateSlug: "mfa-code", ToEmail: "ana@example.com", TemplateData: mfaData()}
+	if _, err := f.svc.Send(ctx, tpl); err != nil {
+		t.Fatalf("topic allowed by prefix: %v", err)
+	}
+	if _, err := f.svc.Send(ctx, in); apperrors.KindOf(err) != apperrors.KindRateLimited || domainapp.Reason(err) != "quota_exceeded" {
+		t.Fatalf("third send over a quota of 2: %v", err)
+	}
+	if n := len(f.repo.msgs); n != 2 {
+		t.Fatalf("%d messages stored", n)
+	}
+	in.FromEmail = "ceo@other.example"
+	if _, err := f.svc.Send(ctx, in); domainapp.Reason(err) != "sender_not_allowed" {
+		t.Fatalf("sender: %v", err)
+	}
+	sb := appCtx(f.sandbox)
+	if _, err := f.svc.Send(sb, direct()); domainapp.Reason(err) != "raw_content_not_allowed" {
+		t.Fatalf("raw from an application without raw: %v", err)
+	}
+}
+
+// A sandbox application's message is rendered and captured: no provider,
+// no webhook, no stats; a broadcast application's mail is marketing.
+func TestSandboxCapturesWithoutDelivering(t *testing.T) {
+	f := newFixture(t)
+	r, err := f.svc.Send(appCtx(f.sandbox), SendInput{TenantID: tenant, TemplateSlug: "mfa-code", ToEmail: "ana@example.com",
+		TemplateData: mfaData()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.Deliver(context.Background(), tenant, r.MessageID); err != nil {
+		t.Fatal(err)
+	}
+	m := f.repo.msgs[r.MessageID]
+	if m.Status != domainmsg.StatusCaptured || !m.Sandbox || m.Type != domainmsg.TypeMarketing || m.Stream != domainmsg.StreamBroadcast {
+		t.Fatalf("%+v", m)
+	}
+	if !strings.Contains(m.HTMLBody, "123456") || len(f.sender.sent) != 0 || len(f.notifier.events) != 0 {
+		t.Fatalf("captured body %q, sent %d, events %v", m.HTMLBody, len(f.sender.sent), f.notifier.events)
+	}
+}
+
+// An application-scoped suppression stops that application's mail, and
+// webhooks are told which application sent.
+func TestApplicationSuppressionAndWebhookScope(t *testing.T) {
+	f := newFixture(t)
+	f.sups.list[f.core.ID+"/scoped@example.com"] = suppression.TypeManual
+	in := direct()
+	in.FromEmail, in.ToEmail = "", "scoped@example.com"
+	r, err := f.svc.Send(appCtx(f.core), in)
+	if err != nil || r.Status != string(domainmsg.StatusSuppressed) {
+		t.Fatalf("%+v %v", r, err)
+	}
+	console, err := f.svc.Send(userCtx(), SendInput{TenantID: tenant, FromEmail: "noreply@bank.example", ToEmail: "scoped@example.com",
+		Subject: "Hi", Text: "x"})
+	if err != nil || console.Status != "queued" {
+		t.Fatalf("an application's suppression stopped the tenant's own mail: %+v %v", console, err)
+	}
+	in.ToEmail = "ok@example.com"
+	ok, _ := f.svc.Send(appCtx(f.core), in)
+	if err := f.svc.Deliver(context.Background(), tenant, ok.MessageID); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.notifier.apps) != 1 || f.notifier.apps[0] != f.core.ID {
+		t.Fatalf("webhook scope %v", f.notifier.apps)
+	}
+}
+
+func mfaData() map[string]any {
+	return map[string]any{"email": "ana@example.com", "code": "123456", "purpose": "sign_in", "expires_in_minutes": 10.0}
 }
