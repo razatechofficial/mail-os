@@ -1,0 +1,13 @@
+# Build context filter for deployments/Dockerfile (BuildKit reads
+# <Dockerfile>.dockerignore). Keeps secrets and local output out of the build.
+.git
+.claude
+.env
+.env.*
+!.env.example
+bin/
+ci-reports/
+e2e/.work/
+coverage.*
+*.out
+*.test
