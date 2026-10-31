@@ -97,8 +97,6 @@ var brandVariables = []Variable{
 	opt("brand.logo_url", "Brand logo", KindURL, "https://iam.example.com/branding/logo.png"),
 	opt("brand.primary_color", "Brand primary colour", KindText, "#2563eb"),
 	opt("brand.accent_color", "Brand accent colour", KindText, "#0ea5e9"),
-	opt("brand.locale", "Brand locale", KindText, "en"),
-	opt("brand.dir", "Text direction", KindText, "ltr"),
 	opt("brand.support_text", "Support text", KindText, "Contact support@example.com"),
 }
 

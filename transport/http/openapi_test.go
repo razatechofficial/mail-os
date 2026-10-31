@@ -32,6 +32,7 @@ func allRoutes() []Routes {
 	return []Routes{
 		handler.NewTenantHandler(nil, nil, nil),
 		handler.NewAuditLogHandler(nil),
+		handler.NewTemplateHandler(nil, nil, handler.TemplateLimits{}),
 	}
 }
 
