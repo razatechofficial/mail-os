@@ -33,6 +33,10 @@ func allRoutes() []Routes {
 		handler.NewTenantHandler(nil, nil, nil),
 		handler.NewAuditLogHandler(nil),
 		handler.NewTemplateHandler(nil, nil, handler.TemplateLimits{}),
+		handler.NewEventHandler(nil),
+		handler.NewContactHandler(nil),
+		handler.NewContactListHandler(nil),
+		handler.NewCampaignHandler(nil),
 	}
 }
 
