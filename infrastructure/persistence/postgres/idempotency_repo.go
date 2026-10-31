@@ -7,7 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/razatechofficial/mail-os/transport/http/middleware"
+	"github.com/razatechofficial/mail-os/application/idempotency"
 )
 
 // IdempotencyRepository keeps Idempotency-Key responses in
@@ -16,7 +16,7 @@ type IdempotencyRepository struct {
 	db *Pool
 }
 
-var _ middleware.IdempotencyStore = (*IdempotencyRepository)(nil)
+var _ idempotency.Store = (*IdempotencyRepository)(nil)
 
 // NewIdempotencyRepository returns the repository.
 func NewIdempotencyRepository(db *Pool) *IdempotencyRepository { return &IdempotencyRepository{db: db} }
@@ -24,7 +24,7 @@ func NewIdempotencyRepository(db *Pool) *IdempotencyRepository { return &Idempot
 // Claim inserts the key, or takes over an expired one; a live key is
 // returned as it is. Two concurrent first requests cannot both claim: the
 // primary key decides.
-func (r *IdempotencyRepository) Claim(ctx context.Context, scope, key, hash string, expires time.Time) (middleware.IdempotencyRecord, bool, error) {
+func (r *IdempotencyRepository) Claim(ctx context.Context, scope, key, hash string, expires time.Time) (idempotency.Record, bool, error) {
 	q := QuerierFromContext(ctx, r.db)
 	var claimed bool
 	err := q.QueryRow(ctx, `
@@ -34,12 +34,12 @@ func (r *IdempotencyRepository) Claim(ctx context.Context, scope, key, hash stri
 		WHERE idempotency_keys.expires_at <= now()
 		RETURNING true`, scope, key, hash, expires).Scan(&claimed)
 	if err == nil {
-		return middleware.IdempotencyRecord{}, true, nil
+		return idempotency.Record{}, true, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		return middleware.IdempotencyRecord{}, false, err
+		return idempotency.Record{}, false, err
 	}
-	var rec middleware.IdempotencyRecord
+	var rec idempotency.Record
 	err = q.QueryRow(ctx, `SELECT request_sha256, status_code, COALESCE(response, ''::bytea) FROM idempotency_keys
 		WHERE scope = $1 AND key = $2`, scope, key).Scan(&rec.RequestSHA256, &rec.Status, &rec.Body)
 	return rec, false, err
