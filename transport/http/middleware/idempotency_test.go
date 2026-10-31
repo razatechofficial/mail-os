@@ -12,26 +12,27 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/razatechofficial/mail-os/application/idempotency"
 	"github.com/razatechofficial/mail-os/domain/access"
 )
 
 type memIdem struct {
 	mu   sync.Mutex
-	rows map[string]IdempotencyRecord
+	rows map[string]idempotency.Record
 	fail bool
 }
 
-func (m *memIdem) Claim(_ context.Context, scope, key, hash string, _ time.Time) (IdempotencyRecord, bool, error) {
+func (m *memIdem) Claim(_ context.Context, scope, key, hash string, _ time.Time) (idempotency.Record, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.fail {
-		return IdempotencyRecord{}, false, errors.New("down")
+		return idempotency.Record{}, false, errors.New("down")
 	}
 	if r, ok := m.rows[scope+"/"+key]; ok {
 		return r, false, nil
 	}
-	m.rows[scope+"/"+key] = IdempotencyRecord{RequestSHA256: hash}
-	return IdempotencyRecord{}, true, nil
+	m.rows[scope+"/"+key] = idempotency.Record{RequestSHA256: hash}
+	return idempotency.Record{}, true, nil
 }
 
 func (m *memIdem) Complete(_ context.Context, scope, key string, status int, body []byte) error {
@@ -50,7 +51,7 @@ func (m *memIdem) Release(_ context.Context, scope, key string) error {
 	return nil
 }
 
-func idemRouter(store IdempotencyStore, app string, status *int, calls *int) *gin.Engine {
+func idemRouter(store idempotency.Store, app string, status *int, calls *int) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.POST("/messages/send", func(c *gin.Context) {
@@ -74,7 +75,7 @@ func post(r *gin.Engine, key, body string) *httptest.ResponseRecorder {
 }
 
 func TestIdempotencyReplaysAndRefusesReuse(t *testing.T) {
-	store := &memIdem{rows: map[string]IdempotencyRecord{}}
+	store := &memIdem{rows: map[string]idempotency.Record{}}
 	status, calls := http.StatusCreated, 0
 	r := idemRouter(store, "app-1", &status, &calls)
 
@@ -105,7 +106,7 @@ func TestIdempotencyReplaysAndRefusesReuse(t *testing.T) {
 }
 
 func TestIdempotencyFailuresAreNotStored(t *testing.T) {
-	store := &memIdem{rows: map[string]IdempotencyRecord{}}
+	store := &memIdem{rows: map[string]idempotency.Record{}}
 	status, calls := http.StatusCreated, 0
 	r := idemRouter(store, "app-1", &status, &calls)
 	status = http.StatusTooManyRequests
@@ -133,7 +134,7 @@ func TestIdempotencyFailuresAreNotStored(t *testing.T) {
 }
 
 func TestIdempotencyInProgressExactRequest(t *testing.T) {
-	store := &memIdem{rows: map[string]IdempotencyRecord{}}
+	store := &memIdem{rows: map[string]idempotency.Record{}}
 	release := make(chan struct{})
 	started := make(chan struct{})
 	gin.SetMode(gin.TestMode)

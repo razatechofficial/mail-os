@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/razatechofficial/mail-os/application/idempotency"
 	"github.com/razatechofficial/mail-os/domain/access"
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
 	"github.com/razatechofficial/mail-os/pkg/logger"
@@ -27,26 +28,6 @@ const ReplayedHeader = "Idempotent-Replayed"
 // MaxIdempotencyKey bounds a key.
 const MaxIdempotencyKey = 255
 
-// IdempotencyRecord is a stored key. Status 0 means the first request is
-// still running.
-type IdempotencyRecord struct {
-	RequestSHA256 string
-	Status        int
-	Body          []byte
-}
-
-// IdempotencyStore keeps the first response for a (scope, key) until it
-// expires (Postgres idempotency_keys).
-type IdempotencyStore interface {
-	// Claim records the key for a request with hash unless an unexpired
-	// record exists; then it returns that record and false.
-	Claim(ctx context.Context, scope, key, hash string, expires time.Time) (IdempotencyRecord, bool, error)
-	// Complete stores the response of a claimed key.
-	Complete(ctx context.Context, scope, key string, status int, body []byte) error
-	// Release forgets a claimed key, so the request can be tried again.
-	Release(ctx context.Context, scope, key string) error
-}
-
 // Idempotency makes a POST safe to retry with an Idempotency-Key: the
 // first response for the key is stored for ttl, per application (or per
 // tenant for a console user), and replayed for the same request; the same
@@ -54,7 +35,7 @@ type IdempotencyStore interface {
 // still running a retry is 409 too. 5xx and 429 responses are not stored:
 // the request did not take effect and may be retried with the same key.
 // Without the header the request runs as it is.
-func Idempotency(store IdempotencyStore, ttl time.Duration) gin.HandlerFunc {
+func Idempotency(store idempotency.Store, ttl time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key := c.GetHeader(IdempotencyHeader)
 		if key == "" || store == nil {
