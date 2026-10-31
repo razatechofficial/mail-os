@@ -4,7 +4,8 @@
 // binaries: a template is designed and published by console users, IAM
 // publishes an event with a service token, the worker renders the published
 // version and the mail arrives; OTPs stay masked in console views, bodies
-// need step-up, four-eyes holds, and service callers are scoped.
+// need step-up, four-eyes holds, and service callers are scoped. The
+// package's tenant is the one IAM's system application belongs to.
 package flows
 
 import (
@@ -18,12 +19,13 @@ import (
 
 var fx *harness.Fixture
 
-func TestMain(m *testing.M) { harness.Main(m, "flows", &fx) }
+func TestMain(m *testing.M) { harness.MainAsIAM(m, "flows", &fx) }
 
-const (
-	iamClient = "mailos-iam"
-	otpTopic  = "iam.auth.mfa_email_code_requested"
-)
+const otpTopic = "iam.auth.mfa_email_code_requested"
+
+// iamClient is IAM's own client: the system application seeded from
+// IAM_SERVICE_CLIENT_ID.
+func iamClient() string { return fx.Env.IAMClient }
 
 // publishTemplate creates a template for topic, saves an en draft and
 // publishes it as admin, and returns the template id.
@@ -51,7 +53,7 @@ func publishTemplate(t *testing.T, topic, slug string) string {
 func TestEventRendersPublishedTemplateAndMasksOTP(t *testing.T) {
 	publishTemplate(t, otpTopic, "otp-"+harness.Unique())
 	box := fx.Env.NewMailbox("otp")
-	res := fx.Service(t, iamClient).Expect(t, http.StatusAccepted, http.MethodPost, "/api/v1/events", map[string]any{
+	res := fx.Service(t, iamClient()).Expect(t, http.StatusAccepted, http.MethodPost, "/api/v1/events", map[string]any{
 		"id": harness.NewID(), "type": otpTopic, "source": "iam",
 		"data": map[string]any{"email": box.Address, "code": "482913", "purpose": "sign_in", "expires_in_minutes": 10},
 	}).Data()
@@ -89,7 +91,7 @@ func TestDuplicateEventSendsOnce(t *testing.T) {
 	box := fx.Env.NewMailbox("link")
 	ev := map[string]any{"id": harness.NewID(), "type": topic, "source": "iam",
 		"data": map[string]any{"email": box.Address, "link": "https://iam.example.com/m/abc"}}
-	svc := fx.Service(t, iamClient)
+	svc := fx.Service(t, iamClient())
 	svc.Expect(t, http.StatusAccepted, http.MethodPost, "/api/v1/events", ev)
 	dup := svc.Expect(t, http.StatusAccepted, http.MethodPost, "/api/v1/events", ev).Data()
 	if dup["duplicate"] != true {
@@ -108,9 +110,9 @@ func TestServiceCallersAreScoped(t *testing.T) {
 			"data": map[string]any{"email": harness.NewEmail("x"), "code": "1", "purpose": "sign_in", "expires_in_minutes": 1}}
 	}
 	fx.Service(t, "intruder").ExpectError(t, http.StatusForbidden, "FORBIDDEN", http.MethodPost, "/api/v1/events", ev(""))
-	fx.Service(t, iamClient).ExpectError(t, http.StatusForbidden, "FORBIDDEN", http.MethodPost, "/api/v1/events", ev(harness.NewID()))
+	fx.Service(t, iamClient()).ExpectError(t, http.StatusForbidden, "FORBIDDEN", http.MethodPost, "/api/v1/events", ev(harness.NewID()))
 	fx.Admin(t).ExpectError(t, http.StatusForbidden, "FORBIDDEN", http.MethodPost, "/api/v1/events", ev(""))
-	fx.Service(t, iamClient).ExpectError(t, http.StatusForbidden, "", http.MethodGet, "/api/v1/templates", nil)
+	fx.Service(t, iamClient()).ExpectError(t, http.StatusForbidden, "", http.MethodGet, "/api/v1/templates", nil)
 }
 
 func TestFourEyesPublishing(t *testing.T) {
@@ -130,4 +132,23 @@ func TestFourEyesPublishing(t *testing.T) {
 	other.Expect(t, http.StatusCreated, http.MethodPost, "/api/v1/templates/"+id+"/publish", publish)
 	editor, _ := fx.NewUser(t, harness.RoleTemplateEditor)
 	editor.ExpectError(t, http.StatusForbidden, "FORBIDDEN", http.MethodPost, "/api/v1/templates/"+id+"/publish", publish)
+}
+
+// IAM's client is the system application of its tenant, seeded from
+// configuration: listed for the tenant's administrator, and only its
+// status can be changed.
+func TestIAMIsTheSystemApplication(t *testing.T) {
+	admin := fx.Admin(t)
+	var sys map[string]any
+	for _, a := range admin.Expect(t, http.StatusOK, http.MethodGet, "/api/v1/applications", nil).Items() {
+		if harness.Str(a, "client_id") == iamClient() {
+			sys = a
+		}
+	}
+	if sys == nil || sys["system"] != true || harness.Str(sys, "status") != "active" || harness.Str(sys, "environment") != "live" {
+		t.Fatalf("system application %v", sys)
+	}
+	admin.ExpectError(t, http.StatusForbidden, "FORBIDDEN", http.MethodPut, "/api/v1/applications/"+harness.Str(sys, "id"),
+		map[string]any{"name": "Renamed", "kind": "server", "client_id": iamClient(), "message_types": []string{"iam.*"}})
+	admin.ExpectError(t, http.StatusForbidden, "FORBIDDEN", http.MethodDelete, "/api/v1/applications/"+harness.Str(sys, "id"), nil)
 }
