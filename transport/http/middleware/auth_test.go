@@ -61,7 +61,7 @@ func router(t *testing.T) (*fakeiam.IAM, *gin.Engine, *tenants, *auditLog) {
 		Verifier: jwt.NewVerifier(jwt.Config{Issuer: iam.Issuer, Audience: "mailos"}),
 		DPoP:     dpop.NewVerifier(noReplay{}, time.Minute),
 		Tenants:  ten, Audit: log,
-		Apps:     appstest.New(appstest.Server("mailos-iam", tenant, "iam.*"), appstest.Server("core-banking", tenant, "bank.*"), spaApp()),
+		Apps: appstest.New(appstest.Server("mailos-iam", tenant, "iam.*"), appstest.Server("core-banking", tenant, "bank.*"), spaApp()),
 	}
 	g := Guard{StepUp: access.StepUpPolicy{MaxAge: 5 * time.Minute, ACR: access.ACRMFA}, Audit: log}
 	r := gin.New()

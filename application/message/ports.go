@@ -23,13 +23,13 @@ type Filter struct {
 	TenantID      string
 	ApplicationID string
 	Status        string
-	Type     string
-	Topic    string
-	To       string
-	From     *time.Time
-	Until    *time.Time
-	Limit    int
-	Offset   int
+	Type          string
+	Topic         string
+	To            string
+	From          *time.Time
+	Until         *time.Time
+	Limit         int
+	Offset        int
 }
 
 // Repository stores messages.

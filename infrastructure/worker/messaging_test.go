@@ -43,7 +43,9 @@ func TestMessageSendHonoursRetryAfterAndRetriesMissing(t *testing.T) {
 }
 
 func TestQueueForTypeAndStream(t *testing.T) {
-	of := func(typ domainmsg.Type, st domainmsg.Stream) string { return queueFor(domainmsg.Message{Type: typ, Stream: st}) }
+	of := func(typ domainmsg.Type, st domainmsg.Stream) string {
+		return queueFor(domainmsg.Message{Type: typ, Stream: st})
+	}
 	if of(domainmsg.TypeTransactional, "") != QueueCritical || of(domainmsg.TypeMarketing, "") != QueueLow ||
 		of(domainmsg.TypeNotification, domainmsg.StreamTransactional) != QueueDefault {
 		t.Fatal("queue mapping")
