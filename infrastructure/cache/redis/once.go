@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"strconv"
 	"time"
 )
 
@@ -14,4 +15,18 @@ func (c *Client) ClaimOnce(ctx context.Context, key string, ttl time.Duration) (
 		ttl = time.Second
 	}
 	return c.SetNX(ctx, key, 1, ttl).Result()
+}
+
+// CountWindow increments the counter of key's current fixed window and
+// returns its value; the counter expires with the window.
+func (c *Client) CountWindow(ctx context.Context, key string, window time.Duration) (int64, error) {
+	bucket := time.Now().UnixNano() / int64(window)
+	k := key + ":" + strconv.FormatInt(bucket, 10)
+	pipe := c.TxPipeline()
+	incr := pipe.Incr(ctx, k)
+	pipe.Expire(ctx, k, window+time.Second)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return 0, err
+	}
+	return incr.Val(), nil
 }
