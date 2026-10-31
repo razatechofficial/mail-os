@@ -43,9 +43,13 @@ func NewMessageQueue(e *Enqueuer, maxRetry int, timeout time.Duration) *MessageQ
 	return &MessageQueue{e: e, maxRetry: maxRetry, timeout: timeout}
 }
 
-// queueFor puts transactional mail on the critical queue, campaigns low.
-func queueFor(t domainmsg.Type) string {
-	switch t {
+// queueFor puts transactional mail on the critical queue, campaigns and
+// every broadcast-stream message low: the streams never share a queue.
+func queueFor(m domainmsg.Message) string {
+	if m.Stream == domainmsg.StreamBroadcast {
+		return QueueLow
+	}
+	switch m.Type {
 	case domainmsg.TypeTransactional:
 		return QueueCritical
 	case domainmsg.TypeMarketing:
@@ -58,7 +62,7 @@ func queueFor(t domainmsg.Type) string {
 // message already queued (or waiting to retry) is not queued twice.
 func (q *MessageQueue) EnqueueSend(ctx context.Context, m domainmsg.Message) error {
 	raw, _ := json.Marshal(sendPayload{TenantID: m.OrgID, MessageID: m.ID})
-	return q.e.Enqueue(ctx, TypeMessageSend, raw, asynq.Queue(queueFor(m.Type)), asynq.TaskID("send:"+m.ID),
+	return q.e.Enqueue(ctx, TypeMessageSend, raw, asynq.Queue(queueFor(m)), asynq.TaskID("send:"+m.ID),
 		asynq.MaxRetry(q.maxRetry), asynq.Timeout(q.timeout+10*time.Second))
 }
 
