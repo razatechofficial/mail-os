@@ -1,0 +1,29 @@
+# Only the pods that run the Kafka consumer (FEATURE_PUBSUB_INGEST) or the
+# audit producer (FEATURE_AUDIT_STREAM) reach the broker; gitops puts
+# mailos.razatech.io/kafka-client: "true" on those Deployments only.
+#
+# ADJUST: today's broker is outside the cluster (IAM's gitops points
+# KAFKA_BROKERS at 15.235.206.77:9092, a plaintext listener). Contract §2
+# requires TLS + SASL, and MailOS refuses plaintext Kafka outside local and
+# test, so MailOS dials the broker's TLS listener (9093 here). For an
+# in-cluster broker (Strimzi) replace the ipBlock with:
+#   - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kafka}}
+#     podSelector: {matchLabels: {strimzi.io/kind: Kafka}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mailos-egress-kafka
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mailos
+      mailos.razatech.io/kafka-client: "true"
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 15.235.206.77/32
+      ports:
+        - protocol: TCP
+          port: 9093
