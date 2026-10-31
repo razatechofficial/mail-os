@@ -13,6 +13,7 @@ import (
 	grpclib "google.golang.org/grpc"
 
 	"github.com/razatechofficial/mail-os/application/auditlog"
+	"github.com/razatechofficial/mail-os/application/inbound"
 	appkm "github.com/razatechofficial/mail-os/application/keymanager"
 	"github.com/razatechofficial/mail-os/application/tenant"
 	"github.com/razatechofficial/mail-os/config"
@@ -28,6 +29,7 @@ import (
 	"github.com/razatechofficial/mail-os/infrastructure/worker"
 	"github.com/razatechofficial/mail-os/pkg/tlsconfig"
 	grpctransport "github.com/razatechofficial/mail-os/transport/grpc"
+	grpchandler "github.com/razatechofficial/mail-os/transport/grpc/handler"
 	transporthttp "github.com/razatechofficial/mail-os/transport/http"
 	"github.com/razatechofficial/mail-os/transport/http/handler"
 	"github.com/razatechofficial/mail-os/transport/http/middleware"
@@ -60,6 +62,14 @@ type Container struct {
 	// AuditStream publishes the audit outbox (FEATURE_AUDIT_STREAM).
 	AuditStream *kafka.Producer
 
+	// EventDispatcher turns accepted events into messages; the messaging
+	// builder sets it before buildEvents. Inbound is the event use case
+	// behind POST /events, GRPCEvents (MailService.DispatchEvent delegates
+	// to it) and the Kafka consumer.
+	EventDispatcher inbound.Dispatcher
+	Inbound         *inbound.Service
+	GRPCEvents      *grpchandler.EventHandler
+
 	// Routes are the REST route sets; GRPCServices register on the gRPC
 	// server; Tasks register worker handlers and schedules; Consumers run
 	// in the server process (FEATURE_PUBSUB_INGEST).
@@ -79,6 +89,7 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 	}
 	for _, build := range []func(context.Context) error{
 		c.buildCore,
+		c.buildEvents,
 	} {
 		if err := build(ctx); err != nil {
 			c.Close()
