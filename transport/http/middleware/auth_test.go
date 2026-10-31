@@ -11,7 +11,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/razatechofficial/mail-os/application/applications/appstest"
 	"github.com/razatechofficial/mail-os/domain/access"
+	domainapp "github.com/razatechofficial/mail-os/domain/application"
 	"github.com/razatechofficial/mail-os/infrastructure/dpop"
 	"github.com/razatechofficial/mail-os/infrastructure/jwt"
 	"github.com/razatechofficial/mail-os/internal/testutil/fakeiam"
@@ -27,11 +29,23 @@ func (t *tenants) Ensure(_ context.Context, id string) error {
 	return nil
 }
 
-type auditLog struct{ actions []string }
+type auditLog struct {
+	actions []string
+	reasons []string
+}
 
-func (a *auditLog) Append(_ context.Context, _, _, action string, _ map[string]any) error {
+func (a *auditLog) Append(_ context.Context, _, _, action string, meta map[string]any) error {
 	a.actions = append(a.actions, action)
+	r, _ := meta["reason"].(string)
+	a.reasons = append(a.reasons, r)
 	return nil
+}
+
+// spaApp is a browser application of the tenant.
+func spaApp() domainapp.Application {
+	a := appstest.Server("portal-web", tenant, "verify-email")
+	a.Kind, a.System = domainapp.KindSPA, false
+	return a
 }
 
 type noReplay struct{}
@@ -47,6 +61,7 @@ func router(t *testing.T) (*fakeiam.IAM, *gin.Engine, *tenants, *auditLog) {
 		Verifier: jwt.NewVerifier(jwt.Config{Issuer: iam.Issuer, Audience: "mailos"}),
 		DPoP:     dpop.NewVerifier(noReplay{}, time.Minute),
 		Tenants:  ten, Audit: log,
+		Apps:     appstest.New(appstest.Server("mailos-iam", tenant, "iam.*"), appstest.Server("core-banking", tenant, "bank.*"), spaApp()),
 	}
 	g := Guard{StepUp: access.StepUpPolicy{MaxAge: 5 * time.Minute, ACR: access.ACRMFA}, Audit: log}
 	r := gin.New()
@@ -54,6 +69,11 @@ func router(t *testing.T) (*fakeiam.IAM, *gin.Engine, *tenants, *auditLog) {
 	ok := func(c *gin.Context) { c.JSON(200, gin.H{"success": true}) }
 	api.GET("/templates", g.Require(access.PermTemplatesRead), ok)
 	api.POST("/templates/:id/publish", g.Require(access.PermTemplatesPublish), ok)
+	api.POST("/messages/send", g.Require(access.PermMessagesSend), func(c *gin.Context) {
+		p := PrincipalFrom(c)
+		c.JSON(200, gin.H{"tenant": p.TenantID, "application_id": p.ApplicationID})
+	})
+	api.POST("/messages/self", g.Require(access.PermMessagesSendSelf), ok)
 	return iam, r, ten, log
 }
 
@@ -105,6 +125,56 @@ func TestAuthentication(t *testing.T) {
 	}
 	if !contains(log.actions, "access_denied") {
 		t.Fatalf("refusals not audited: %v", log.actions)
+	}
+}
+
+// Service and browser tokens are resolved to their application: the
+// application decides the tenant, an unknown or foreign client is refused
+// with its reason audited, and a spa user keeps only self-send.
+func TestApplicationCallers(t *testing.T) {
+	iam, r, _, log := router(t)
+	other := "0b6c1c3e-6a38-4a8f-9a59-2b9d3b6a8a11"
+
+	w := call(r, "POST", "/api/v1/messages/send", iam.ServiceToken("core-banking", ""))
+	if w.Code != 200 || !strings.Contains(w.Body.String(), tenant) {
+		t.Fatalf("server application without tid: %d %s", w.Code, w.Body)
+	}
+	for name, c := range map[string]struct {
+		token, reason string
+	}{
+		"unknown client": {iam.ServiceToken("intruder", tenant), "unknown_client"},
+		"other tenant":   {iam.ServiceToken("core-banking", other), "tenant_mismatch"},
+		"spa as service": {iam.ServiceToken("portal-web", tenant), "kind_mismatch"},
+		"server user":    {iam.UserToken(fakeiam.User{Tenant: tenant, ClientID: "core-banking", Roles: []string{"mailos_admin"}}), "kind_mismatch"},
+		"spa no scope":   {iam.UserToken(fakeiam.User{Tenant: tenant, ClientID: "portal-web"}), "scope_missing"},
+	} {
+		w := call(r, "POST", "/api/v1/messages/send", c.token)
+		if w.Code != 403 {
+			t.Errorf("%s: %d %s", name, w.Code, w.Body)
+			continue
+		}
+		if got := log.reasons[len(log.reasons)-1]; got != c.reason {
+			t.Errorf("%s: audited %q, want %q", name, got, c.reason)
+		}
+	}
+	if w := call(r, "POST", "/api/v1/messages/send", iam.ServiceToken("intruder", tenant)); strings.Contains(w.Body.String(), "not a MailOS application") {
+		t.Fatal("an identity refusal names its reason to the caller")
+	}
+
+	spa := iam.UserToken(fakeiam.User{Tenant: tenant, ClientID: "portal-web", Roles: []string{"mailos_admin"},
+		Extra: map[string]any{"scope": "openid mailos.send.self"}})
+	if w := call(r, "POST", "/api/v1/messages/self", spa); w.Code != 200 {
+		t.Fatalf("spa self-send: %d %s", w.Code, w.Body)
+	}
+	if w := call(r, "GET", "/api/v1/templates", spa); w.Code != 403 {
+		t.Fatalf("a spa user kept its console role: %d", w.Code)
+	}
+	if w := call(r, "POST", "/api/v1/messages/send", spa); w.Code != 403 {
+		t.Fatalf("a spa user sent to anyone: %d", w.Code)
+	}
+	console := iam.UserToken(fakeiam.User{Tenant: tenant, Roles: []string{"mailos_operator"}})
+	if w := call(r, "POST", "/api/v1/messages/self", console); w.Code != 403 {
+		t.Fatalf("a console user used self-send: %d", w.Code)
 	}
 }
 
