@@ -176,6 +176,8 @@ func classifyHTTP(kind provider.Kind, status int, retryAfter string) *message.Se
 	case status >= 500:
 		e.Reason, e.Detail = message.ReasonUnavailable, "the provider failed"
 		e.RetryAfter = parseRetryAfter(retryAfter)
+	case status >= 300 && status < 400:
+		e.Reason, e.Detail = message.ReasonConfig, "the provider answered with a redirect, which is not followed"
 	case status == http.StatusNotFound:
 		e.Reason, e.Detail = message.ReasonConfig, "the provider does not know the account or domain"
 	default:
