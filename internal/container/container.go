@@ -13,6 +13,8 @@ import (
 	grpclib "google.golang.org/grpc"
 
 	"github.com/razatechofficial/mail-os/application/auditlog"
+	appmessage "github.com/razatechofficial/mail-os/application/message"
+	appsendingdomain "github.com/razatechofficial/mail-os/application/sendingdomain"
 	appkm "github.com/razatechofficial/mail-os/application/keymanager"
 	"github.com/razatechofficial/mail-os/application/tenant"
 	"github.com/razatechofficial/mail-os/config"
@@ -28,6 +30,7 @@ import (
 	"github.com/razatechofficial/mail-os/infrastructure/worker"
 	"github.com/razatechofficial/mail-os/pkg/tlsconfig"
 	grpctransport "github.com/razatechofficial/mail-os/transport/grpc"
+	grpchandler "github.com/razatechofficial/mail-os/transport/grpc/handler"
 	transporthttp "github.com/razatechofficial/mail-os/transport/http"
 	"github.com/razatechofficial/mail-os/transport/http/handler"
 	"github.com/razatechofficial/mail-os/transport/http/middleware"
@@ -60,6 +63,19 @@ type Container struct {
 	// AuditStream publishes the audit outbox (FEATURE_AUDIT_STREAM).
 	AuditStream *kafka.Producer
 
+	// Messaging (messaging.go). Messages is what other slices send with
+	// (SendTemplated, SendTest); SendingDomains answers VerifiedFrom.
+	Messages       *appmessage.Service
+	SendingDomains *appsendingdomain.Service
+	// Templates, TemplateVersions and Branding are set by the templates
+	// slice's builder, which runs before buildMessaging; nil leaves
+	// templated sends unavailable.
+	Templates        appmessage.TemplateResolver
+	TemplateVersions appmessage.VersionReader
+	Branding         appmessage.BrandingReader
+	// MailEvents handles the gRPC DispatchEvent (the events slice).
+	MailEvents grpchandler.EventDispatcher
+
 	// Routes are the REST route sets; GRPCServices register on the gRPC
 	// server; Tasks register worker handlers and schedules; Consumers run
 	// in the server process (FEATURE_PUBSUB_INGEST).
@@ -79,6 +95,7 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 	}
 	for _, build := range []func(context.Context) error{
 		c.buildCore,
+		c.buildMessaging,
 	} {
 		if err := build(ctx); err != nil {
 			c.Close()
