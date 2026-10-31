@@ -5,6 +5,8 @@ go 1.26.4
 toolchain go1.26.10
 
 require (
+	github.com/aws/aws-sdk-go-v2 v1.43.0
+	github.com/emersion/go-msgauth v0.7.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/go-playground/validator/v10 v10.30.1
@@ -27,6 +29,7 @@ require (
 
 require (
 	github.com/BurntSushi/toml v1.2.1 // indirect
+	github.com/aws/smithy-go v1.27.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect
