@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/razatechofficial/mail-os/application/applications"
 	apptemplate "github.com/razatechofficial/mail-os/application/template"
 	"github.com/razatechofficial/mail-os/domain/access"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
@@ -106,7 +107,7 @@ func (s *Service) Send(ctx context.Context, in SendInput) (Result, error) {
 	if err := s.schedule(&m, in.ScheduleAt, now); err != nil {
 		return Result{}, err
 	}
-	m, err := s.queue(ctx, m)
+	m, err := s.queue(ctx, m, "")
 	return Result{MessageID: m.ID, Status: string(m.Status)}, err
 }
 
@@ -123,9 +124,39 @@ func (s *Service) schedule(m *domainmsg.Message, at *time.Time, now time.Time) e
 	return nil
 }
 
-// queue validates m, applies the idempotency key and the suppression
-// list, stores it and hands it to the queue.
-func (s *Service) queue(ctx context.Context, m domainmsg.Message) (domainmsg.Message, error) {
+// applicationOf is the sending application of the request, if any.
+func applicationOf(ctx context.Context) string {
+	p, _ := access.FromContext(ctx)
+	return p.ApplicationID
+}
+
+// authorize applies the request's application to m: whether it may send
+// this message type (slug is the template's) from this sender, on its
+// stream and within its limits. It fills the sender, reply-to, type,
+// stream and sandbox flag the application decides. A request without an
+// application (the console, campaigns) is the tenant's own.
+func (s *Service) authorize(ctx context.Context, m *domainmsg.Message, slug string) error {
+	appID := applicationOf(ctx)
+	if appID == "" {
+		return nil
+	}
+	if s.d.Applications == nil {
+		return apperrors.Unavailable("applications are not available")
+	}
+	g, err := s.d.Applications.AuthorizeSend(ctx, appID, applications.Ask{Keys: []string{m.Topic, slug},
+		Raw: m.TemplateID == "", FromEmail: m.FromEmail, FromName: m.FromName, ReplyTo: m.ReplyTo, Type: m.Type, To: m.ToEmail})
+	if err != nil {
+		return err
+	}
+	m.ApplicationID, m.FromEmail, m.FromName, m.ReplyTo = g.ApplicationID, g.FromEmail, g.FromName, g.ReplyTo
+	m.Type, m.Stream, m.Sandbox = g.Type, domainmsg.Stream(g.Stream), g.Sandbox
+	return nil
+}
+
+// queue validates m, applies the idempotency key, the sending
+// application's rules and the suppression list, stores it and hands it to
+// the queue. slug is the template's, for the application's message types.
+func (s *Service) queue(ctx context.Context, m domainmsg.Message, slug string) (domainmsg.Message, error) {
 	if err := s.d.Tenants.Ensure(ctx, m.OrgID); err != nil {
 		return domainmsg.Message{}, err
 	}
@@ -141,7 +172,10 @@ func (s *Service) queue(ctx context.Context, m domainmsg.Message) (domainmsg.Mes
 			return domainmsg.Message{}, err
 		}
 	}
-	sup, err := s.d.Suppressions.Blocks(ctx, m.OrgID, m.ToEmail, m.Type)
+	if err := s.authorize(ctx, &m, slug); err != nil {
+		return domainmsg.Message{}, err
+	}
+	sup, err := s.d.Suppressions.Blocks(ctx, m.OrgID, m.ApplicationID, m.ToEmail, m.Type)
 	if err != nil {
 		return domainmsg.Message{}, err
 	}
@@ -166,6 +200,7 @@ func (s *Service) queue(ctx context.Context, m domainmsg.Message) (domainmsg.Mes
 	if err := s.d.Audit.Append(ctx, "message", m.ID, "message.queued", map[string]any{
 		"to": logger.MaskEmail(m.ToEmail), "status": string(m.Status), "type": string(m.Type),
 		"topic": m.Topic, "template_id": m.TemplateID, "template_version_id": m.TemplateVersionID,
+		"application_id": m.ApplicationID, "sandbox": m.Sandbox,
 	}); err != nil {
 		return domainmsg.Message{}, err
 	}
@@ -304,7 +339,7 @@ func (s *Service) SendTemplated(ctx context.Context, in TemplatedSend) (domainms
 	if err := s.schedule(&m, in.scheduleAt, now); err != nil {
 		return domainmsg.Message{}, err
 	}
-	return s.queue(ctx, m)
+	return s.queue(ctx, m, tpl.Slug)
 }
 
 // TestMessage is a template test send, rendered by the templates slice.
@@ -432,7 +467,7 @@ func (s *Service) Resend(ctx context.Context, tenantID, messageID string) (domai
 		// Rendered again from the pinned version and the stored data.
 		m.HTMLBody, m.TextBody = "", ""
 	}
-	out, err := s.queue(ctx, m)
+	out, err := s.queue(ctx, m, "")
 	if err != nil {
 		return domainmsg.Message{}, err
 	}

@@ -9,6 +9,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/razatechofficial/mail-os/application/applications"
 	apptemplate "github.com/razatechofficial/mail-os/application/template"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
 	"github.com/razatechofficial/mail-os/domain/sendingdomain"
@@ -19,8 +20,9 @@ import (
 
 // Filter selects messages for a list.
 type Filter struct {
-	TenantID string
-	Status   string
+	TenantID      string
+	ApplicationID string
+	Status        string
 	Type     string
 	Topic    string
 	To       string
@@ -61,9 +63,10 @@ type Queue interface {
 	EnqueueSend(ctx context.Context, m domainmsg.Message) error
 }
 
-// Suppressions is the tenant's suppression list.
+// Suppressions is the tenant's suppression list: its tenant-wide entries
+// and those of the sending application.
 type Suppressions interface {
-	Blocks(ctx context.Context, tenantID, email string, mt domainmsg.Type) (*suppression.Suppression, error)
+	Blocks(ctx context.Context, tenantID, applicationID, email string, mt domainmsg.Type) (*suppression.Suppression, error)
 	RecordBounce(ctx context.Context, tenantID, email, reason string) error
 }
 
@@ -116,9 +119,16 @@ type Signer interface {
 	SigningKey(ctx context.Context, tenantID, fromEmail string) (*sendingdomain.SigningKey, error)
 }
 
-// Notifier posts message events to the tenant's webhooks.
+// Notifier posts message events to the tenant's webhooks: the tenant-wide
+// ones and those of the sending application.
 type Notifier interface {
-	Notify(ctx context.Context, tenantID, event, messageID string, data map[string]any) error
+	Notify(ctx context.Context, tenantID, applicationID, event, messageID string, data map[string]any) error
+}
+
+// Applications applies a sending application's rules to a message
+// (applications.Service.AuthorizeSend).
+type Applications interface {
+	AuthorizeSend(ctx context.Context, applicationID string, ask applications.Ask) (applications.Grant, error)
 }
 
 // Stats counts sends.
@@ -132,8 +142,9 @@ type Auditor interface {
 }
 
 // Deps are the service's ports. Templates, Versions, Branding, Signer,
-// Webhooks and Stats may be nil.
+// Webhooks and Stats may be nil; Applications is required.
 type Deps struct {
+	Applications Applications
 	Repo         Repository
 	Queue        Queue
 	Suppressions Suppressions
