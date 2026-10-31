@@ -51,17 +51,15 @@ func (r *CampaignRecipientRepository) Pending(ctx context.Context, tenant, campa
 	})
 }
 
-// Count returns the rows written so far and the members still eligible.
+// Count returns the rows written so far and the members still eligible,
+// in one statement so both come from one snapshot while other fan-outs
+// claim recipients.
 func (r *CampaignRecipientRepository) Count(ctx context.Context, tenant, campaignID, listID string) (int, int, error) {
 	var recorded, pending int
-	q := QuerierFromContext(ctx, r.db)
-	if err := q.QueryRow(ctx, `SELECT count(*) FROM campaign_recipients WHERE campaign_id = $1`, campaignID).Scan(&recorded); err != nil {
-		return 0, 0, err
-	}
-	if err := q.QueryRow(ctx, `SELECT count(*)`+eligibleMembers, tenant, listID, campaignID).Scan(&pending); err != nil {
-		return 0, 0, err
-	}
-	return recorded, pending, nil
+	err := QuerierFromContext(ctx, r.db).QueryRow(ctx, `
+		SELECT (SELECT count(*) FROM campaign_recipients WHERE campaign_id = $3), (SELECT count(*)`+eligibleMembers+`)`,
+		tenant, listID, campaignID).Scan(&recorded, &pending)
+	return recorded, pending, err
 }
 
 // Claim writes the queued row; false when it exists.
