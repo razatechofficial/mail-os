@@ -226,3 +226,18 @@ func TestSendErrorClassification(t *testing.T) {
 		t.Fatalf("safe detail: %q", SafeDetail(err))
 	}
 }
+
+// A sandbox message is captured from sending, and captured is final.
+func TestCapturedIsFinal(t *testing.T) {
+	if !CanTransition(StatusSending, StatusCaptured) || CanTransition(StatusQueued, StatusCaptured) || CanTransition(StatusCaptured, StatusQueued) {
+		t.Fatal("captured transitions")
+	}
+	if !StatusCaptured.Final() || !StatusCaptured.Valid() {
+		t.Fatal("captured is a final, known status")
+	}
+	m := Message{OrgID: "t", ToEmail: "a@example.com", Subject: "s", TextBody: "b"}
+	m.Normalize()
+	if m.Stream != StreamTransactional {
+		t.Fatalf("default stream %q", m.Stream)
+	}
+}
