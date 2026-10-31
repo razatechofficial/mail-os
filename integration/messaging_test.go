@@ -237,7 +237,7 @@ func messageService(e msgEnv, platform mailer.Sender) *appmessage.Service {
 func TestSendRetryAndPurge(t *testing.T) {
 	e := newMsgEnv(t)
 	rdb := connectRedis(t)
-	sink := mailer.NewE2ESink(rdb.Client)
+	sink := mailer.NewE2ESink(rdb.Client, domainmsg.Address{Email: "noreply@mailos.test"})
 	platform := &flaky{next: sink}
 	platform.fails.Store(1)
 	svc := messageService(e, platform)
@@ -300,7 +300,7 @@ func TestSendRetryAndPurge(t *testing.T) {
 // cancelled message is never delivered.
 func TestIdempotencyAndCancel(t *testing.T) {
 	e := newMsgEnv(t)
-	sink := mailer.NewE2ESink(connectRedis(t).Client)
+	sink := mailer.NewE2ESink(connectRedis(t).Client, domainmsg.Address{Email: "noreply@mailos.test"})
 	svc := messageService(e, sink)
 	ctx := e.userCtx()
 	in := appmessage.SendInput{TenantID: e.tenant, FromEmail: "noreply@bank.example", ToEmail: "idem@example.com", Subject: "Hi",
