@@ -130,9 +130,14 @@ func (a *Auth) Required() gin.HandlerFunc {
 func (a *Auth) resolve(c *gin.Context, p access.Principal) (access.Principal, bool) {
 	ctx := c.Request.Context()
 	var err error
-	if p.IsService() {
+	switch {
+	case a.Apps == nil && p.IsService():
+		// Without a registry no service is an application (fail closed).
+		err = domainapp.ErrUnknownClient
+	case a.Apps == nil:
+	case p.IsService():
 		_, p, err = a.Apps.ResolveService(ctx, p)
-	} else {
+	default:
 		_, p, _, err = a.Apps.ResolveBrowser(ctx, p)
 	}
 	if err == nil {
