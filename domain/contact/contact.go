@@ -180,3 +180,10 @@ func Changes(before, after Contact) []string {
 	}
 	return out
 }
+
+// Errors the repositories return.
+var (
+	ErrNotFound       = apperrors.NotFound("contact not found")
+	ErrListNotFound   = apperrors.NotFound("contact list not found")
+	ErrDuplicateEmail = apperrors.NewAppError(apperrors.KindAlreadyExists, apperrors.CodeConflict, "a contact with this email already exists")
+)
