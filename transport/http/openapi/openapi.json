@@ -114,11 +114,12 @@
             "bearer": []
           }
         ],
-        "summary": "List (AuditLog)",
+        "summary": "List audit logs",
         "tags": [
           "analytics"
         ],
-        "x-stub": true
+        "description": "The tenant's audit events in IAM's format, newest first. Each read is audited (audit_log.viewed). Permission: `audit:read`.",
+        "x-permission": "audit:read"
       }
     },
     "/api/v1/analytics/audit-logs/export": {
@@ -134,11 +135,13 @@
             "bearer": []
           }
         ],
-        "summary": "Export (AuditLog)",
+        "summary": "Export audit logs",
         "tags": [
           "analytics"
         ],
-        "x-stub": true
+        "description": "Up to 10,000 events; audited as audit_log.exported. Permission: `audit:export`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
+        "x-step-up": true,
+        "x-permission": "audit:export"
       }
     },
     "/api/v1/keys/encryption": {
@@ -154,11 +157,13 @@
             "bearer": []
           }
         ],
-        "summary": "Encryption keys (Tenant)",
+        "summary": "Encryption keys",
         "tags": [
           "keys"
         ],
-        "x-stub": true
+        "description": "Per purpose (provider, dkim, webhook): keys, state and how many values each seals. Never key material. Permission: `settings:manage`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
+        "x-step-up": true,
+        "x-permission": "settings:manage"
       }
     },
     "/api/v1/keys/encryption/{purpose}/rotate": {
@@ -184,11 +189,13 @@
             "bearer": []
           }
         ],
-        "summary": "Rotate key (Tenant)",
+        "summary": "Rotate an encryption key",
         "tags": [
           "keys"
         ],
-        "x-stub": true
+        "description": "Retires the active key; the schedule re-encrypts what it sealed and then destroys it. Permission: `settings:manage`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
+        "x-step-up": true,
+        "x-permission": "settings:manage"
       }
     },
     "/api/v1/me": {
@@ -204,11 +211,12 @@
             "bearer": []
           }
         ],
-        "summary": "Me (Tenant)",
+        "summary": "Who am I",
         "tags": [
           "me"
         ],
-        "x-stub": true
+        "description": "The token's subject, tenant, MailOS roles and the permissions they grant. Permission: `templates:read`.",
+        "x-permission": "templates:read"
       }
     },
     "/api/v1/openapi.json": {
@@ -240,11 +248,12 @@
             "bearer": []
           }
         ],
-        "summary": "List organizations (Tenant)",
+        "summary": "List organizations",
         "tags": [
           "organizations"
         ],
-        "x-stub": true
+        "description": "The caller's own tenant only; tenants come from IAM and are provisioned on first use. Permission: `settings:read`.",
+        "x-permission": "settings:read"
       }
     },
     "/api/v1/organizations/{id}": {
@@ -270,11 +279,12 @@
             "bearer": []
           }
         ],
-        "summary": "Get organization (Tenant)",
+        "summary": "Get organization",
         "tags": [
           "organizations"
         ],
-        "x-stub": true
+        "description": "The caller's own tenant; any other id is 404. Permission: `settings:read`.",
+        "x-permission": "settings:read"
       }
     },
     "/api/v1/tenant/settings": {
@@ -290,11 +300,12 @@
             "bearer": []
           }
         ],
-        "summary": "Get settings (Tenant)",
+        "summary": "Get tenant settings",
         "tags": [
           "tenant"
         ],
-        "x-stub": true
+        "description": "Four-eyes publishing and message retention. Permission: `settings:read`.",
+        "x-permission": "settings:read"
       },
       "put": {
         "operationId": "put_tenant_settings",
@@ -308,11 +319,13 @@
             "bearer": []
           }
         ],
-        "summary": "Update settings (Tenant)",
+        "summary": "Update tenant settings",
         "tags": [
           "tenant"
         ],
-        "x-stub": true
+        "description": "Audited with before and after. Permission: `settings:manage`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
+        "x-step-up": true,
+        "x-permission": "settings:manage"
       }
     }
   },
