@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	apptemplate "github.com/razatechofficial/mail-os/application/template"
 	"github.com/razatechofficial/mail-os/domain/access"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
 	domaintemplate "github.com/razatechofficial/mail-os/domain/template"
@@ -41,6 +42,8 @@ type Service struct {
 func NewService(d Deps, cfg Config) *Service {
 	return &Service{d: d, cfg: cfg.withDefaults(), now: func() time.Time { return time.Now().UTC() }}
 }
+
+var _ apptemplate.TestSender = (*Service)(nil)
 
 // SendInput is a direct send, or a templated one when TemplateSlug or
 // TemplateID is set (then Subject and the bodies come from the template).
@@ -249,7 +252,7 @@ func (s *Service) SendTemplated(ctx context.Context, in TemplatedSend) (domainms
 	if err := s.d.Tenants.Ensure(ctx, in.TenantID); err != nil {
 		return domainmsg.Message{}, err
 	}
-	tpl, ver, err := s.d.Templates.ResolvePublished(ctx, in.TenantID, Ref{TemplateID: in.TemplateID, Slug: in.TemplateSlug, Topic: in.Topic}, in.Locale)
+	tpl, ver, err := s.d.Templates.ResolvePublished(ctx, in.TenantID, apptemplate.Ref{TemplateID: in.TemplateID, Slug: in.TemplateSlug, Topic: in.Topic}, in.Locale)
 	if err != nil {
 		return domainmsg.Message{}, err
 	}
@@ -298,19 +301,10 @@ func (s *Service) SendTemplated(ctx context.Context, in TemplatedSend) (domainms
 	return s.queue(ctx, m)
 }
 
-// TestMessage is a template test send (rendered by the caller).
-type TestMessage struct {
-	TenantID  string
-	FromName  string
-	FromEmail string
-	To        string
-	Subject   string
-	HTML      string
-	Text      string
-	Tags      []string
-}
+// TestMessage is a template test send, rendered by the templates slice.
+type TestMessage = apptemplate.TestMessage
 
-// SendTest queues a test send, tagged "test".
+// SendTest queues a test send, tagged "test" (apptemplate.TestSender).
 func (s *Service) SendTest(ctx context.Context, t TestMessage) (messageID, status string, err error) {
 	tags := t.Tags
 	if !slices.Contains(tags, "test") {

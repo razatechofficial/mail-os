@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	apptemplate "github.com/razatechofficial/mail-os/application/template"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
 	"github.com/razatechofficial/mail-os/domain/sendingdomain"
 	"github.com/razatechofficial/mail-os/domain/suppression"
@@ -172,7 +173,7 @@ type memTemplates struct {
 	ver domaintemplate.Version
 }
 
-func (t memTemplates) ResolvePublished(_ context.Context, _ string, ref Ref, _ string) (domaintemplate.Template, domaintemplate.Version, error) {
+func (t memTemplates) ResolvePublished(_ context.Context, _ string, ref apptemplate.Ref, _ string) (domaintemplate.Template, domaintemplate.Version, error) {
 	if ref.Slug != "" && ref.Slug != t.tpl.Slug {
 		return domaintemplate.Template{}, domaintemplate.Version{}, apperrors.NotFound("template not found")
 	}

@@ -9,6 +9,7 @@ import (
 	"context"
 	"time"
 
+	apptemplate "github.com/razatechofficial/mail-os/application/template"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
 	"github.com/razatechofficial/mail-os/domain/sendingdomain"
 	"github.com/razatechofficial/mail-os/domain/suppression"
@@ -72,18 +73,10 @@ type Tenants interface {
 	Settings(ctx context.Context, tenantID string) (domaintenant.Settings, error)
 }
 
-// Ref names a template by id, slug or topic (the templates slice's
-// application/template.Ref).
-type Ref struct {
-	TemplateID string
-	Slug       string
-	Topic      string
-}
-
 // TemplateResolver returns a template's published version for a locale
-// (falling back to its default locale).
+// (falling back to its default locale): application/template.Service.
 type TemplateResolver interface {
-	ResolvePublished(ctx context.Context, tenantID string, ref Ref, locale string) (domaintemplate.Template, domaintemplate.Version, error)
+	ResolvePublished(ctx context.Context, tenantID string, ref apptemplate.Ref, locale string) (domaintemplate.Template, domaintemplate.Version, error)
 }
 
 // VersionReader reads a pinned version.
