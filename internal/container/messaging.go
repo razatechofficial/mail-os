@@ -89,7 +89,11 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 	queue := worker.NewMessageQueue(c.Enqueuer, cfg.Worker.MaxRetry, cfg.Worker.SendTimeout)
 	providers := appprovider.NewService(providerRepo, c.Keys.Cipher(domainkm.PurposeProvider), c.Audit,
 		appprovider.Config{AllowPlaintext: plaintext})
-	c.SendingDomains = appsendingdomain.NewService(domainRepo, c.Keys.Cipher(domainkm.PurposeDKIM), dnscheck.New("", 5*time.Second),
+	var resolver appsendingdomain.Resolver = dnscheck.New("", 5*time.Second)
+	if c.E2EZone != nil {
+		resolver = c.E2EZone
+	}
+	c.SendingDomains = appsendingdomain.NewService(domainRepo, c.Keys.Cipher(domainkm.PurposeDKIM), resolver,
 		providers, c.Audit, appsendingdomain.Config{})
 	if err := c.buildApplications(ctx, c.SendingDomains); err != nil {
 		return err

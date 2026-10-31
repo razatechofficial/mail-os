@@ -27,6 +27,7 @@ import (
 	"github.com/razatechofficial/mail-os/domain/message"
 	"github.com/razatechofficial/mail-os/infrastructure/audit"
 	"github.com/razatechofficial/mail-os/infrastructure/cache/redis"
+	"github.com/razatechofficial/mail-os/infrastructure/dnscheck"
 	"github.com/razatechofficial/mail-os/infrastructure/dpop"
 	"github.com/razatechofficial/mail-os/infrastructure/jwt"
 	"github.com/razatechofficial/mail-os/infrastructure/kafka"
@@ -70,8 +71,10 @@ type Container struct {
 
 	// Platform is the default sender (the platform relay, or the e2e sink).
 	Platform mailer.Sender
-	// E2ESink is set when the test-only hooks are on.
+	// E2ESink and E2EZone stand in for SMTP and DNS when the test-only
+	// hooks are on.
 	E2ESink *mailer.E2ESink
+	E2EZone *dnscheck.E2EZone
 	// AuditStream publishes the audit outbox (FEATURE_AUDIT_STREAM).
 	AuditStream *kafka.Producer
 	// CampaignSender hands campaign messages to the messaging slice. Its
@@ -180,6 +183,7 @@ func (c *Container) buildInfrastructure(ctx context.Context) error {
 
 	if cfg.E2EHooks.Enabled {
 		c.E2ESink = mailer.NewE2ESink(rdb.Client, message.Address{Name: cfg.SMTP.FromName, Email: cfg.SMTP.FromAddr})
+		c.E2EZone = dnscheck.NewE2EZone(rdb.Client)
 		c.Platform = c.E2ESink
 	} else {
 		relay, err := mailer.NewPlatformSMTP(cfg.SMTP, cfg.App.AllowsPlaintext(), mailer.Options{AllowPlaintext: cfg.App.AllowsPlaintext()})
