@@ -15,7 +15,24 @@ const (
 	TypeKeyManagerTick   = "keymanager:tick"
 	TypeAuditOutboxRelay = "audit:outbox_relay"
 	TypeAuditRetention   = "audit:retention"
+	TypeIdempotencyPurge = "idempotency:purge"
 )
+
+// ExpiredPurger deletes expired Idempotency-Key responses.
+type ExpiredPurger interface {
+	PurgeExpired(ctx context.Context) (int64, error)
+}
+
+// IdempotencyPurge deletes Idempotency-Key responses past their TTL.
+func IdempotencyPurge(p ExpiredPurger) func(context.Context, *asynq.Task) error {
+	return func(ctx context.Context, _ *asynq.Task) error {
+		n, err := p.PurgeExpired(ctx)
+		if n > 0 {
+			logger.Info("idempotency keys purged", logger.Int64("deleted", n))
+		}
+		return err
+	}
+}
 
 // KeyTicker is the key manager schedule.
 type KeyTicker interface {
