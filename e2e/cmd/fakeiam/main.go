@@ -17,6 +17,9 @@
 //	POST /test/tokens/user                   {"sub","tid","org_id","roles","acr","auth_age_seconds","aud","client_id","jkt","extra"} -> {"access_token","sub"}
 //	POST /test/tokens/service                {"client_id","tid"} -> {"access_token"}
 //	POST /test/signatures                    {"client_id","topic","value"(base64)} -> {"signature"}
+//
+// With -oidc-client-id (and the mint routes) it is also an OIDC provider for
+// the console's Playwright suite: see oidc.go.
 package main
 
 import (
@@ -49,6 +52,10 @@ func main() {
 	issuer := flag.String("issuer", "", "issuer origin (default http://<addr>)")
 	mintFile := flag.String("mint-token-file", "", "file holding the bearer token for the /test mint routes; unset disables them")
 	allowRemote := flag.Bool("allow-remote", false, "listen on a non-loopback address")
+	oidcClient := flag.String("oidc-client-id", "", "serve the OIDC provider routes for this confidential client (needs -mint-token-file)")
+	oidcSecretFile := flag.String("oidc-client-secret-file", "", "file holding the OIDC client's secret")
+	oidcRedirects := flag.String("oidc-redirect-uris", "", "comma-separated redirect URIs registered for the OIDC client")
+	oidcLogout := flag.String("oidc-post-logout-uris", "", "comma-separated post-logout redirect URIs")
 	flag.Parse()
 
 	host, _, err := net.SplitHostPort(*addr)
@@ -80,6 +87,15 @@ func main() {
 		mux.HandleFunc("POST /test/tokens/user", m.guard(m.user))
 		mux.HandleFunc("POST /test/tokens/service", m.guard(m.service))
 		mux.HandleFunc("POST /test/signatures", m.guard(m.signature))
+		if *oidcClient != "" {
+			secret, err := os.ReadFile(*oidcSecretFile)
+			if err != nil || len(strings.TrimSpace(string(secret))) < minMintTokenLen {
+				log.Fatalf("fakeiam: -oidc-client-secret-file must hold at least %d characters: %v", minMintTokenLen, err)
+			}
+			newProvider(f, *oidcClient, []byte(strings.TrimSpace(string(secret))), splitList(*oidcRedirects), splitList(*oidcLogout)).mount(mux, m)
+		}
+	} else if *oidcClient != "" {
+		log.Fatalf("fakeiam: -oidc-client-id needs -mint-token-file (personas are registered through it)")
 	}
 
 	srv := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
@@ -174,6 +190,16 @@ func (m *minter) signature(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"signature": m.iam.MessageSignature(req.ClientID, req.Topic, value)})
+}
+
+func splitList(s string) []string {
+	var out []string
+	for _, v := range strings.Split(s, ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
