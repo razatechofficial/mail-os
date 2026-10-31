@@ -43,18 +43,3 @@ func ParseLocale(s string) (Locale, bool) {
 	l := Locale(strings.ToLower(strings.TrimSpace(s)))
 	return l, l.Valid()
 }
-
-// LocaleFromData is the locale an event asks for: brand.locale, which IAM's
-// brand mail adds to every email event, when it is supported, otherwise
-// fallback. A template with no version in that locale falls back to its
-// default_locale when sending.
-func LocaleFromData(data map[string]any, fallback Locale) Locale {
-	if v, ok := Lookup(data, "brand.locale"); ok {
-		if s, ok := v.(string); ok {
-			if l, ok := ParseLocale(s); ok {
-				return l
-			}
-		}
-	}
-	return fallback
-}

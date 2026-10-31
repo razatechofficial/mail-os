@@ -15,6 +15,7 @@ import (
 	"github.com/razatechofficial/mail-os/application/auditlog"
 	"github.com/razatechofficial/mail-os/application/inbound"
 	appkm "github.com/razatechofficial/mail-os/application/keymanager"
+	apptemplate "github.com/razatechofficial/mail-os/application/template"
 	"github.com/razatechofficial/mail-os/application/tenant"
 	"github.com/razatechofficial/mail-os/config"
 	"github.com/razatechofficial/mail-os/domain/access"
@@ -27,6 +28,7 @@ import (
 	"github.com/razatechofficial/mail-os/infrastructure/mailer"
 	"github.com/razatechofficial/mail-os/infrastructure/persistence/postgres"
 	"github.com/razatechofficial/mail-os/infrastructure/worker"
+	"github.com/razatechofficial/mail-os/internal/bootstrap"
 	"github.com/razatechofficial/mail-os/pkg/tlsconfig"
 	grpctransport "github.com/razatechofficial/mail-os/transport/grpc"
 	grpchandler "github.com/razatechofficial/mail-os/transport/grpc/handler"
@@ -50,6 +52,8 @@ type Container struct {
 	Grants     access.ServiceGrants
 	Tenants    *tenant.Service
 	TenantRepo *postgres.TenantRepository
+	// Templates resolves published template versions for sends.
+	Templates *apptemplate.Service
 
 	Auth     *middleware.Auth
 	Guard    middleware.Guard
@@ -89,6 +93,7 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 	}
 	for _, build := range []func(context.Context) error{
 		c.buildCore,
+		c.buildTemplates,
 		c.buildEvents,
 	} {
 		if err := build(ctx); err != nil {
@@ -177,6 +182,9 @@ func (c *Container) buildInfrastructure(ctx context.Context) error {
 // manager's routes and schedule.
 func (c *Container) buildCore(ctx context.Context) error {
 	cfg := c.Cfg
+	if err := bootstrap.CheckSchema(ctx, c.DB); err != nil {
+		return err
+	}
 	if err := c.Keys.Bootstrap(ctx); err != nil {
 		return fmt.Errorf("key manager: %w", err)
 	}

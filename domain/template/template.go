@@ -39,6 +39,8 @@ const (
 	CodeInvalidNesting  = "invalid_nesting"
 	CodeRawHTML         = "raw_html_not_allowed"
 	CodeNoDraft         = "no_draft"
+	// CodeTaken is a slug or topic another live template already has.
+	CodeTaken = "taken"
 	// CodeUnknownVariable is a warning, never an error: a draft may use a
 	// variable its topic does not declare.
 	CodeUnknownVariable = "unknown_variable"
