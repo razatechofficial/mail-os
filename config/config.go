@@ -483,3 +483,34 @@ func validateIssuer(raw string, production, plaintext bool) error {
 	}
 	return nil
 }
+
+// LoadDatabase reads only what the migration tool needs: the environment,
+// APP_ENV and the Postgres connection. It applies the same TLS rule as Load.
+func LoadDatabase() (*Config, error) {
+	var cfg Config
+	_ = godotenv.Load(".env")
+	env := getEnvironment()
+	configDir := os.Getenv("CONFIG_DIR")
+	if configDir == "" {
+		configDir = "environments"
+	}
+	if f := filepath.Join(configDir, env+".yaml"); fileExists(f) {
+		if err := cleanenv.ReadConfig(f, &cfg); err != nil {
+			return nil, fmt.Errorf("failed to read %s: %w", f, err)
+		}
+	}
+	if err := cleanenv.ReadEnv(&cfg); err != nil {
+		return nil, fmt.Errorf("failed to read environment: %w", err)
+	}
+	if cfg.App.Env == "" {
+		cfg.App.Env = env
+	}
+	if !cfg.App.AllowsPlaintext() {
+		switch cfg.Postgres.SSLMode {
+		case "require", "verify-ca", "verify-full":
+		default:
+			return nil, fmt.Errorf("POSTGRES_SSL_MODE must be require, verify-ca or verify-full outside local and test")
+		}
+	}
+	return &cfg, nil
+}
