@@ -37,6 +37,12 @@ func allRoutes() []Routes {
 		handler.NewContactHandler(nil),
 		handler.NewContactListHandler(nil),
 		handler.NewCampaignHandler(nil),
+		handler.NewMessageHandler(nil),
+		handler.NewProviderHandler(nil),
+		handler.NewSendingDomainHandler(nil),
+		handler.NewSuppressionHandler(nil),
+		handler.NewWebhookHandler(nil),
+		handler.NewAnalyticsHandler(nil),
 	}
 }
 

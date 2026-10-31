@@ -509,8 +509,30 @@
         "x-step-up": true
       }
     },
+    "/api/v1/analytics/stats": {
+      "get": {
+        "operationId": "get_analytics_stats",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Sending statistics",
+        "tags": [
+          "analytics"
+        ],
+        "x-permission": "analytics:read",
+        "description": "period_type daily|monthly, from, to. Permission: `analytics:read`."
+      }
+    },
     "/api/v1/campaigns": {
       "get": {
+        "description": "Permission: `campaigns:read`. Another tenant's records are 404.",
         "operationId": "get_campaigns",
         "responses": {
           "default": {
@@ -526,10 +548,10 @@
         "tags": [
           "campaigns"
         ],
-        "x-permission": "campaigns:read",
-        "description": "Permission: `campaigns:read`. Another tenant's records are 404."
+        "x-permission": "campaigns:read"
       },
       "post": {
+        "description": "Permission: `campaigns:manage`. Another tenant's records are 404.",
         "operationId": "post_campaigns",
         "responses": {
           "default": {
@@ -545,12 +567,12 @@
         "tags": [
           "campaigns"
         ],
-        "x-permission": "campaigns:manage",
-        "description": "Permission: `campaigns:manage`. Another tenant's records are 404."
+        "x-permission": "campaigns:manage"
       }
     },
     "/api/v1/campaigns/{id}": {
       "delete": {
+        "description": "Permission: `campaigns:manage`. Another tenant's records are 404.",
         "operationId": "delete_campaigns_id",
         "parameters": [
           {
@@ -576,10 +598,10 @@
         "tags": [
           "campaigns"
         ],
-        "x-permission": "campaigns:manage",
-        "description": "Permission: `campaigns:manage`. Another tenant's records are 404."
+        "x-permission": "campaigns:manage"
       },
       "get": {
+        "description": "Permission: `campaigns:read`. Another tenant's records are 404.",
         "operationId": "get_campaigns_id",
         "parameters": [
           {
@@ -605,10 +627,10 @@
         "tags": [
           "campaigns"
         ],
-        "x-permission": "campaigns:read",
-        "description": "Permission: `campaigns:read`. Another tenant's records are 404."
+        "x-permission": "campaigns:read"
       },
       "put": {
+        "description": "Permission: `campaigns:manage`. Another tenant's records are 404.",
         "operationId": "put_campaigns_id",
         "parameters": [
           {
@@ -634,12 +656,12 @@
         "tags": [
           "campaigns"
         ],
-        "x-permission": "campaigns:manage",
-        "description": "Permission: `campaigns:manage`. Another tenant's records are 404."
+        "x-permission": "campaigns:manage"
       }
     },
     "/api/v1/campaigns/{id}/cancel": {
       "post": {
+        "description": "Permission: `campaigns:manage`. Another tenant's records are 404.",
         "operationId": "post_campaigns_id_cancel",
         "parameters": [
           {
@@ -665,12 +687,12 @@
         "tags": [
           "campaigns"
         ],
-        "x-permission": "campaigns:manage",
-        "description": "Permission: `campaigns:manage`. Another tenant's records are 404."
+        "x-permission": "campaigns:manage"
       }
     },
     "/api/v1/campaigns/{id}/launch": {
       "post": {
+        "description": "Permission: `campaigns:manage`. Another tenant's records are 404.",
         "operationId": "post_campaigns_id_launch",
         "parameters": [
           {
@@ -696,12 +718,12 @@
         "tags": [
           "campaigns"
         ],
-        "x-permission": "campaigns:manage",
-        "description": "Permission: `campaigns:manage`. Another tenant's records are 404."
+        "x-permission": "campaigns:manage"
       }
     },
     "/api/v1/campaigns/{id}/pause": {
       "post": {
+        "description": "Permission: `campaigns:manage`. Another tenant's records are 404.",
         "operationId": "post_campaigns_id_pause",
         "parameters": [
           {
@@ -727,12 +749,12 @@
         "tags": [
           "campaigns"
         ],
-        "x-permission": "campaigns:manage",
-        "description": "Permission: `campaigns:manage`. Another tenant's records are 404."
+        "x-permission": "campaigns:manage"
       }
     },
     "/api/v1/campaigns/{id}/resume": {
       "post": {
+        "description": "Permission: `campaigns:manage`. Another tenant's records are 404.",
         "operationId": "post_campaigns_id_resume",
         "parameters": [
           {
@@ -758,12 +780,12 @@
         "tags": [
           "campaigns"
         ],
-        "x-permission": "campaigns:manage",
-        "description": "Permission: `campaigns:manage`. Another tenant's records are 404."
+        "x-permission": "campaigns:manage"
       }
     },
     "/api/v1/contact-lists": {
       "get": {
+        "description": "Permission: `contacts:read`. Another tenant's records are 404.",
         "operationId": "get_contact_lists",
         "responses": {
           "default": {
@@ -779,10 +801,10 @@
         "tags": [
           "contact-lists"
         ],
-        "x-permission": "contacts:read",
-        "description": "Permission: `contacts:read`. Another tenant's records are 404."
+        "x-permission": "contacts:read"
       },
       "post": {
+        "description": "Permission: `contacts:manage`. Another tenant's records are 404.",
         "operationId": "post_contact_lists",
         "responses": {
           "default": {
@@ -798,12 +820,12 @@
         "tags": [
           "contact-lists"
         ],
-        "x-permission": "contacts:manage",
-        "description": "Permission: `contacts:manage`. Another tenant's records are 404."
+        "x-permission": "contacts:manage"
       }
     },
     "/api/v1/contact-lists/{id}": {
       "delete": {
+        "description": "Permission: `contacts:manage`. Another tenant's records are 404.",
         "operationId": "delete_contact_lists_id",
         "parameters": [
           {
@@ -829,10 +851,10 @@
         "tags": [
           "contact-lists"
         ],
-        "x-permission": "contacts:manage",
-        "description": "Permission: `contacts:manage`. Another tenant's records are 404."
+        "x-permission": "contacts:manage"
       },
       "get": {
+        "description": "Permission: `contacts:read`. Another tenant's records are 404.",
         "operationId": "get_contact_lists_id",
         "parameters": [
           {
@@ -858,10 +880,10 @@
         "tags": [
           "contact-lists"
         ],
-        "x-permission": "contacts:read",
-        "description": "Permission: `contacts:read`. Another tenant's records are 404."
+        "x-permission": "contacts:read"
       },
       "put": {
+        "description": "Permission: `contacts:manage`. Another tenant's records are 404.",
         "operationId": "put_contact_lists_id",
         "parameters": [
           {
@@ -887,12 +909,12 @@
         "tags": [
           "contact-lists"
         ],
-        "x-permission": "contacts:manage",
-        "description": "Permission: `contacts:manage`. Another tenant's records are 404."
+        "x-permission": "contacts:manage"
       }
     },
     "/api/v1/contact-lists/{id}/members": {
       "delete": {
+        "description": "Permission: `contacts:manage`. Another tenant's records are 404.",
         "operationId": "delete_contact_lists_id_members",
         "parameters": [
           {
@@ -918,10 +940,10 @@
         "tags": [
           "contact-lists"
         ],
-        "x-permission": "contacts:manage",
-        "description": "Permission: `contacts:manage`. Another tenant's records are 404."
+        "x-permission": "contacts:manage"
       },
       "get": {
+        "description": "Permission: `contacts:read`. Another tenant's records are 404.",
         "operationId": "get_contact_lists_id_members",
         "parameters": [
           {
@@ -947,10 +969,10 @@
         "tags": [
           "contact-lists"
         ],
-        "x-permission": "contacts:read",
-        "description": "Permission: `contacts:read`. Another tenant's records are 404."
+        "x-permission": "contacts:read"
       },
       "post": {
+        "description": "Permission: `contacts:manage`. Another tenant's records are 404.",
         "operationId": "post_contact_lists_id_members",
         "parameters": [
           {
@@ -976,12 +998,12 @@
         "tags": [
           "contact-lists"
         ],
-        "x-permission": "contacts:manage",
-        "description": "Permission: `contacts:manage`. Another tenant's records are 404."
+        "x-permission": "contacts:manage"
       }
     },
     "/api/v1/contacts": {
       "get": {
+        "description": "Permission: `contacts:read`. Another tenant's records are 404.",
         "operationId": "get_contacts",
         "responses": {
           "default": {
@@ -997,10 +1019,10 @@
         "tags": [
           "contacts"
         ],
-        "x-permission": "contacts:read",
-        "description": "Permission: `contacts:read`. Another tenant's records are 404."
+        "x-permission": "contacts:read"
       },
       "post": {
+        "description": "Permission: `contacts:manage`. Another tenant's records are 404.",
         "operationId": "post_contacts",
         "responses": {
           "default": {
@@ -1016,12 +1038,12 @@
         "tags": [
           "contacts"
         ],
-        "x-permission": "contacts:manage",
-        "description": "Permission: `contacts:manage`. Another tenant's records are 404."
+        "x-permission": "contacts:manage"
       }
     },
     "/api/v1/contacts/batch": {
       "post": {
+        "description": "Permission: `contacts:manage`. Another tenant's records are 404.",
         "operationId": "post_contacts_batch",
         "responses": {
           "default": {
@@ -1037,12 +1059,12 @@
         "tags": [
           "contacts"
         ],
-        "x-permission": "contacts:manage",
-        "description": "Permission: `contacts:manage`. Another tenant's records are 404."
+        "x-permission": "contacts:manage"
       }
     },
     "/api/v1/contacts/{id}": {
       "delete": {
+        "description": "Permission: `contacts:manage`. Another tenant's records are 404.",
         "operationId": "delete_contacts_id",
         "parameters": [
           {
@@ -1068,10 +1090,10 @@
         "tags": [
           "contacts"
         ],
-        "x-permission": "contacts:manage",
-        "description": "Permission: `contacts:manage`. Another tenant's records are 404."
+        "x-permission": "contacts:manage"
       },
       "get": {
+        "description": "Permission: `contacts:read`. Another tenant's records are 404.",
         "operationId": "get_contacts_id",
         "parameters": [
           {
@@ -1097,10 +1119,10 @@
         "tags": [
           "contacts"
         ],
-        "x-permission": "contacts:read",
-        "description": "Permission: `contacts:read`. Another tenant's records are 404."
+        "x-permission": "contacts:read"
       },
       "put": {
+        "description": "Permission: `contacts:manage`. Another tenant's records are 404.",
         "operationId": "put_contacts_id",
         "parameters": [
           {
@@ -1126,12 +1148,12 @@
         "tags": [
           "contacts"
         ],
-        "x-permission": "contacts:manage",
-        "description": "Permission: `contacts:manage`. Another tenant's records are 404."
+        "x-permission": "contacts:manage"
       }
     },
     "/api/v1/events": {
       "post": {
+        "description": "For service clients only (IAM client-credentials token with aud mailos). Body is IAM's event envelope {id, type, source, data, tenant_uuid, organization_uuid}. The client must be allow-listed for the topic (MAILOS_SERVICE_CLIENTS) and may act only for its tenant; refusals are 403 and audited as event.refused. 202 {accepted, delivery_id, event_id, duplicate}; a repeated id is a duplicate with no second message. Permission: `events:dispatch`.",
         "operationId": "post_events",
         "responses": {
           "default": {
@@ -1147,8 +1169,7 @@
         "tags": [
           "events"
         ],
-        "x-permission": "events:dispatch",
-        "description": "For service clients only (IAM client-credentials token with aud mailos). Body is IAM's event envelope {id, type, source, data, tenant_uuid, organization_uuid}. The client must be allow-listed for the topic (MAILOS_SERVICE_CLIENTS) and may act only for its tenant; refusals are 403 and audited as event.refused. 202 {accepted, delivery_id, event_id, duplicate}; a repeated id is a duplicate with no second message. Permission: `events:dispatch`."
+        "x-permission": "events:dispatch"
       }
     },
     "/api/v1/keys/encryption": {
@@ -1226,8 +1247,197 @@
         "x-permission": "templates:read"
       }
     },
+    "/api/v1/messages": {
+      "get": {
+        "operationId": "get_messages",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List messages",
+        "tags": [
+          "messages"
+        ],
+        "x-permission": "messages:read",
+        "description": "Never bodies; subject and template data masked (secret variables such as OTP codes). Permission: `messages:read`."
+      }
+    },
+    "/api/v1/messages/batch": {
+      "post": {
+        "operationId": "post_messages_batch",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Send a batch",
+        "tags": [
+          "messages"
+        ],
+        "x-permission": "messages:operate",
+        "description": "Up to 100 messages. Permission: `messages:operate`."
+      }
+    },
+    "/api/v1/messages/send": {
+      "post": {
+        "operationId": "post_messages_send",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Send a message",
+        "tags": [
+          "messages"
+        ],
+        "x-permission": "messages:operate",
+        "description": "Direct (subject/html/text) or templated (template_slug or template_id, optional template_locale, template_vars). The send worker uses the template's published version. Optional Idempotency-Key header. A suppressed recipient is stored with status suppressed. Permission: `messages:operate`."
+      }
+    },
+    "/api/v1/messages/{id}": {
+      "get": {
+        "operationId": "get_messages_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get message",
+        "tags": [
+          "messages"
+        ],
+        "x-permission": "messages:read",
+        "description": "Envelope only; secret variables masked. Permission: `messages:read`."
+      }
+    },
+    "/api/v1/messages/{id}/body": {
+      "get": {
+        "operationId": "get_messages_id_body",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Read a message body",
+        "tags": [
+          "messages"
+        ],
+        "x-permission": "messages:read_body",
+        "description": "Returns {html_body, text_body} with secret variables masked. Every read is audited (message.body_viewed). 404 once the body passed retention. Permission: `messages:read_body`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "x-step-up": true
+      }
+    },
+    "/api/v1/messages/{id}/cancel": {
+      "post": {
+        "operationId": "post_messages_id_cancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Cancel",
+        "tags": [
+          "messages"
+        ],
+        "x-permission": "messages:operate",
+        "description": "Audited. Permission: `messages:operate`."
+      }
+    },
+    "/api/v1/messages/{id}/resend": {
+      "post": {
+        "operationId": "post_messages_id_resend",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Resend",
+        "tags": [
+          "messages"
+        ],
+        "x-permission": "messages:operate",
+        "description": "Audited (message.resent). Permission: `messages:operate`."
+      }
+    },
     "/api/v1/openapi.json": {
       "get": {
+        "description": "Served without authentication.",
         "operationId": "get_openapi_json",
         "responses": {
           "default": {
@@ -1238,8 +1448,7 @@
         "summary": "This document",
         "tags": [
           "openapi.json"
-        ],
-        "description": "Served without authentication."
+        ]
       }
     },
     "/api/v1/organizations": {
@@ -1292,6 +1501,331 @@
           "organizations"
         ],
         "x-permission": "settings:read"
+      }
+    },
+    "/api/v1/providers": {
+      "get": {
+        "operationId": "get_providers",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List providers",
+        "tags": [
+          "providers"
+        ],
+        "x-permission": "providers:read",
+        "description": "Credentials are never returned; has_credentials and credential_hints only. Permission: `providers:read`."
+      },
+      "post": {
+        "operationId": "post_providers",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create provider",
+        "tags": [
+          "providers"
+        ],
+        "x-permission": "providers:manage",
+        "description": "Credentials in configuration (password, access_key_id, secret_access_key, api_key, server_token) are sealed with the provider key; audited with [REDACTED] secrets. Permission: `providers:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "x-step-up": true
+      }
+    },
+    "/api/v1/providers/{id}": {
+      "delete": {
+        "operationId": "delete_providers_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete provider",
+        "tags": [
+          "providers"
+        ],
+        "x-permission": "providers:manage",
+        "description": "Permission: `providers:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "x-step-up": true
+      },
+      "get": {
+        "operationId": "get_providers_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get provider",
+        "tags": [
+          "providers"
+        ],
+        "x-permission": "providers:read",
+        "description": "Credentials are never returned. Permission: `providers:read`."
+      },
+      "put": {
+        "operationId": "put_providers_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update provider",
+        "tags": [
+          "providers"
+        ],
+        "x-permission": "providers:manage",
+        "description": "Audited with before and after; secrets redacted. Permission: `providers:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "x-step-up": true
+      }
+    },
+    "/api/v1/sending-domains": {
+      "get": {
+        "operationId": "get_sending_domains",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List sending domains",
+        "tags": [
+          "sending-domains"
+        ],
+        "x-permission": "domains:read",
+        "description": "DKIM private keys are never returned. Permission: `domains:read`."
+      },
+      "post": {
+        "operationId": "post_sending_domains",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add sending domain",
+        "tags": [
+          "sending-domains"
+        ],
+        "x-permission": "domains:manage",
+        "description": "Generates an RSA-2048 DKIM key, sealed with the dkim key. Permission: `domains:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "x-step-up": true
+      }
+    },
+    "/api/v1/sending-domains/{id}": {
+      "delete": {
+        "operationId": "delete_sending_domains_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete sending domain",
+        "tags": [
+          "sending-domains"
+        ],
+        "x-permission": "domains:manage",
+        "description": "Permission: `domains:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "x-step-up": true
+      },
+      "get": {
+        "operationId": "get_sending_domains_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get sending domain",
+        "tags": [
+          "sending-domains"
+        ],
+        "x-permission": "domains:read",
+        "description": "Permission: `domains:read`."
+      }
+    },
+    "/api/v1/sending-domains/{id}/verify": {
+      "post": {
+        "operationId": "post_sending_domains_id_verify",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Verify DNS records",
+        "tags": [
+          "sending-domains"
+        ],
+        "x-permission": "domains:manage",
+        "description": "Looks up DKIM, SPF and DMARC TXT records. Permission: `domains:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "x-step-up": true
+      }
+    },
+    "/api/v1/suppressions": {
+      "delete": {
+        "operationId": "delete_suppressions",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove suppression",
+        "tags": [
+          "suppressions"
+        ],
+        "x-permission": "suppressions:manage",
+        "description": "Permission: `suppressions:manage`."
+      },
+      "get": {
+        "operationId": "get_suppressions",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List suppressions",
+        "tags": [
+          "suppressions"
+        ],
+        "x-permission": "suppressions:read",
+        "description": "Permission: `suppressions:read`."
+      },
+      "post": {
+        "operationId": "post_suppressions",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add suppression",
+        "tags": [
+          "suppressions"
+        ],
+        "x-permission": "suppressions:manage",
+        "description": "Permission: `suppressions:manage`."
       }
     },
     "/api/v1/template-branding": {
@@ -2060,6 +2594,138 @@
           "tenant"
         ],
         "x-permission": "settings:manage",
+        "x-step-up": true
+      }
+    },
+    "/api/v1/webhooks": {
+      "get": {
+        "operationId": "get_webhooks",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List webhooks",
+        "tags": [
+          "webhooks"
+        ],
+        "x-permission": "webhooks:read",
+        "description": "Secrets are never returned. Permission: `webhooks:read`."
+      },
+      "post": {
+        "operationId": "post_webhooks",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create webhook",
+        "tags": [
+          "webhooks"
+        ],
+        "x-permission": "webhooks:manage",
+        "description": "HTTPS only. The signing secret is sealed; a generated one is returned once. Permission: `webhooks:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "x-step-up": true
+      }
+    },
+    "/api/v1/webhooks/{id}": {
+      "delete": {
+        "operationId": "delete_webhooks_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete webhook",
+        "tags": [
+          "webhooks"
+        ],
+        "x-permission": "webhooks:manage",
+        "description": "Permission: `webhooks:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "x-step-up": true
+      },
+      "get": {
+        "operationId": "get_webhooks_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get webhook",
+        "tags": [
+          "webhooks"
+        ],
+        "x-permission": "webhooks:read",
+        "description": "Permission: `webhooks:read`."
+      },
+      "put": {
+        "operationId": "put_webhooks_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update webhook",
+        "tags": [
+          "webhooks"
+        ],
+        "x-permission": "webhooks:manage",
+        "description": "Permission: `webhooks:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
         "x-step-up": true
       }
     }
