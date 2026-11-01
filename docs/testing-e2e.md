@@ -71,6 +71,8 @@ The suite never needs a running IAM. `e2e/cmd/fakeiam` (build tag `e2e`) wraps `
 
 Tokens live 10 minutes. `extra` overrides any claim, for example an `exp` in the past.
 
+**OIDC provider mode** (`-oidc-client-id`, needs the mint routes; `e2e/run.sh` always turns it on for `mailos-console`, with the redirect URI `$MAILOS_E2E_CONSOLE_ORIGIN/api/auth/callback`): the console's BFF signs in through the fake IAM in its Playwright suite. Register a persona with `POST /test/oidc/users` (`{login_hint, sub, tid, org_id, roles, acr, email, name, auth_age_seconds}`), then send the browser to the console's `/api/auth/login?login_hint=<hint>`: authorize answers with a code at once (PKCE S256 required, exact redirect URIs, one-time codes), and the token endpoint, refresh rotation, userinfo, revocation, logout and IAM's step-up route (`{"mfa_code":"000000"}`) behave as IAM's do. `e2e/run.sh env` prints `MAILOS_E2E_OIDC_CLIENT_ID` and `MAILOS_E2E_OIDC_CLIENT_SECRET`. A second service client, `e2e-narrow`, may publish only `iam.auth.mfa_email_code_requested`. `MAILOS_E2E_READY_SECONDS` (default 60) is how long `up` waits for each process.
+
 ## How a test package is built
 
 ```go
@@ -125,6 +127,13 @@ With `MAILOS_E2E_HOOKS=true` and `MAILOS_E2E_HOOKS_TOKEN` (at least 32 character
 | Package | Covers |
 |---|---|
 | `e2e/smoke` | `/health` and `/ready`; `/api/v1/templates` without a token is 401; a forged signature is 401; the administrator's token is accepted |
+| `e2e/flows` | publish then an IAM event renders the published template; OTP masked; body step-up and audit; duplicate events; scoped service callers; four-eyes |
+| `e2e/access` | every route against all six roles and no role; refused tokens (expired, not yet valid, other audience or issuer, no tenant, DPoP-bound as Bearer, `alg: none`); step-up (stale, weak ACR, delegated) with the RFC 9470 challenge on every sensitive route; refusals audited |
+| `e2e/tenancy` | another tenant reads, changes, deletes and lists none of a tenant's resources; suppressions and idempotency keys stay per tenant; a service token cannot name another tenant |
+| `e2e/messaging` | direct sends, idempotency keys, batches, scheduling and cancel, resend, suppressions (unsubscribe stops marketing only), sealed provider credentials, masked views and audited body reads |
+| `e2e/integrations` | webhooks: secret shown once, HMAC signature, retry of the same delivery, pause, validation; events: topic allow-list (`e2e-narrow`), 400/413/409/422, refusal without a published template |
+| `e2e/content` | template revisions, versions, restore, escaped preview, test-send sender rule, delete; events render the published version; branding; sending domains (records, DKIM private key never returned) ; audit export |
+| `e2e/limits` | starts its own server (port 19885 in the QA stack, `MAILOS_E2E_SERVER_BIN`) with rate limits on: 429 `RATE_LIMITED` with `Retry-After`, per tenant |
 
 Feature packages come with the features. Each package uses its own `TestMain` and fixture, as above.
 
