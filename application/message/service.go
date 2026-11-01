@@ -15,6 +15,7 @@ import (
 	domaintemplate "github.com/razatechofficial/mail-os/domain/template"
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
 	"github.com/razatechofficial/mail-os/pkg/id"
+	"github.com/razatechofficial/mail-os/infrastructure/render"
 	"github.com/razatechofficial/mail-os/pkg/logger"
 )
 
@@ -95,6 +96,15 @@ func (s *Service) Send(ctx context.Context, in SendInput) (Result, error) {
 			IdempotencyKey: in.IdempotencyKey, Data: in.TemplateData, Tags: in.Tags, Type: in.Type,
 			replyTo: in.ReplyTo, metadata: in.Metadata, priority: in.Priority, scheduleAt: in.ScheduleAt})
 		return Result{MessageID: m.ID, Status: string(m.Status)}, err
+	}
+	// Written HTML is sanitised like a template's, so a direct send cannot
+	// carry script into the mail or the console's body view.
+	if in.HTML != "" {
+		clean, err := render.SanitizeHTML(in.HTML)
+		if err != nil {
+			return Result{}, apperrors.Invalid("html_body", "invalid", "the HTML body cannot be read")
+		}
+		in.HTML = clean
 	}
 	now := s.now()
 	m := domainmsg.Message{
