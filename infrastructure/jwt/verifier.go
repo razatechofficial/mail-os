@@ -11,6 +11,7 @@ import (
 	"time"
 
 	jose "github.com/go-jose/go-jose/v4"
+	"github.com/google/uuid"
 
 	"github.com/razatechofficial/mail-os/domain/access"
 )
@@ -223,6 +224,13 @@ func (v *Verifier) Principal(ctx context.Context, raw string) (access.Principal,
 		p.DPoPThumbprint, _ = cnf["jkt"].(string)
 	}
 	_, p.Delegated = claims["act"]
+	// IAM's tenant and organization ids are UUIDs; anything else is not an
+	// IAM token and must not become a tenant here.
+	for name, v := range map[string]string{"tid": p.TenantID, "org_id": p.OrgID} {
+		if v != "" && uuid.Validate(v) != nil {
+			return access.Principal{}, invalid("%s is not a UUID", name)
+		}
+	}
 
 	if clientID, ok := strings.CutPrefix(sub, "client:"); ok {
 		if clientID == "" || (p.ClientID != "" && p.ClientID != clientID) {

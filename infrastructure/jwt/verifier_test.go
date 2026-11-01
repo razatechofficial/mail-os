@@ -77,6 +77,8 @@ func TestRefusals(t *testing.T) {
 		"future iat":        iam.Sign(iam.Keys[0], "at+jwt", mutate(func(c map[string]any) { c["iat"] = now.Add(time.Hour).Unix() })),
 		"other audience":    iam.Sign(iam.Keys[0], "at+jwt", mutate(func(c map[string]any) { c["aud"] = "xdr" })),
 		"user without tid":  iam.Sign(iam.Keys[0], "at+jwt", mutate(func(c map[string]any) { delete(c, "tid") })),
+		"tid not a UUID":    iam.Sign(iam.Keys[0], "at+jwt", mutate(func(c map[string]any) { c["tid"] = "not-a-uuid" })),
+		"org not a UUID":    iam.Sign(iam.Keys[0], "at+jwt", mutate(func(c map[string]any) { c["org_id"] = "../other" })),
 		"security event":    iam.Sign(iam.Keys[0], "at+jwt", mutate(func(c map[string]any) { c["events"] = map[string]any{} })),
 		"service for console audience": iam.Sign(iam.Keys[0], "at+jwt", mutate(func(c map[string]any) {
 			c["sub"], c["client_id"], c["aud"] = "client:x", "x", "mailos-console"
