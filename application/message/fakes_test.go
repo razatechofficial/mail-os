@@ -174,6 +174,16 @@ type memTemplates struct {
 }
 
 func (t memTemplates) ResolvePublished(_ context.Context, _ string, ref apptemplate.Ref, _ string) (domaintemplate.Template, domaintemplate.Version, error) {
+	// The real resolver takes exactly one of id, slug or topic.
+	n := 0
+	for _, v := range []string{ref.TemplateID, ref.Slug, ref.Topic} {
+		if v != "" {
+			n++
+		}
+	}
+	if n != 1 {
+		return domaintemplate.Template{}, domaintemplate.Version{}, apperrors.Invalid("template", "invalid", "name a template by exactly one of its id, slug or topic")
+	}
 	if ref.Slug != "" && ref.Slug != t.tpl.Slug {
 		return domaintemplate.Template{}, domaintemplate.Version{}, apperrors.NotFound("template not found")
 	}

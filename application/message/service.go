@@ -255,7 +255,13 @@ func (s *Service) SendTemplated(ctx context.Context, in TemplatedSend) (domainms
 	if err := s.d.Tenants.Ensure(ctx, in.TenantID); err != nil {
 		return domainmsg.Message{}, err
 	}
-	tpl, ver, err := s.d.Templates.ResolvePublished(ctx, in.TenantID, apptemplate.Ref{TemplateID: in.TemplateID, Slug: in.TemplateSlug, Topic: in.Topic}, in.Locale)
+	// A template is named by exactly one of id, slug or topic: an id or slug
+	// wins, and the topic then only selects the data rules (campaigns).
+	ref := apptemplate.Ref{TemplateID: in.TemplateID, Slug: in.TemplateSlug}
+	if ref.TemplateID == "" && ref.Slug == "" {
+		ref.Topic = in.Topic
+	}
+	tpl, ver, err := s.d.Templates.ResolvePublished(ctx, in.TenantID, ref, in.Locale)
 	if err != nil {
 		return domainmsg.Message{}, err
 	}
