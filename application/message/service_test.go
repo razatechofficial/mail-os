@@ -79,6 +79,25 @@ func TestSendQueuesAndAudits(t *testing.T) {
 	}
 }
 
+func TestSendSanitisesWrittenHTML(t *testing.T) {
+	f := newFixture(t)
+	in := direct()
+	in.HTML = `<p onclick="steal()">Hi</p><script>alert(1)</script><a href="javascript:x()">link</a>`
+	r, err := f.svc.Send(userCtx(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ := f.repo.Get(context.Background(), tenant, r.MessageID)
+	for _, bad := range []string{"<script", "onclick", "javascript:"} {
+		if strings.Contains(m.HTMLBody, bad) {
+			t.Fatalf("stored HTML keeps %q: %s", bad, m.HTMLBody)
+		}
+	}
+	if !strings.Contains(m.HTMLBody, "Hi") {
+		t.Fatalf("content lost: %s", m.HTMLBody)
+	}
+}
+
 func TestSendValidationAndIdempotency(t *testing.T) {
 	f := newFixture(t)
 	bad := direct()
