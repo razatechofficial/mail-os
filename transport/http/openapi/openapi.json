@@ -448,6 +448,304 @@
           }
         },
         "type": "object"
+      },
+      "ApplicationInput": {
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "client_id",
+          "message_types",
+          "rate_limit_per_minute",
+          "daily_quota"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "server",
+              "spa"
+            ]
+          },
+          "client_id": {
+            "type": "string",
+            "description": "The IAM OAuth client the application calls with."
+          },
+          "environment": {
+            "type": "string",
+            "enum": [
+              "sandbox",
+              "live"
+            ]
+          },
+          "stream": {
+            "type": "string",
+            "enum": [
+              "transactional",
+              "broadcast"
+            ]
+          },
+          "message_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Topics or template slugs, prefixes ending in .*, or raw."
+          },
+          "senders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Addresses or *@domain on the tenant's verified sending domains."
+          },
+          "default_from_email": {
+            "type": "string"
+          },
+          "default_from_name": {
+            "type": "string"
+          },
+          "default_reply_to": {
+            "type": "string"
+          },
+          "rate_limit_per_minute": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000
+          },
+          "daily_quota": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000000
+          },
+          "browser_templates": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "spa only: template slugs a browser user may send to themselves."
+          },
+          "user_rate_limit_per_hour": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "spa only."
+          },
+          "allowed_origins": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "spa only: https origins."
+          }
+        }
+      },
+      "Application": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "server",
+              "spa"
+            ]
+          },
+          "client_id": {
+            "type": "string",
+            "description": "The IAM OAuth client the application calls with."
+          },
+          "environment": {
+            "type": "string",
+            "enum": [
+              "sandbox",
+              "live"
+            ]
+          },
+          "stream": {
+            "type": "string",
+            "enum": [
+              "transactional",
+              "broadcast"
+            ]
+          },
+          "message_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Topics or template slugs, prefixes ending in .*, or raw."
+          },
+          "senders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Addresses or *@domain on the tenant's verified sending domains."
+          },
+          "default_from_email": {
+            "type": "string"
+          },
+          "default_from_name": {
+            "type": "string"
+          },
+          "default_reply_to": {
+            "type": "string"
+          },
+          "rate_limit_per_minute": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000
+          },
+          "daily_quota": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000000
+          },
+          "browser_templates": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "spa only: template slugs a browser user may send to themselves."
+          },
+          "user_rate_limit_per_hour": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "spa only."
+          },
+          "allowed_origins": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "spa only: https origins."
+          },
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "suspended"
+            ]
+          },
+          "suspended_reason": {
+            "type": "string"
+          },
+          "system": {
+            "type": "boolean",
+            "description": "Seeded from configuration; only its status can change."
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "updated_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApplicationUsage": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "string"
+          },
+          "days": {
+            "type": "integer"
+          },
+          "quota_used_today": {
+            "type": "integer"
+          },
+          "daily_quota": {
+            "type": "integer"
+          },
+          "rate_limit_per_minute": {
+            "type": "integer"
+          },
+          "totals": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "daily": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "day": {
+                  "type": "string"
+                },
+                "total": {
+                  "type": "integer"
+                },
+                "sent": {
+                  "type": "integer"
+                },
+                "delivered": {
+                  "type": "integer"
+                },
+                "bounced": {
+                  "type": "integer"
+                },
+                "failed": {
+                  "type": "integer"
+                },
+                "suppressed": {
+                  "type": "integer"
+                },
+                "captured": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "SelfSendInput": {
+        "type": "object",
+        "required": [
+          "template"
+        ],
+        "properties": {
+          "template": {
+            "type": "string",
+            "description": "A browser_allowed template slug."
+          },
+          "locale": {
+            "type": "string"
+          },
+          "variables": {
+            "type": "object",
+            "description": "The template's variables; email is always the signed-in user's."
+          }
+        }
       }
     },
     "securitySchemes": {
@@ -1153,7 +1451,7 @@
     },
     "/api/v1/events": {
       "post": {
-        "description": "For service clients only (IAM client-credentials token with aud mailos). Body is IAM's event envelope {id, type, source, data, tenant_uuid, organization_uuid}. The client must be allow-listed for the topic (MAILOS_SERVICE_CLIENTS) and may act only for its tenant; refusals are 403 and audited as event.refused. 202 {accepted, delivery_id, event_id, duplicate}; a repeated id is a duplicate with no second message. Permission: `events:dispatch`.",
+        "description": "For service clients only (IAM client-credentials token with aud mailos). Body is IAM's event envelope {id, type, source, data, tenant_uuid, organization_uuid}. The client must be an active server application (IAM's own client is the system application seeded from IAM_SERVICE_CLIENT_ID) whose message_types allow the topic; the tenant is the application's, and an event or token naming another is refused; refusals are 403 and audited as event.refused. 202 {accepted, delivery_id, event_id, duplicate}; a repeated id is a duplicate with no second message. Permission: `events:dispatch`.",
         "operationId": "post_events",
         "responses": {
           "default": {
@@ -1265,7 +1563,7 @@
           "messages"
         ],
         "x-permission": "messages:read",
-        "description": "Never bodies; subject and template data masked (secret variables such as OTP codes). Permission: `messages:read`."
+        "description": "Never bodies; subject and template data masked (secret variables such as OTP codes). Filters: status (including captured for sandbox applications), type, topic, to, from, until, application_id. Permission: `messages:read`."
       }
     },
     "/api/v1/messages/batch": {
@@ -1285,8 +1583,20 @@
         "tags": [
           "messages"
         ],
-        "x-permission": "messages:operate",
-        "description": "Up to 100 messages. Permission: `messages:operate`."
+        "x-permission": "messages:send",
+        "description": "Up to 100 messages; each follows the same rules as a single send. The Idempotency-Key covers the whole batch. Permission: `messages:send`.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "description": "Retry-safe sends: the first response for the key is stored for IDEMPOTENCY_KEY_TTL per application (per tenant for console users) and replayed with Idempotent-Replayed: true; the same key with another body is 409. 5xx and 429 are not stored."
+          }
+        ]
       }
     },
     "/api/v1/messages/send": {
@@ -1306,8 +1616,20 @@
         "tags": [
           "messages"
         ],
-        "x-permission": "messages:operate",
-        "description": "Direct (subject/html/text) or templated (template_slug or template_id, optional template_locale, template_vars). The send worker uses the template's published version. Optional Idempotency-Key header. A suppressed recipient is stored with status suppressed. Permission: `messages:operate`."
+        "x-permission": "messages:send",
+        "description": "Direct (subject/html/text) or templated (template_slug or template_id, optional template_locale, template_vars). The send worker uses the template's published version. A suppressed recipient is stored with status suppressed. For an application's service token (client credentials, aud mailos): the tenant is the application's; the message type (topic or template slug, or raw for written content) must be among its message_types; the sender must be one of its senders on a verified domain (its default sender when none is named); a transactional application cannot send marketing, a broadcast application's mail is marketing; then its per-minute rate and daily quota (429). Sandbox applications' messages are captured, never delivered. Refusals are audited as message.refused with a stable reason. Permission: `messages:send`.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "description": "Retry-safe sends: the first response for the key is stored for IDEMPOTENCY_KEY_TTL per application (per tenant for console users) and replayed with Idempotent-Replayed: true; the same key with another body is 409. 5xx and 429 are not stored."
+          }
+        ]
       }
     },
     "/api/v1/messages/{id}": {
@@ -1787,7 +2109,7 @@
           "suppressions"
         ],
         "x-permission": "suppressions:manage",
-        "description": "Permission: `suppressions:manage`."
+        "description": "Body or query {email, application_id}; no application_id removes the tenant-wide entry. Permission: `suppressions:manage`."
       },
       "get": {
         "operationId": "get_suppressions",
@@ -1806,7 +2128,7 @@
           "suppressions"
         ],
         "x-permission": "suppressions:read",
-        "description": "Permission: `suppressions:read`."
+        "description": "Filters: type, application_id. Permission: `suppressions:read`."
       },
       "post": {
         "operationId": "post_suppressions",
@@ -1825,7 +2147,7 @@
           "suppressions"
         ],
         "x-permission": "suppressions:manage",
-        "description": "Permission: `suppressions:manage`."
+        "description": "Body {email, type, reason, source, application_id}. Without application_id the entry is tenant-wide and stops every application's mail; with it, only that application's. Permission: `suppressions:manage`."
       }
     },
     "/api/v1/template-branding": {
@@ -2634,7 +2956,7 @@
           "webhooks"
         ],
         "x-permission": "webhooks:manage",
-        "description": "HTTPS only. The signing secret is sealed; a generated one is returned once. Permission: `webhooks:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "description": "HTTPS only. Optional application_id limits the endpoint to that application's messages; without it, it receives every message of the tenant. Deliveries are signed the Standard Webhooks way (webhook-id, webhook-timestamp, webhook-signature v1 HMAC-SHA256; whsec_ secrets). The signing secret is sealed; a generated one is returned once. Permission: `webhooks:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
         "x-step-up": true
       }
     },
@@ -2727,6 +3049,354 @@
         "x-permission": "webhooks:manage",
         "description": "Permission: `webhooks:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
         "x-step-up": true
+      }
+    },
+    "/api/v1/applications": {
+      "get": {
+        "operationId": "get_applications",
+        "summary": "List applications",
+        "tags": [
+          "applications"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "applications:read",
+        "description": "The tenant's applications: the projects that send through MailOS, each bound to its IAM OAuth client. Filters: status (active, suspended), kind (server, spa). Permission: `applications:read`.",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_applications",
+        "summary": "Register an application",
+        "tags": [
+          "applications"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "applications:manage",
+        "description": "Binds an IAM client (registered in IAM by the application's owner; MailOS issues no secret or key) to the tenant. Senders must be on the tenant's verified sending domains. A client is one application across all tenants (409). Audited as application.created. Permission: `applications:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Application"
+                }
+              }
+            }
+          }
+        },
+        "x-step-up": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/applications/{id}": {
+      "get": {
+        "operationId": "get_application",
+        "summary": "Get application",
+        "tags": [
+          "applications"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "applications:read",
+        "description": " Permission: `applications:read`.",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Application"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "put": {
+        "operationId": "put_application",
+        "summary": "Replace application",
+        "tags": [
+          "applications"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "applications:manage",
+        "description": "Every editable field. A system application (seeded from configuration) is refused with 403. Audited with before and after. Permission: `applications:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Application"
+                }
+              }
+            }
+          }
+        },
+        "x-step-up": true,
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationInput"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_application",
+        "summary": "Delete application",
+        "tags": [
+          "applications"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "applications:manage",
+        "description": "Its client is refused from then on; its messages keep the application id. A system application cannot be deleted. Permission: `applications:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-step-up": true,
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/applications/{id}/suspend": {
+      "post": {
+        "operationId": "post_application_suspend",
+        "summary": "Suspend application",
+        "tags": [
+          "applications"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "applications:manage",
+        "description": "Body {reason}. Every call of the application is refused at once (audited reason application_suspended). Works on a system application too. Permission: `applications:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Application"
+                }
+              }
+            }
+          }
+        },
+        "x-step-up": true,
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/applications/{id}/activate": {
+      "post": {
+        "operationId": "post_application_activate",
+        "summary": "Activate application",
+        "tags": [
+          "applications"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "applications:manage",
+        "description": "Lifts a suspension. Permission: `applications:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Application"
+                }
+              }
+            }
+          }
+        },
+        "x-step-up": true,
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/applications/{id}/usage": {
+      "get": {
+        "operationId": "get_application_usage",
+        "summary": "Application usage",
+        "tags": [
+          "applications"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "applications:read",
+        "description": "Messages per UTC day and status over ?days (1 to 90, default 30), and today's use of the daily quota (-1 when the counter is unavailable). Permission: `applications:read`.",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationUsage"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 90
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/messages/self": {
+      "post": {
+        "operationId": "post_messages_self",
+        "summary": "Send to the signed-in user",
+        "tags": [
+          "messages"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "messages:send_self",
+        "description": "For a spa application's browser user only: an IAM user access token issued to the application's public client, aud mailos, scope mailos.send.self, carrying email and email_verified=true. Body {template, locale, variables}: the template must be one the application marks browser_allowed; the recipient is always the token's own verified address; there is no sender, recipient or content field. The Origin header must be one of the application's allowed_origins. Per-user hourly limit (429 user_rate_limited), then the application's rate and quota. Refusals are 403 or 429, audited as message.refused with a stable reason. Permission: `messages:send_self`.",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelfSendInput"
+              }
+            }
+          }
+        }
       }
     }
   },

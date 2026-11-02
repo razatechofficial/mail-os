@@ -13,14 +13,19 @@ import (
 	"github.com/razatechofficial/mail-os/transport/http/response"
 )
 
-// WebhookHandler serves outbound webhooks. The signing secret is returned
-// once, when created; changes need step-up.
+// WebhookHandler serves outbound webhooks, tenant-wide or for one of the
+// tenant's applications. The signing secret is returned once, when
+// created; changes need step-up.
 type WebhookHandler struct {
-	svc *appwebhook.Service
+	svc  *appwebhook.Service
+	apps ApplicationReader
 }
 
-// NewWebhookHandler builds the handler.
-func NewWebhookHandler(svc *appwebhook.Service) *WebhookHandler { return &WebhookHandler{svc: svc} }
+// NewWebhookHandler builds the handler; apps checks the application an
+// endpoint is scoped to.
+func NewWebhookHandler(svc *appwebhook.Service, apps ApplicationReader) *WebhookHandler {
+	return &WebhookHandler{svc: svc, apps: apps}
+}
 
 // Mount registers the routes.
 func (h *WebhookHandler) Mount(api *gin.RouterGroup, g middleware.Guard) {
@@ -32,13 +37,14 @@ func (h *WebhookHandler) Mount(api *gin.RouterGroup, g middleware.Guard) {
 }
 
 type webhookView struct {
-	ID        string    `json:"id"`
-	URL       string    `json:"url"`
-	Events    []string  `json:"events"`
-	IsActive  bool      `json:"is_active"`
-	Secret    string    `json:"secret,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID            string    `json:"id"`
+	ApplicationID string    `json:"application_id"`
+	URL           string    `json:"url"`
+	Events        []string  `json:"events"`
+	IsActive      bool      `json:"is_active"`
+	Secret        string    `json:"secret,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 func webhookViewOf(w domain.Webhook) webhookView {
@@ -46,7 +52,7 @@ func webhookViewOf(w domain.Webhook) webhookView {
 	if events == nil {
 		events = []string{}
 	}
-	return webhookView{ID: w.ID, URL: w.URL, Events: events, IsActive: w.Active, CreatedAt: w.CreatedAt, UpdatedAt: w.UpdatedAt}
+	return webhookView{ID: w.ID, ApplicationID: w.ApplicationID, URL: w.URL, Events: events, IsActive: w.Active, CreatedAt: w.CreatedAt, UpdatedAt: w.UpdatedAt}
 }
 
 // List is GET /webhooks.
@@ -77,15 +83,23 @@ func (h *WebhookHandler) Get(c *gin.Context) {
 // Create is POST /webhooks (step-up); the response carries the secret.
 func (h *WebhookHandler) Create(c *gin.Context) {
 	var req struct {
-		URL    string   `json:"url"`
-		Secret string   `json:"secret"`
-		Events []string `json:"events"`
+		ApplicationID string   `json:"application_id"`
+		URL           string   `json:"url"`
+		Secret        string   `json:"secret"`
+		Events        []string `json:"events"`
 	}
 	if !bind(c, &req) {
 		return
 	}
 	p := middleware.PrincipalFrom(c)
-	w, secret, err := h.svc.Create(c.Request.Context(), p.TenantID, appwebhook.Input{URL: req.URL, Secret: req.Secret, Events: req.Events}, p.Actor())
+	if req.ApplicationID != "" && h.apps != nil {
+		if _, err := h.apps.Get(c.Request.Context(), p.TenantID, req.ApplicationID); err != nil {
+			response.FromError(c, err)
+			return
+		}
+	}
+	w, secret, err := h.svc.Create(c.Request.Context(), p.TenantID, appwebhook.Input{ApplicationID: req.ApplicationID, URL: req.URL,
+		Secret: req.Secret, Events: req.Events}, p.Actor())
 	if err != nil {
 		response.FromError(c, err)
 		return

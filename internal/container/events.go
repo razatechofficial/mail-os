@@ -26,7 +26,7 @@ func (c *Container) buildEvents(_ context.Context) error {
 	if dispatcher == nil {
 		dispatcher = inbound.Unconfigured{}
 	}
-	c.Inbound = inbound.NewService(c.Grants, c.Tenants, postgres.NewInboundEventRepository(c.DB), c.DB, dispatcher, c.Audit)
+	c.Inbound = inbound.NewService(c.Apps, c.Tenants, postgres.NewInboundEventRepository(c.DB), c.DB, dispatcher, c.Audit)
 	c.Routes = append(c.Routes, handler.NewEventHandler(c.Inbound))
 	c.GRPCEvents = grpchandler.NewEventHandler(c.Inbound)
 
@@ -37,7 +37,7 @@ func (c *Container) buildEvents(_ context.Context) error {
 	if err != nil {
 		return err
 	}
-	ingest := pubsub.NewHandler(verifier, c.Grants, c.Inbound, c.Audit)
+	ingest := pubsub.NewHandler(verifier, c.Inbound, c.Audit)
 	topics := cfg.Kafka.Topics
 	if len(topics) == 0 {
 		topics = iamTopics()

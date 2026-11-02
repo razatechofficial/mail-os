@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/razatechofficial/mail-os/domain/access"
+	domainapp "github.com/razatechofficial/mail-os/domain/application"
 	"github.com/razatechofficial/mail-os/infrastructure/jwt"
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
 	"github.com/razatechofficial/mail-os/pkg/logger"
@@ -25,6 +26,15 @@ type TokenVerifier interface {
 // Auth verifies the bearer token of every call except the health service.
 type Auth struct {
 	Verifier TokenVerifier
+	// Apps refuses user tokens issued to an application's client: a spa
+	// user may only self-send over HTTP, and a server application calls
+	// with client credentials. Services are authorised by their RPC.
+	Apps BrowserResolver
+}
+
+// BrowserResolver is applications.Service.ResolveBrowser.
+type BrowserResolver interface {
+	ResolveBrowser(ctx context.Context, p access.Principal) (domainapp.Application, access.Principal, bool, error)
 }
 
 const healthPrefix = "/grpc.health.v1.Health/"
@@ -75,6 +85,17 @@ func (a *Auth) authenticate(ctx context.Context, method string) (context.Context
 		}
 		logger.SecurityWarn("grpc token refused", logger.String("method", method), logger.Err(err))
 		return nil, status.Error(codes.Unauthenticated, "invalid or expired token")
+	}
+	if !p.IsService() && a.Apps != nil {
+		_, _, isApp, err := a.Apps.ResolveBrowser(ctx, p)
+		if err != nil && domainapp.Reason(err) == "" {
+			return nil, Status(err)
+		}
+		if isApp {
+			logger.SecurityWarn("grpc user token of an application client refused", logger.String("method", method),
+				logger.String("client_id", p.ClientID))
+			return nil, status.Error(codes.PermissionDenied, "an application's user token is not accepted over gRPC")
+		}
 	}
 	return access.WithPrincipal(ctx, p), nil
 }

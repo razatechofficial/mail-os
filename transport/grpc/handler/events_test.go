@@ -14,8 +14,8 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	v1 "github.com/razatechofficial/mail-os/api/proto/v1"
+	"github.com/razatechofficial/mail-os/application/applications/appstest"
 	"github.com/razatechofficial/mail-os/application/inbound"
-	"github.com/razatechofficial/mail-os/domain/access"
 	"github.com/razatechofficial/mail-os/infrastructure/jwt"
 	"github.com/razatechofficial/mail-os/internal/testutil/fakeiam"
 	grpctransport "github.com/razatechofficial/mail-os/transport/grpc"
@@ -89,8 +89,7 @@ func newClient(t *testing.T) (*fakeiam.IAM, v1.MailServiceClient, *dispatcher, *
 	t.Helper()
 	iam, _ := fakeiam.NewServer(t)
 	disp, log := &dispatcher{}, &auditLog{}
-	grants := access.NewServiceGrants([]access.ServiceGrant{{ClientID: "iam", TopicPatterns: []string{"iam.*"}}})
-	svc := inbound.NewService(grants, tenants{}, &store{rows: map[string]inbound.Record{}}, tx{}, disp, log)
+	svc := inbound.NewService(appstest.New(appstest.Server("iam", tenant, "iam.*")), tenants{}, &store{rows: map[string]inbound.Record{}}, tx{}, disp, log)
 	auth := &grpctransport.Auth{Verifier: jwt.NewVerifier(jwt.Config{Issuer: iam.Issuer, Audience: "mailos"})}
 	srv := grpclib.NewServer(grpclib.ChainUnaryInterceptor(auth.Unary()))
 	v1.RegisterMailServiceServer(srv, mailService{events: NewEventHandler(svc)})

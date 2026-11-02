@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/razatechofficial/mail-os/domain/access"
+	domainapp "github.com/razatechofficial/mail-os/domain/application"
 	"github.com/razatechofficial/mail-os/infrastructure/dpop"
 	"github.com/razatechofficial/mail-os/infrastructure/jwt"
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
@@ -32,6 +33,15 @@ type TenantEnsurer interface {
 	Ensure(ctx context.Context, tenantID string) error
 }
 
+// Callers resolves the application behind a token
+// (applications.Service): a service token's client must be an active
+// server application, and a user token issued to a spa application's
+// client becomes a self-service principal.
+type Callers interface {
+	ResolveService(ctx context.Context, p access.Principal) (domainapp.Application, access.Principal, error)
+	ResolveBrowser(ctx context.Context, p access.Principal) (domainapp.Application, access.Principal, bool, error)
+}
+
 // Auditor records refusals.
 type Auditor interface {
 	Append(ctx context.Context, resourceType, resourceID, action string, metadata map[string]any) error
@@ -42,6 +52,7 @@ type Auth struct {
 	Verifier TokenVerifier
 	DPoP     ProofChecker
 	Tenants  TenantEnsurer
+	Apps     Callers
 	Audit    Auditor
 	// TrustForwarded believes X-Forwarded-Proto/Host for the DPoP htu
 	// (only when HTTP_TRUSTED_PROXIES is configured).
@@ -55,9 +66,14 @@ const MissingTokenMessage = "missing or invalid authorization header"
 // §5: no role means no access, with a clear message).
 const NoRoleMessage = "Your account has no MailOS role. Ask your MailOS administrator to assign one in IAM."
 
-// Required verifies the token (and its DPoP proof when bound), refuses a
-// person without a MailOS role, provisions the person's tenant, and puts
-// the principal in the request context.
+// CallerRefusedMessage is the 403 message for a client that is no active
+// application of the tenant; the reason is audited, not returned.
+const CallerRefusedMessage = "this client is not an active MailOS application for this tenant"
+
+// Required verifies the token (and its DPoP proof when bound), resolves
+// the application of a service or browser client (the application decides
+// the tenant), refuses a person without a MailOS role, provisions the
+// tenant, and puts the principal in the request context.
 func (a *Auth) Required() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		scheme, raw := bearer(c.GetHeader("Authorization"))
@@ -90,19 +106,55 @@ func (a *Auth) Required() gin.HandlerFunc {
 		}
 		ctx = access.WithPrincipal(ctx, p)
 		c.Request = c.Request.WithContext(ctx)
-		if !p.IsService() {
-			if len(p.Roles) == 0 {
-				a.deny(c, "no_role", "")
-				response.FromError(c, apperrors.Forbidden(NoRoleMessage))
-				return
-			}
-			if err := a.Tenants.Ensure(ctx, p.TenantID); err != nil {
-				response.FromError(c, err)
-				return
-			}
+		resolved, ok := a.resolve(c, p)
+		if !ok {
+			return
+		}
+		if resolved.ApplicationID == "" && len(resolved.Roles) == 0 {
+			a.deny(c, "no_role", "")
+			response.FromError(c, apperrors.Forbidden(NoRoleMessage))
+			return
+		}
+		ctx = access.WithPrincipal(ctx, resolved)
+		c.Request = c.Request.WithContext(ctx)
+		if err := a.Tenants.Ensure(ctx, resolved.TenantID); err != nil {
+			response.FromError(c, err)
+			return
 		}
 		c.Next()
 	}
+}
+
+// resolve applies the application registry to p. A refusal is audited
+// with its reason and answered 403; false means the request was answered.
+func (a *Auth) resolve(c *gin.Context, p access.Principal) (access.Principal, bool) {
+	ctx := c.Request.Context()
+	var err error
+	switch {
+	case a.Apps == nil && p.IsService():
+		// Without a registry no service is an application (fail closed).
+		err = domainapp.ErrUnknownClient
+	case a.Apps == nil:
+	case p.IsService():
+		_, p, err = a.Apps.ResolveService(ctx, p)
+	default:
+		_, p, _, err = a.Apps.ResolveBrowser(ctx, p)
+	}
+	if err == nil {
+		return p, true
+	}
+	reason := domainapp.Reason(err)
+	if reason == "" {
+		response.FromError(c, err)
+		return p, false
+	}
+	a.deny(c, reason, "")
+	msg := CallerRefusedMessage
+	if !domainapp.Identity(err) {
+		msg = err.Error()
+	}
+	response.FromError(c, apperrors.Forbidden(msg))
+	return p, false
 }
 
 func (a *Auth) deny(c *gin.Context, reason, perm string) {
@@ -110,6 +162,9 @@ func (a *Auth) deny(c *gin.Context, reason, perm string) {
 		return
 	}
 	meta := map[string]any{"reason": reason, "route": c.FullPath(), "method": c.Request.Method}
+	if p, ok := access.FromContext(c.Request.Context()); ok && p.ClientID != "" {
+		meta["client_id"] = p.ClientID
+	}
 	if perm != "" {
 		meta["permission"] = perm
 	}

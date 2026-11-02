@@ -215,7 +215,10 @@ func (v *Verifier) Principal(ctx context.Context, raw string) (access.Principal,
 		AMR:       Strings(claims, "amr"),
 		SessionID: String(claims, "sid"),
 		TokenID:   String(claims, "jti"),
+		Scopes:    Strings(claims, "scope"),
+		Email:     String(claims, "email"),
 	}
+	p.EmailVerified, _ = claims["email_verified"].(bool)
 	if t, ok := NumericDate(claims, "auth_time"); ok {
 		p.AuthTime = t
 	}

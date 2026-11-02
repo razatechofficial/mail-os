@@ -148,8 +148,11 @@ type memSuppressions struct {
 	bounced []string
 }
 
-func (s *memSuppressions) Blocks(_ context.Context, _, email string, mt domainmsg.Type) (*suppression.Suppression, error) {
+func (s *memSuppressions) Blocks(_ context.Context, _, appID, email string, mt domainmsg.Type) (*suppression.Suppression, error) {
 	t, ok := s.list[strings.ToLower(email)]
+	if !ok && appID != "" {
+		t, ok = s.list[appID+"/"+strings.ToLower(email)]
+	}
 	if !ok || !t.Blocks(mt) {
 		return nil, nil
 	}
@@ -229,10 +232,14 @@ func (s memSigner) SigningKey(context.Context, string, string) (*sendingdomain.S
 	return s.key, nil
 }
 
-type memNotifier struct{ events []string }
+type memNotifier struct {
+	events []string
+	apps   []string
+}
 
-func (n *memNotifier) Notify(_ context.Context, _, event, _ string, _ map[string]any) error {
+func (n *memNotifier) Notify(_ context.Context, _, appID, event, _ string, _ map[string]any) error {
 	n.events = append(n.events, event)
+	n.apps = append(n.apps, appID)
 	return nil
 }
 

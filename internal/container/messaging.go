@@ -26,6 +26,7 @@ import (
 	"github.com/razatechofficial/mail-os/pkg/logger"
 	grpchandler "github.com/razatechofficial/mail-os/transport/grpc/handler"
 	"github.com/razatechofficial/mail-os/transport/http/handler"
+	"github.com/razatechofficial/mail-os/transport/http/middleware"
 )
 
 // The messaging structures the migrations 20261031110000-110300 add. The
@@ -37,6 +38,10 @@ func init() {
 	bootstrap.Register("sealed provider, DKIM and webhook columns",
 		"SELECT p.credentials_sealed, d.dkim_private_key_sealed, d.dkim_selector, w.secret FROM providers p, sending_domains d, webhooks w LIMIT 0",
 		true, "provider credentials, DKIM keys and webhook secrets cannot be sealed")
+	bootstrap.Register("applications and their scope (20261031150000-150200)",
+		"SELECT a.client_id, m.application_id, m.sandbox, m.stream, e.application_id, w.application_id, s.application_id, k.scope "+
+			"FROM applications a, messages m, inbound_events e, webhooks w, suppressions s, idempotency_keys k LIMIT 0",
+		true, "service callers cannot be authorised, and Idempotency-Key cannot be honoured")
 }
 
 // providerSource serves the router the tenant's providers.
@@ -84,8 +89,15 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 	queue := worker.NewMessageQueue(c.Enqueuer, cfg.Worker.MaxRetry, cfg.Worker.SendTimeout)
 	providers := appprovider.NewService(providerRepo, c.Keys.Cipher(domainkm.PurposeProvider), c.Audit,
 		appprovider.Config{AllowPlaintext: plaintext})
-	c.SendingDomains = appsendingdomain.NewService(domainRepo, c.Keys.Cipher(domainkm.PurposeDKIM), dnscheck.New("", 5*time.Second),
+	var resolver appsendingdomain.Resolver = dnscheck.New("", 5*time.Second)
+	if c.E2EZone != nil {
+		resolver = c.E2EZone
+	}
+	c.SendingDomains = appsendingdomain.NewService(domainRepo, c.Keys.Cipher(domainkm.PurposeDKIM), resolver,
 		providers, c.Audit, appsendingdomain.Config{})
+	if err := c.buildApplications(ctx, c.SendingDomains); err != nil {
+		return err
+	}
 	suppressions := appsuppression.NewService(postgres.NewSuppressionRepository(c.DB), c.Audit)
 	// Tenant webhooks reach only public addresses, except in local and
 	// test, where receivers run on loopback.
@@ -108,7 +120,7 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 
 	router := mailer.NewRouter(providerSource{providers}, c.Platform, mailer.Options{Timeout: cfg.Worker.SendTimeout,
 		AllowPlaintext: plaintext, AllowPrivateNetworks: plaintext, AllowLoopback: plaintext})
-	deps := appmessage.Deps{Repo: postgres.NewMessageRepository(c.DB), Queue: queue, Suppressions: suppressions, Tenants: c.Tenants,
+	deps := appmessage.Deps{Applications: c.Apps, Repo: postgres.NewMessageRepository(c.DB), Queue: queue, Suppressions: suppressions, Tenants: c.Tenants,
 		Render: renderContent, Sender: routerSender{router}, Signer: c.SendingDomains, Webhooks: webhooks, Stats: stats, Audit: c.Audit}
 	if c.Templates != nil {
 		deps.Templates, deps.Versions, deps.Branding = c.Templates, c.Templates, c.Templates
@@ -125,12 +137,13 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 	c.EventDispatcher = c.Messages
 	c.CampaignSender = c.Messages
 
+	idempotent := postgres.NewIdempotencyRepository(c.DB)
 	c.Routes = append(c.Routes,
-		handler.NewMessageHandler(c.Messages),
+		handler.NewMessageHandler(c.Messages, c.Apps, middleware.Idempotency(idempotent, cfg.Idempotency.TTL)),
 		handler.NewProviderHandler(providers),
 		handler.NewSendingDomainHandler(c.SendingDomains),
-		handler.NewSuppressionHandler(suppressions),
-		handler.NewWebhookHandler(webhooks),
+		handler.NewSuppressionHandler(suppressions, c.Apps),
+		handler.NewWebhookHandler(webhooks, c.Apps),
 		handler.NewAnalyticsHandler(stats),
 	)
 	c.GRPCServices = append(c.GRPCServices, func(s *grpclib.Server) {
@@ -145,6 +158,10 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 		s.HandleFunc(worker.TypeWebhookDeliver, worker.WebhookDeliver(webhooks))
 		s.HandleFunc(worker.TypeMessageRelease, worker.MessageRelease(c.Messages))
 		s.HandleFunc(worker.TypeMessageRetention, worker.MessageRetention(c.Messages))
+		s.HandleFunc(worker.TypeIdempotencyPurge, worker.IdempotencyPurge(idempotent))
+		if err := s.Every("@every 1h", worker.TypeIdempotencyPurge, 50*time.Minute); err != nil {
+			return err
+		}
 		release := max(cfg.Worker.SchedulerInterval, 5*time.Second)
 		if err := s.Every("@every "+release.String(), worker.TypeMessageRelease, release-time.Second); err != nil {
 			return err

@@ -18,7 +18,7 @@ docker compose -f docker-compose.test.yaml down -v
 |---|---|
 | `e2e/run.sh up` | Builds `cmd/server`, `cmd/worker`, `cmd/migrate-postgres`, `e2e/cmd/fakeiam` and skipgate. Writes the run's secrets and `server.env`. Starts the fake IAM and waits for its discovery document. Migrates. Starts the server and the worker, and waits for `GET /ready` |
 | `e2e/run.sh test` | Runs `go test -tags e2e ./e2e/...` through `skipgate`: a skipped test fails. `MAILOS_E2E_PKGS=./e2e/smoke/...` narrows it |
-| `e2e/run.sh env` | Prints the variables the harness reads (below), for running `go test` by hand or for a console Playwright suite |
+| `e2e/run.sh env` | Prints the variables the harness reads (below), including `MAILOS_E2E_IAM_CLIENT` and `MAILOS_E2E_IAM_TENANT`, for running `go test` by hand or for a console Playwright suite |
 | `e2e/run.sh down` | Stops the worker, the server and the fake IAM |
 
 **Iterating.** Run `e2e/run.sh up` once, then `e2e/run.sh test` or `go test -tags e2e ./e2e/smoke/` with `eval "$(e2e/run.sh env)"` exported.
@@ -42,7 +42,7 @@ docker compose -f docker-compose.test.yaml down -v
 | `APP_ENV` | `e2e` | Allows plaintext HTTP, gRPC and Postgres, and the hooks. `e2e` is in both `plaintextEnvironments` and `e2eHookEnvironments` in `config` |
 | `IAM_ISSUER` | the fake IAM, `http://127.0.0.1:18190` | Tokens and signatures verify against its discovery document and JWKS over HTTP |
 | `IAM_AUDIENCE`, `IAM_CONSOLE_AUDIENCES` | `mailos`, `mailos-console` | The fake IAM's defaults for `aud` and `client_id` |
-| `MAILOS_SERVICE_CLIENTS` | `mailos-iam=iam.*` | IAM's service client (contract §4) |
+| `IAM_SERVICE_CLIENT_ID`, `IAM_SERVICE_TENANT_ID`, `IAM_SERVICE_TOPICS` | `mailos-iam`, a new UUID per `up`, `iam.*` | IAM's own client, seeded as the system application of that tenant (contract §1). Every other caller is an application a test registers |
 | `KEY_MANAGER_MASTER_KEY` | random per work dir | Required everywhere |
 | `MAILOS_E2E_HOOKS`, `MAILOS_E2E_HOOKS_TOKEN` | `true`, random 48 characters | Capture mail, serve `/e2e/v1` |
 | `FEATURE_PUBSUB_INGEST`, `FEATURE_AUDIT_STREAM` | `false` | There is no broker in the stack (yet) |
@@ -90,12 +90,14 @@ func TestEditorCreatesDraft(t *testing.T) {
 }
 ```
 
-- **Its own tenant.** MailOS has no tenant table to provision: a tenant is the `tid` claim IAM puts in the token. `harness.Main` therefore gives each package a fresh tenant UUID and organization UUID, and packages never see each other's data. `go test` runs them in parallel against one server.
+- **Its own tenant.** MailOS provisions a tenant on first use: a tenant is the `tid` claim IAM puts in the token. `harness.Main` therefore gives each package a fresh tenant UUID and organization UUID, and packages never see each other's data. `go test` runs them in parallel against one server.
 - **Callers.**
   - `fx.Admin(t)` is the tenant administrator (`mailos_admin`, fresh MFA).
   - `fx.NewUser(t, roles...)` is a new user holding those roles.
   - `fx.As(t, harness.User{...})` is a user with any claims you set: ACR, auth age, audience, DPoP `jkt`, extra.
-  - `fx.Service(t, clientID)` is an IAM service client scoped to the tenant.
+  - `fx.Service(t, clientID)` is an IAM service client scoped to the tenant. It is refused unless `clientID` is an application of the tenant: register one with `POST /api/v1/applications` as the admin.
+  - `harness.MainAsIAM` instead of `harness.Main` makes the package's tenant the one IAM's system application belongs to, so `fx.Service(t, fx.Env.IAMClient)` sends IAM's events (the `flows` package).
+  - `fx.VerifiedDomain(t)` adds a sending domain, publishes its SPF, DKIM and DMARC records in the stand-in DNS zone, verifies it and returns its name: an application's senders must be on one.
   - Each call mints a new token, so take a client per test.
 - **Responses.** The client sends JSON and reads the `{success, data, meta, error}` envelope:
   - `r.Decode(t, &v)` unmarshals `data`, and fails unless `success` is true
@@ -110,13 +112,15 @@ func TestEditorCreatesDraft(t *testing.T) {
 
 ## Test-only hooks (`MAILOS_E2E_HOOKS`)
 
-With `MAILOS_E2E_HOOKS=true` and `MAILOS_E2E_HOOKS_TOKEN` (at least 32 characters), the server changes two things:
+With `MAILOS_E2E_HOOKS=true` and `MAILOS_E2E_HOOKS_TOKEN` (at least 32 characters), the server changes three things:
 - **Capture.** The server captures outgoing mail instead of sending it.
-- **The hook route.** It serves this route, which needs `Authorization: Bearer <token>`:
+- **DNS.** Sending-domain verification reads TXT records from a stand-in zone in Redis instead of DNS. The domain's checks (DKIM key, SPF includes, DMARC) are the real ones.
+- **The hook routes.** It serves these routes, which need `Authorization: Bearer <token>`:
 
 | Route | Returns |
 |---|---|
 | `GET /e2e/v1/messages?to=<email>` | `{"success":true,"data":[{"id","to","from","subject","html","text","tags","sent_at"}]}`, oldest first. `tags` is a list of strings and `sent_at` is RFC 3339 |
+| `PUT /e2e/v1/dns` `{name, values}` | 204: the TXT values at `name` in the stand-in zone, for a day |
 
 **The hooks are refused outside test environments.** `config` refuses them unless `APP_ENV` is `e2e`, `test`, `local` or `development`, so the binary does not start in production or staging. `MAILOS_E2E_SERVER_BIN` and `MAILOS_E2E_SERVER_ENV` are exported to the tests, so that a test can start the real binary with a production `APP_ENV` and prove that it exits.
 
@@ -125,6 +129,8 @@ With `MAILOS_E2E_HOOKS=true` and `MAILOS_E2E_HOOKS_TOKEN` (at least 32 character
 | Package | Covers |
 |---|---|
 | `e2e/smoke` | `/health` and `/ready`; `/api/v1/templates` without a token is 401; a forged signature is 401; the administrator's token is accepted |
+| `e2e/flows` | IAM's tenant: a published template rendered for IAM's event with the OTP masked, body step-up and audit, duplicate events, scoped service callers, four-eyes, and IAM as the seeded system application (listed, not editable) |
+| `e2e/applications` | A registered server application sends from its default verified sender; Idempotency-Key replays and refuses reuse; another sender, type or tenant, an unregistered client, suspension and the daily quota are refused and audited; usage and the message filter; only administrators manage applications, with step-up, and senders must be verified; sandbox mail is captured; a spa user sends a browser template only to their own verified address, from the allowed origin, within the per-user limit |
 
 Feature packages come with the features. Each package uses its own `TestMain` and fixture, as above.
 

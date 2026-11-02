@@ -8,7 +8,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/razatechofficial/mail-os/application/applications/appstest"
 	"github.com/razatechofficial/mail-os/domain/access"
+	domainapp "github.com/razatechofficial/mail-os/domain/application"
 	"github.com/razatechofficial/mail-os/domain/event"
 	"github.com/razatechofficial/mail-os/domain/template"
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
@@ -106,11 +108,10 @@ type fixture struct {
 
 func newFixture() *fixture {
 	f := &fixture{store: &memStore{rows: map[string]Record{}}, dispatch: &fakeDispatcher{}, audit: &fakeAudit{}, tenants: &fakeTenants{}}
-	grants := access.NewServiceGrants([]access.ServiceGrant{
-		{ClientID: "iam", TopicPatterns: []string{"iam.*"}},
-		{ClientID: "iam-pinned", TopicPatterns: []string{"iam.*"}, Tenant: tenantA},
-	})
-	f.svc = NewService(grants, f.tenants, f.store, fakeTx{f.store}, f.dispatch, f.audit)
+	suspended := appstest.Server("iam-suspended", tenantA, "iam.*")
+	suspended.Status = domainapp.StatusSuspended
+	apps := appstest.New(appstest.Server("iam", tenantA, "iam.*"), suspended)
+	f.svc = NewService(apps, f.tenants, f.store, fakeTx{f.store}, f.dispatch, f.audit)
 	return f
 }
 
@@ -182,13 +183,15 @@ func TestDispatchAcceptsAndDispatchesOnce(t *testing.T) {
 	}
 }
 
-func TestDispatchUsesTheConfiguredTenant(t *testing.T) {
+// The application decides the tenant: a token and an event naming none
+// act for the application's, and the delivery carries the application.
+func TestDispatchUsesTheApplicationTenant(t *testing.T) {
 	f := newFixture()
-	res, err := f.svc.Dispatch(service("iam-pinned", ""), In{Transport: TransportGRPC, Event: resetEvent("", "")})
+	res, err := f.svc.Dispatch(service("iam", ""), In{Transport: TransportGRPC, Event: resetEvent("", "")})
 	if err != nil {
 		t.Fatalf("Dispatch: %v", err)
 	}
-	if res.EventID == "" || f.dispatch.sent[0].TenantID != tenantA {
+	if res.EventID == "" || f.dispatch.sent[0].TenantID != tenantA || f.dispatch.sent[0].ApplicationID == "" {
 		t.Fatalf("result %+v, delivery %+v", res, f.dispatch.sent[0])
 	}
 }
@@ -205,14 +208,14 @@ func TestDispatchRefusals(t *testing.T) {
 			In{Transport: TransportHTTP, Event: resetEvent("e", tenantA)}, "not_service_caller"},
 		{"unknown client", service("crm", tenantA), In{Transport: TransportHTTP, Event: resetEvent("e", tenantA)}, "unknown_client"},
 		{"foreign tenant", service("iam", tenantA), In{Transport: TransportHTTP, Event: resetEvent("e", tenantB)}, "tenant_mismatch"},
-		{"pinned client, other tenant", service("iam-pinned", ""), In{Transport: TransportHTTP, Event: resetEvent("e", tenantB)}, "tenant_mismatch"},
+		{"token for another tenant", service("iam", tenantB), In{Transport: TransportHTTP, Event: resetEvent("e", "")}, "tenant_mismatch"},
+		{"suspended application", service("iam-suspended", tenantA), In{Transport: TransportHTTP, Event: resetEvent("e", tenantA)}, "application_suspended"},
 		{"wrong topic", service("iam", tenantA), In{Transport: TransportHTTP, Event: func() event.Event {
 			e := resetEvent("e", tenantA)
 			e.Type = "mailos.campaign"
 			return e
-		}()}, "topic_not_allowed"},
-		{"topic hint", service("iam", tenantA), In{Transport: TransportGRPC, Event: resetEvent("e", tenantA), TopicHint: "iam.auth.login"}, "topic_not_allowed"},
-		{"no tenant", service("iam", ""), In{Transport: TransportGRPC, Event: resetEvent("e", "")}, "no_tenant"},
+		}()}, "message_type_not_allowed"},
+		{"topic hint", service("iam", tenantA), In{Transport: TransportGRPC, Event: resetEvent("e", tenantA), TopicHint: "iam.auth.login"}, "message_type_not_allowed"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -237,7 +240,7 @@ func TestDispatchRefusals(t *testing.T) {
 func TestDispatchOverKafkaLeavesTheRejectionAuditToTheConsumer(t *testing.T) {
 	f := newFixture()
 	_, err := f.svc.Dispatch(service("crm", tenantA), In{Transport: TransportKafka, Event: resetEvent("e", tenantA)})
-	if reason, ok := IsRefusal(err); !ok || !errors.Is(reason, access.ErrUnknownClient) {
+	if reason, ok := IsRefusal(err); !ok || reason != "unknown_client" || !errors.Is(err, domainapp.ErrUnknownClient) {
 		t.Fatalf("err = %v", err)
 	}
 	if len(f.audit.entries) != 0 {
@@ -294,4 +297,23 @@ func hasField(err error, field string) bool {
 		}
 	}
 	return false
+}
+
+// A send the application refuses while dispatching (its sender, its
+// quota) rolls the event back and is audited as the event's refusal,
+// keeping the 429 or 403 the application answered.
+func TestDispatchAuditsASendRefusedByTheApplication(t *testing.T) {
+	f := newFixture()
+	f.dispatch.err = apperrors.Wrap(domainapp.ErrQuotaExceeded, apperrors.KindRateLimited, apperrors.CodeRateLimited, "quota")
+	_, err := f.svc.Dispatch(service("iam", tenantA), In{Transport: TransportHTTP, Event: resetEvent("e9", tenantA)})
+	if apperrors.KindOf(err) != apperrors.KindRateLimited {
+		t.Fatalf("err = %v, want the 429", err)
+	}
+	if len(f.audit.entries) != 1 || f.audit.entries[0].action != AuditRefused || f.audit.entries[0].meta["reason"] != "quota_exceeded" ||
+		f.audit.entries[0].meta["application_id"] == nil {
+		t.Fatalf("audit = %+v", f.audit.entries)
+	}
+	if _, fresh, _ := f.store.Claim(context.Background(), Record{TenantID: tenantA, EventID: "e9"}); !fresh {
+		t.Fatal("the refused event stayed recorded")
+	}
 }

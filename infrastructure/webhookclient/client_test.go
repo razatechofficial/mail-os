@@ -11,7 +11,7 @@ import (
 
 func TestPostRefusesLoopbackUnlessAllowed(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-MailOS-Signature") == "" {
+		if r.Header.Get("webhook-signature") == "" {
 			w.WriteHeader(400)
 			return
 		}
@@ -25,7 +25,7 @@ func TestPostRefusesLoopbackUnlessAllowed(t *testing.T) {
 		t.Fatalf("loopback reached: %d %v", code, err)
 	}
 	c := New(Options{TLS: tc, AllowLoopback: true})
-	code, err := c.Post(context.Background(), srv.URL, map[string]string{"X-MailOS-Signature": "t=1,v1=x"}, []byte("{}"))
+	code, err := c.Post(context.Background(), srv.URL, map[string]string{"webhook-signature": "v1,eA=="}, []byte("{}"))
 	if err != nil || code != 204 {
 		t.Fatal(code, err)
 	}

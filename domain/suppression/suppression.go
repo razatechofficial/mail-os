@@ -1,6 +1,8 @@
 // Package suppression is a tenant's list of addresses MailOS does not send
 // to: hard bounces and complaints (recorded by the send path and provider
-// webhooks), unsubscribes, and addresses an operator added.
+// webhooks), unsubscribes, and addresses an operator added. An entry is
+// tenant-wide (every application's mail and the tenant's own) or scoped to
+// one application; tenant-wide entries always apply.
 package suppression
 
 import (
@@ -47,8 +49,11 @@ const (
 
 // Suppression is one suppressed address of a tenant.
 type Suppression struct {
-	ID        string
-	OrgID     string
+	ID    string
+	OrgID string
+	// ApplicationID scopes the entry to one application; empty is
+	// tenant-wide.
+	ApplicationID string
 	Email     string
 	Type      Type
 	Reason    string

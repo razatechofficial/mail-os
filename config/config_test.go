@@ -22,7 +22,8 @@ func productionEnv() map[string]string {
 		"POSTGRES_PASSWORD":       "from-vault",
 		"REDIS_TLS":               "true",
 		"IAM_ISSUER":              "https://iam.example.com",
-		"MAILOS_SERVICE_CLIENTS":  "mailos-iam=iam.*",
+		"IAM_SERVICE_CLIENT_ID":   "mailos-iam",
+		"IAM_SERVICE_TENANT_ID":   "6f1c3c3e-6a38-4a8f-9a59-2b9d3b6a8a10",
 		"KEY_MANAGER_MASTER_KEY":  testMasterKey,
 	}
 }
@@ -65,7 +66,12 @@ func TestLoadRefusesUnsafeProduction(t *testing.T) {
 		{"no master key", map[string]string{"KEY_MANAGER_MASTER_KEY": ""}, "KEY_MANAGER_MASTER_KEY"},
 		{"short master key", map[string]string{"KEY_MANAGER_MASTER_KEY": "c2hvcnQ="}, "KEY_MANAGER_MASTER_KEY"},
 		{"stale step-up", map[string]string{"STEP_UP_MAX_AGE": "15m"}, "STEP_UP_MAX_AGE"},
-		{"wildcard topic grant", map[string]string{"MAILOS_SERVICE_CLIENTS": "mailos-iam=*"}, "topic pattern"},
+		{"wildcard topic grant", map[string]string{"IAM_SERVICE_TOPICS": "*"}, "topic pattern"},
+		{"raw for IAM", map[string]string{"IAM_SERVICE_TOPICS": "iam.*,raw"}, "topic pattern"},
+		{"no IAM client", map[string]string{"IAM_SERVICE_CLIENT_ID": "", "IAM_SERVICE_TENANT_ID": ""}, "IAM_SERVICE_CLIENT_ID"},
+		{"IAM client without tenant", map[string]string{"IAM_SERVICE_TENANT_ID": ""}, "set together"},
+		{"IAM tenant not a UUID", map[string]string{"IAM_SERVICE_TENANT_ID": "bank"}, "not a UUID"},
+		{"idempotency for a month", map[string]string{"IDEMPOTENCY_KEY_TTL": "720h"}, "IDEMPOTENCY_KEY_TTL"},
 		{"kafka plaintext", map[string]string{"FEATURE_PUBSUB_INGEST": "true", "KAFKA_BROKERS": "kafka:9093", "KAFKA_SASL_MECHANISM": "SCRAM-SHA-512", "KAFKA_SASL_USERNAME": "u", "KAFKA_SASL_PASSWORD": "p"}, "KAFKA_TLS_ENABLED"},
 		{"kafka without SASL", map[string]string{"FEATURE_PUBSUB_INGEST": "true", "KAFKA_BROKERS": "kafka:9093", "KAFKA_TLS_ENABLED": "true"}, "KAFKA_SASL_MECHANISM"},
 		{"smtp without TLS", map[string]string{"SMTP_ENABLED": "true", "SMTP_HOST": "relay", "SMTP_FROM_ADDR": "a@b.c", "SMTP_TLS_MODE": "none"}, "SMTP_TLS_MODE"},
@@ -112,18 +118,13 @@ func TestStagingIsNotPlaintext(t *testing.T) {
 	}
 }
 
-func TestParseServiceClients(t *testing.T) {
-	got, err := ParseServiceClients(" mailos-iam=iam.* ; core=bank.otp.*|bank.alert.sent@6f1c3c3e-6a38-4a8f-9a59-2b9d3b6a8a10 ")
+// The system application defaults to IAM's topics.
+func TestSystemApplicationDefaults(t *testing.T) {
+	cfg, err := load(t, productionEnv())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || got[0].ClientID != "mailos-iam" || got[0].TopicPatterns[0] != "iam.*" ||
-		got[1].Tenant != "6f1c3c3e-6a38-4a8f-9a59-2b9d3b6a8a10" || len(got[1].TopicPatterns) != 2 {
-		t.Fatalf("parsed %+v", got)
-	}
-	for _, bad := range []string{"=iam.*", "a=", "a=iam.*;a=bank.*", "a=iam.*@not-a-uuid", "a=IAM.*", "a=iam.**"} {
-		if _, err := ParseServiceClients(bad); err == nil {
-			t.Errorf("%q accepted", bad)
-		}
+	if len(cfg.IAM.ServiceTopics) != 1 || cfg.IAM.ServiceTopics[0] != "iam.*" || cfg.Idempotency.TTL.Hours() != 24 {
+		t.Fatalf("%+v %+v", cfg.IAM, cfg.Idempotency)
 	}
 }

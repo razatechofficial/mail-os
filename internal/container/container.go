@@ -12,6 +12,7 @@ import (
 	"github.com/hibiken/asynq"
 	grpclib "google.golang.org/grpc"
 
+	"github.com/razatechofficial/mail-os/application/applications"
 	"github.com/razatechofficial/mail-os/application/auditlog"
 	"github.com/razatechofficial/mail-os/application/campaign"
 	"github.com/razatechofficial/mail-os/application/inbound"
@@ -22,9 +23,11 @@ import (
 	"github.com/razatechofficial/mail-os/application/tenant"
 	"github.com/razatechofficial/mail-os/config"
 	"github.com/razatechofficial/mail-os/domain/access"
+	domainapp "github.com/razatechofficial/mail-os/domain/application"
 	"github.com/razatechofficial/mail-os/domain/message"
 	"github.com/razatechofficial/mail-os/infrastructure/audit"
 	"github.com/razatechofficial/mail-os/infrastructure/cache/redis"
+	"github.com/razatechofficial/mail-os/infrastructure/dnscheck"
 	"github.com/razatechofficial/mail-os/infrastructure/dpop"
 	"github.com/razatechofficial/mail-os/infrastructure/jwt"
 	"github.com/razatechofficial/mail-os/infrastructure/kafka"
@@ -33,6 +36,7 @@ import (
 	"github.com/razatechofficial/mail-os/infrastructure/persistence/postgres"
 	"github.com/razatechofficial/mail-os/infrastructure/worker"
 	"github.com/razatechofficial/mail-os/internal/bootstrap"
+	"github.com/razatechofficial/mail-os/pkg/logger"
 	"github.com/razatechofficial/mail-os/pkg/tlsconfig"
 	grpctransport "github.com/razatechofficial/mail-os/transport/grpc"
 	grpchandler "github.com/razatechofficial/mail-os/transport/grpc/handler"
@@ -49,12 +53,14 @@ type Container struct {
 	RedisOpt asynq.RedisClientOpt
 	Enqueuer *worker.Enqueuer
 
-	AuditRepo  *postgres.AuditRepository
-	Audit      *audit.Writer
-	Keys       *appkm.Service
-	Verifier   *jwt.Verifier
-	Grants     access.ServiceGrants
-	Tenants    *tenant.Service
+	AuditRepo *postgres.AuditRepository
+	Audit     *audit.Writer
+	Keys      *appkm.Service
+	Verifier  *jwt.Verifier
+	Tenants   *tenant.Service
+	// Apps is the application registry: every service and browser caller
+	// is one of its applications. The messaging builder sets it.
+	Apps       *applications.Service
 	TenantRepo *postgres.TenantRepository
 	// Templates resolves published template versions for sends.
 	Templates *apptemplate.Service
@@ -65,8 +71,10 @@ type Container struct {
 
 	// Platform is the default sender (the platform relay, or the e2e sink).
 	Platform mailer.Sender
-	// E2ESink is set when the test-only hooks are on.
+	// E2ESink and E2EZone stand in for SMTP and DNS when the test-only
+	// hooks are on.
 	E2ESink *mailer.E2ESink
+	E2EZone *dnscheck.E2EZone
 	// AuditStream publishes the audit outbox (FEATURE_AUDIT_STREAM).
 	AuditStream *kafka.Producer
 	// CampaignSender hands campaign messages to the messaging slice. Its
@@ -173,18 +181,9 @@ func (c *Container) buildInfrastructure(ctx context.Context) error {
 	c.Verifier = jwt.NewVerifier(jwt.Config{Issuer: cfg.IAM.Issuer, Audience: cfg.IAM.Audience,
 		ConsoleAudiences: cfg.IAM.ConsoleAudiences, CacheTTL: cfg.IAM.JWKSCacheTTL, ClockSkew: cfg.IAM.ClockSkew, HTTPClient: httpClient})
 
-	clients, err := config.ParseServiceClients(cfg.IAM.ServiceClients)
-	if err != nil {
-		return err
-	}
-	grants := make([]access.ServiceGrant, 0, len(clients))
-	for _, sc := range clients {
-		grants = append(grants, access.ServiceGrant{ClientID: sc.ClientID, TopicPatterns: sc.TopicPatterns, Tenant: sc.Tenant})
-	}
-	c.Grants = access.NewServiceGrants(grants)
-
 	if cfg.E2EHooks.Enabled {
 		c.E2ESink = mailer.NewE2ESink(rdb.Client, message.Address{Name: cfg.SMTP.FromName, Email: cfg.SMTP.FromAddr})
+		c.E2EZone = dnscheck.NewE2EZone(rdb.Client)
 		c.Platform = c.E2ESink
 	} else {
 		relay, err := mailer.NewPlatformSMTP(cfg.SMTP, cfg.App.AllowsPlaintext(), mailer.Options{AllowPlaintext: cfg.App.AllowsPlaintext()})
@@ -250,4 +249,29 @@ func (c *Container) Close() {
 		c.closers[i]()
 	}
 	c.closers = nil
+}
+
+// buildApplications wires the application registry once the sending
+// domains exist (it checks senders against them), gives it to the HTTP and
+// gRPC authentication, and seeds IAM's own client as the system
+// application from configuration (idempotent; safe on every replica).
+func (c *Container) buildApplications(ctx context.Context, domains applications.Domains) error {
+	cfg := c.Cfg
+	c.Apps = applications.NewService(postgres.NewApplicationRepository(c.DB), domains, c.Redis, c.Tenants, c.Audit,
+		applications.Config{AllowPlaintext: cfg.App.AllowsPlaintext(), ReservedClients: cfg.IAM.ConsoleAudiences})
+	c.Auth.Apps = c.Apps
+	c.GRPCAuth.Apps = c.Apps
+	c.Routes = append(c.Routes, handler.NewApplicationHandler(c.Apps))
+	if cfg.IAM.ServiceClientID == "" {
+		return nil
+	}
+	a, err := c.Apps.SeedSystem(audit.WithTenant(ctx, cfg.IAM.ServiceTenantID), applications.SystemSpec{ClientID: cfg.IAM.ServiceClientID, TenantID: cfg.IAM.ServiceTenantID,
+		Name: "IAM", Topics: cfg.IAM.ServiceTopics})
+	if err != nil {
+		return fmt.Errorf("system application: %w", err)
+	}
+	if a.Status != domainapp.StatusActive {
+		logger.Warn("the system application is suspended: IAM's mail is refused", logger.String("client_id", a.ClientID))
+	}
+	return nil
 }

@@ -42,8 +42,15 @@ func TestMessageSendHonoursRetryAfterAndRetriesMissing(t *testing.T) {
 	}
 }
 
-func TestQueueForType(t *testing.T) {
-	if queueFor(domainmsg.TypeTransactional) != QueueCritical || queueFor(domainmsg.TypeMarketing) != QueueLow || queueFor(domainmsg.TypeNotification) != QueueDefault {
+func TestQueueForTypeAndStream(t *testing.T) {
+	of := func(typ domainmsg.Type, st domainmsg.Stream) string {
+		return queueFor(domainmsg.Message{Type: typ, Stream: st})
+	}
+	if of(domainmsg.TypeTransactional, "") != QueueCritical || of(domainmsg.TypeMarketing, "") != QueueLow ||
+		of(domainmsg.TypeNotification, domainmsg.StreamTransactional) != QueueDefault {
 		t.Fatal("queue mapping")
+	}
+	if of(domainmsg.TypeTransactional, domainmsg.StreamBroadcast) != QueueLow {
+		t.Fatal("a broadcast stream shared the transactional queue")
 	}
 }

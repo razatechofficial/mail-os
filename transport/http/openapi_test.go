@@ -37,11 +37,12 @@ func allRoutes() []Routes {
 		handler.NewContactHandler(nil),
 		handler.NewContactListHandler(nil),
 		handler.NewCampaignHandler(nil),
-		handler.NewMessageHandler(nil),
+		handler.NewMessageHandler(nil, nil, nil),
+		handler.NewApplicationHandler(nil),
 		handler.NewProviderHandler(nil),
 		handler.NewSendingDomainHandler(nil),
-		handler.NewSuppressionHandler(nil),
-		handler.NewWebhookHandler(nil),
+		handler.NewSuppressionHandler(nil, nil),
+		handler.NewWebhookHandler(nil, nil),
 		handler.NewAnalyticsHandler(nil),
 	}
 }

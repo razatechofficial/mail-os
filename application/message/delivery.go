@@ -27,7 +27,9 @@ func (e *RetryError) Unwrap() error { return e.Err }
 func (e *RetryError) RetryAfter() time.Duration { return e.After }
 
 // Deliver sends one queued message: suppression check, rendering of the
-// pinned version, DKIM key, the tenant's providers. A transient failure
+// pinned version, DKIM key, the tenant's providers. A sandbox
+// application's message is rendered and captured instead: no provider is
+// called. A transient failure
 // requeues the message and returns a RetryError; a permanent one, or the
 // last attempt, records the outcome and returns nil. Messages that are no
 // longer queued (cancelled, already sent) are skipped.
@@ -41,7 +43,7 @@ func (s *Service) Deliver(ctx context.Context, tenantID, id string) error {
 		return nil
 	}
 	now := s.now()
-	sup, err := s.d.Suppressions.Blocks(ctx, tenantID, m.ToEmail, m.Type)
+	sup, err := s.d.Suppressions.Blocks(ctx, tenantID, m.ApplicationID, m.ToEmail, m.Type)
 	if err != nil {
 		return err
 	}
@@ -72,6 +74,13 @@ func (s *Service) Deliver(ctx context.Context, tenantID, id string) error {
 	}
 	if ok, err := s.d.Repo.Update(ctx, m, domainmsg.StatusQueued); err != nil || !ok {
 		return err // another worker claimed it
+	}
+	if m.Sandbox {
+		if err := m.Transition(domainmsg.StatusCaptured, s.now()); err != nil {
+			return err
+		}
+		_, err := s.d.Repo.Update(ctx, m, domainmsg.StatusSending)
+		return err
 	}
 
 	out, err := m.Outgoing()
@@ -159,7 +168,10 @@ func (s *Service) after(ctx context.Context, m domainmsg.Message, counter, event
 		if m.LastError != "" {
 			data["error"] = m.LastError
 		}
-		if err := s.d.Webhooks.Notify(ctx, m.OrgID, event, m.ID, data); err != nil {
+		if m.ApplicationID != "" {
+			data["application_id"] = m.ApplicationID
+		}
+		if err := s.d.Webhooks.Notify(ctx, m.OrgID, m.ApplicationID, event, m.ID, data); err != nil {
 			logger.FromContext(ctx).Warn("webhook notify", logger.Err(err))
 		}
 	}

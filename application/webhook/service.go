@@ -35,8 +35,9 @@ type Repository interface {
 	Delete(ctx context.Context, tenantID, id string, at time.Time) error
 	Get(ctx context.Context, tenantID, id string) (Stored, error)
 	List(ctx context.Context, tenantID string, limit, offset int) ([]domain.Webhook, int, error)
-	// Subscribed lists the tenant's active webhooks for event.
-	Subscribed(ctx context.Context, tenantID, event string) ([]domain.Webhook, error)
+	// Subscribed lists the tenant's active webhooks for event: the
+	// tenant-wide ones and, with an application, that application's.
+	Subscribed(ctx context.Context, tenantID, applicationID, event string) ([]domain.Webhook, error)
 	CreateDelivery(ctx context.Context, d domain.Delivery) error
 	// Delivery returns a delivery and its webhook (any tenant: the task
 	// carries only the delivery id).
@@ -87,10 +88,12 @@ func NewService(repo Repository, cipher appkm.Cipher, queue Queue, post Poster, 
 }
 
 // Input is a new webhook. An empty Secret is generated and returned once.
+// ApplicationID limits it to one application's messages.
 type Input struct {
-	URL    string
-	Secret string
-	Events []string
+	ApplicationID string
+	URL           string
+	Secret        string
+	Events        []string
 }
 
 // Patch changes a webhook; nil fields are kept.
@@ -102,20 +105,21 @@ type Patch struct {
 }
 
 type record struct {
-	URL    string   `json:"url"`
-	Events []string `json:"events"`
-	Active bool     `json:"is_active"`
-	Secret string   `json:"webhook_secret,omitempty"`
+	ApplicationID string   `json:"application_id,omitempty"`
+	URL           string   `json:"url"`
+	Events        []string `json:"events"`
+	Active        bool     `json:"is_active"`
+	Secret        string   `json:"webhook_secret,omitempty"`
 }
 
 func recordOf(w domain.Webhook, secretChanged string) record {
-	return record{URL: w.URL, Events: w.Events, Active: w.Active, Secret: secretChanged}
+	return record{ApplicationID: w.ApplicationID, URL: w.URL, Events: w.Events, Active: w.Active, Secret: secretChanged}
 }
 
 // Create adds a webhook and returns its secret (shown once).
 func (s *Service) Create(ctx context.Context, tenantID string, in Input, actor string) (domain.Webhook, string, error) {
 	now := s.now()
-	w := domain.Webhook{ID: id.New(), OrgID: tenantID, URL: in.URL, Events: in.Events, Active: true,
+	w := domain.Webhook{ID: id.New(), OrgID: tenantID, ApplicationID: in.ApplicationID, URL: in.URL, Events: in.Events, Active: true,
 		CreatedBy: actor, UpdatedBy: actor, CreatedAt: now, UpdatedAt: now}
 	if err := w.Validate(s.cfg.AllowPlaintext); err != nil {
 		return domain.Webhook{}, "", err
@@ -207,17 +211,18 @@ func (s *Service) Delete(ctx context.Context, tenantID, id, actor string) error 
 	return s.audit.Change(ctx, "webhook", id, "webhook.deleted", recordOf(st.Webhook, ""), nil, map[string]any{"by": actor})
 }
 
-// payload is the JSON body a receiver gets.
+// payload is the JSON body a receiver gets (the Standard Webhooks shape:
+// type, timestamp, data); its id is the webhook-id header.
 type payload struct {
-	ID        string         `json:"id"`
-	Event     string         `json:"event"`
-	CreatedAt time.Time      `json:"created_at"`
+	Type      string         `json:"type"`
+	Timestamp time.Time      `json:"timestamp"`
 	Data      map[string]any `json:"data"`
 }
 
-// Notify queues event for every webhook of the tenant subscribed to it.
-func (s *Service) Notify(ctx context.Context, tenantID, event, messageID string, data map[string]any) error {
-	hooks, err := s.repo.Subscribed(ctx, tenantID, event)
+// Notify queues event for every webhook subscribed to it: the tenant's,
+// and the sending application's when there is one.
+func (s *Service) Notify(ctx context.Context, tenantID, applicationID, event, messageID string, data map[string]any) error {
+	hooks, err := s.repo.Subscribed(ctx, tenantID, applicationID, event)
 	if err != nil {
 		return err
 	}
@@ -225,7 +230,7 @@ func (s *Service) Notify(ctx context.Context, tenantID, event, messageID string,
 		now := s.now()
 		d := domain.Delivery{ID: id.New(), WebhookID: w.ID, MessageID: messageID, Event: event,
 			Status: domain.DeliveryPending, CreatedAt: now, UpdatedAt: now}
-		if d.Payload, err = json.Marshal(payload{ID: d.ID, Event: event, CreatedAt: now, Data: data}); err != nil {
+		if d.Payload, err = json.Marshal(payload{Type: event, Timestamp: now, Data: data}); err != nil {
 			return err
 		}
 		if err := s.repo.CreateDelivery(ctx, d); err != nil {
@@ -269,12 +274,8 @@ func (s *Service) Deliver(ctx context.Context, deliveryID string, final bool) er
 		return err
 	}
 	now := s.now()
-	headers := map[string]string{
-		"Content-Type":         "application/json",
-		domain.SignatureHeader: domain.Sign(string(secret), now, d.Payload),
-		domain.EventHeader:     d.Event,
-		domain.DeliveryHeader:  d.ID,
-	}
+	headers := domain.Headers(string(secret), d.ID, now, d.Payload)
+	headers["Content-Type"] = "application/json"
 	status, postErr := s.post.Post(ctx, st.Webhook.URL, headers, d.Payload)
 	d.Attempts++
 	d.StatusCode = status

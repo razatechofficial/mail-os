@@ -1,6 +1,7 @@
 // Package access holds who may do what in MailOS: the IAM roles the console
-// releases (contract §5), the permissions each grants, the authenticated
-// principal behind a request, and the service-client allow-list (§4).
+// releases (contract §5), the permissions each grants, and the
+// authenticated principal behind a request. Which service clients may call
+// is the application registry's decision (domain/application).
 package access
 
 import (
@@ -56,9 +57,13 @@ const (
 	PermSettingsManage  Permission = "settings:manage" // four-eyes, retention
 	PermRolesView       Permission = "roles:view"      // the caller's and users' MailOS roles
 
-	PermMessagesRead     Permission = "messages:read"      // metadata, never bodies
-	PermMessageBodies    Permission = "messages:read_body" // read or export bodies
-	PermMessagesOperate  Permission = "messages:operate"   // send, cancel, resend, queues
+	PermMessagesRead    Permission = "messages:read"      // metadata, never bodies
+	PermMessageBodies   Permission = "messages:read_body" // read or export bodies
+	PermMessagesOperate Permission = "messages:operate"   // cancel, resend, queues
+	PermMessagesSend    Permission = "messages:send"      // send and batch, through the API or the console
+	// PermMessagesSendSelf is a browser user of a spa application sending
+	// one of its browser templates to their own verified address.
+	PermMessagesSendSelf Permission = "messages:send_self"
 	PermSuppressionsRead Permission = "suppressions:read"
 	PermSuppressionsEdit Permission = "suppressions:manage"
 	PermContactsRead     Permission = "contacts:read"
@@ -67,11 +72,14 @@ const (
 	PermCampaignsManage  Permission = "campaigns:manage"
 	PermAnalyticsRead    Permission = "analytics:read"
 
+	PermApplicationsRead   Permission = "applications:read"
+	PermApplicationsManage Permission = "applications:manage" // register, change, suspend applications
+
 	PermAuditRead   Permission = "audit:read"
 	PermAuditExport Permission = "audit:export"
 
-	// PermEventsDispatch is a service client publishing an event; the topic
-	// is checked against its allow-list as well.
+	// PermEventsDispatch is a service client publishing an event; its
+	// application must allow the topic as well.
 	PermEventsDispatch Permission = "events:dispatch"
 )
 
@@ -80,6 +88,7 @@ const (
 var readOnly = []Permission{
 	PermTemplatesRead, PermProvidersRead, PermDomainsRead, PermWebhooksRead, PermSettingsRead,
 	PermMessagesRead, PermSuppressionsRead, PermContactsRead, PermCampaignsRead, PermAnalyticsRead,
+	PermApplicationsRead,
 }
 
 func with(base []Permission, extra ...Permission) []Permission {
@@ -91,11 +100,11 @@ var rolePermissions = map[Role][]Permission{
 	RoleAdmin: with(readOnly,
 		PermTemplatesEdit, PermTemplatesPublish, PermTemplatesDelete, PermBrandingEdit,
 		PermProvidersManage, PermDomainsManage, PermWebhooksManage, PermSettingsManage, PermRolesView,
-		PermMessageBodies, PermMessagesOperate, PermSuppressionsEdit, PermContactsManage, PermCampaignsManage,
-		PermAuditRead, PermAuditExport),
+		PermMessageBodies, PermMessagesOperate, PermMessagesSend, PermSuppressionsEdit, PermContactsManage,
+		PermCampaignsManage, PermApplicationsManage, PermAuditRead, PermAuditExport),
 	RoleTemplateEditor:    with(readOnly, PermTemplatesEdit),
 	RoleTemplatePublisher: with(readOnly, PermTemplatesPublish),
-	RoleOperator: with(readOnly, PermMessagesOperate, PermMessageBodies, PermSuppressionsEdit,
+	RoleOperator: with(readOnly, PermMessagesOperate, PermMessagesSend, PermMessageBodies, PermSuppressionsEdit,
 		PermContactsManage, PermCampaignsManage),
 	RoleAuditor: with(readOnly, PermMessageBodies, PermAuditRead, PermAuditExport),
 	RoleViewer:  slices.Clone(readOnly),
@@ -103,15 +112,17 @@ var rolePermissions = map[Role][]Permission{
 
 // stepUpPermissions need a fresh multi-factor sign-in (contract §5):
 // credential, domain and DKIM changes, publishing, reading or exporting
-// message bodies, audit export, and the security settings themselves.
+// message bodies, audit export, the security settings themselves, and the
+// applications that decide which clients may send.
 var stepUpPermissions = map[Permission]bool{
-	PermProvidersManage:  true,
-	PermDomainsManage:    true,
-	PermWebhooksManage:   true,
-	PermTemplatesPublish: true,
-	PermMessageBodies:    true,
-	PermAuditExport:      true,
-	PermSettingsManage:   true,
+	PermProvidersManage:    true,
+	PermDomainsManage:      true,
+	PermWebhooksManage:     true,
+	PermTemplatesPublish:   true,
+	PermMessageBodies:      true,
+	PermAuditExport:        true,
+	PermSettingsManage:     true,
+	PermApplicationsManage: true,
 }
 
 // NeedsStepUp reports whether p needs a fresh multi-factor sign-in.
@@ -159,6 +170,18 @@ type Principal struct {
 	TokenID   string
 	// DPoPThumbprint is cnf.jkt of a sender-constrained token (RFC 9449).
 	DPoPThumbprint string
+	// Scopes are the token's scope claim.
+	Scopes []string
+	// Email is the user's address when the token releases it, and
+	// EmailVerified whether IAM verified it.
+	Email         string
+	EmailVerified bool
+	// ApplicationID is the MailOS application the token's client is; set
+	// for services and for browser users of a spa application.
+	ApplicationID string
+	// SelfService marks a browser user of a spa application: whatever
+	// roles the token carries, it may only send to itself.
+	SelfService bool
 	// Delegated marks a token someone acts with on the subject's behalf
 	// (RFC 8693 act): it never proves the subject re-authenticated.
 	Delegated bool
@@ -167,11 +190,15 @@ type Principal struct {
 // IsService reports a service caller.
 func (p Principal) IsService() bool { return p.Kind == KindService }
 
-// Can reports whether the principal's roles allow perm. Services hold only
-// PermEventsDispatch, narrowed by the allow-list.
+// Can reports whether the principal's roles allow perm. A service holds
+// PermEventsDispatch and PermMessagesSend, narrowed by its application; a
+// browser user of a spa application holds only PermMessagesSendSelf.
 func (p Principal) Can(perm Permission) bool {
 	if p.IsService() {
-		return perm == PermEventsDispatch
+		return perm == PermEventsDispatch || perm == PermMessagesSend
+	}
+	if p.SelfService {
+		return perm == PermMessagesSendSelf
 	}
 	for _, r := range p.Roles {
 		if slices.Contains(rolePermissions[r], perm) {
@@ -262,3 +289,6 @@ func FromContext(ctx context.Context) (Principal, bool) {
 	p, ok := ctx.Value(principalKey{}).(Principal)
 	return p, ok
 }
+
+// HasScope reports whether the token was granted scope.
+func (p Principal) HasScope(scope string) bool { return slices.Contains(p.Scopes, scope) }

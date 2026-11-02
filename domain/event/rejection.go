@@ -45,7 +45,7 @@ const (
 	// ReasonReplayGuardUnavailable: check 5 could not run. The rejection is
 	// Transient: the message is redelivered, not dropped.
 	ReasonReplayGuardUnavailable Reason = "replay_guard_unavailable"
-	// ReasonUnknownClient: check 6, the sender is not allow-listed (§4).
+	// ReasonUnknownClient: check 6, the sender is no MailOS application (§4).
 	ReasonUnknownClient Reason = "unknown_client"
 	// ReasonUnauthorisedTopic: check 6, the sender may not publish the
 	// topic, or act for the event's tenant (§4).

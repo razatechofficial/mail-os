@@ -47,11 +47,12 @@ const (
 	StatusFailed     Status = "failed"     // gave up: permanent error or attempts exhausted
 	StatusCancelled  Status = "cancelled"  // cancelled before it was sent
 	StatusSuppressed Status = "suppressed" // the recipient is on the suppression list
+	StatusCaptured   Status = "captured"   // a sandbox application's message: rendered and kept, never delivered
 )
 
 // Statuses lists every status.
 var Statuses = []Status{StatusQueued, StatusScheduled, StatusSending, StatusSent, StatusDelivered,
-	StatusBounced, StatusFailed, StatusCancelled, StatusSuppressed}
+	StatusBounced, StatusFailed, StatusCancelled, StatusSuppressed, StatusCaptured}
 
 // Valid reports whether s is known.
 func (s Status) Valid() bool { return slices.Contains(Statuses, s) }
@@ -62,7 +63,7 @@ func (s Status) Valid() bool { return slices.Contains(Statuses, s) }
 var transitions = map[Status][]Status{
 	StatusQueued:    {StatusSending, StatusScheduled, StatusCancelled, StatusSuppressed, StatusFailed},
 	StatusScheduled: {StatusQueued, StatusCancelled, StatusSuppressed},
-	StatusSending:   {StatusSent, StatusQueued, StatusFailed, StatusBounced},
+	StatusSending:   {StatusSent, StatusQueued, StatusFailed, StatusBounced, StatusCaptured},
 	StatusSent:      {StatusDelivered, StatusBounced, StatusFailed},
 	StatusDelivered: {StatusBounced},
 	StatusFailed:    {StatusQueued},
@@ -78,11 +79,21 @@ func CanTransition(from, to Status) bool {
 // sending: it was handed over, or it never will be.
 func (s Status) Final() bool {
 	switch s {
-	case StatusSent, StatusDelivered, StatusBounced, StatusFailed, StatusCancelled, StatusSuppressed:
+	case StatusSent, StatusDelivered, StatusBounced, StatusFailed, StatusCancelled, StatusSuppressed, StatusCaptured:
 		return true
 	}
 	return false
 }
+
+// Stream separates transactional mail from broadcasts (Postmark message
+// streams): they never share a queue.
+type Stream string
+
+// Streams.
+const (
+	StreamTransactional Stream = "transactional"
+	StreamBroadcast     Stream = "broadcast"
+)
 
 // Priority orders the queue; higher goes first.
 type Priority int
@@ -139,6 +150,13 @@ type Message struct {
 	// OrgID is the IAM tenant (column org_id).
 	OrgID      string
 	CampaignID string
+	// ApplicationID is the application that sent it; empty for the
+	// tenant's own sends (console, campaigns).
+	ApplicationID string
+	// Sandbox messages are captured, never delivered.
+	Sandbox bool
+	// Stream is the reputation stream it goes out on.
+	Stream Stream
 
 	FromName  string
 	FromEmail string
@@ -207,6 +225,9 @@ func (m *Message) Normalize() {
 	}
 	if m.Status == "" {
 		m.Status = StatusQueued
+	}
+	if m.Stream == "" {
+		m.Stream = StreamTransactional
 	}
 }
 
