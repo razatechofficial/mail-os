@@ -38,6 +38,8 @@ func (h *TenantHandler) Mount(api *gin.RouterGroup, g middleware.Guard) {
 	api.PUT("/tenant/settings", g.Require(access.PermSettingsManage), h.UpdateSettings)
 	api.GET("/keys/encryption", g.Require(access.PermSettingsManage), h.EncryptionKeys)
 	api.POST("/keys/encryption/:purpose/rotate", g.Require(access.PermSettingsManage), h.RotateKey)
+	api.GET("/keys/kek", g.Require(access.PermSettingsManage), h.KEKStatus)
+	api.POST("/keys/kek/rotate", g.Require(access.PermSettingsManage), h.RotateKEK)
 }
 
 type meView struct {
@@ -163,4 +165,34 @@ func (h *TenantHandler) RotateKey(c *gin.Context) {
 		return
 	}
 	response.Created(c, appkm.KeyStatus{KID: k.KID, State: k.State, Provider: k.Provider, CreatedAt: k.CreatedAt})
+}
+
+// KEKStatus is GET /keys/kek: the key-encryption keys (by id, never
+// material), how many data keys each wraps, and the KEK rotations.
+func (h *TenantHandler) KEKStatus(c *gin.Context) {
+	st, err := h.keys.KEKStatus(c.Request.Context())
+	if err != nil {
+		response.FromError(c, err)
+		return
+	}
+	response.OK(c, st)
+}
+
+type rotateKEKInput struct {
+	Reason string `json:"reason" binding:"max=500"`
+}
+
+// RotateKEK is POST /keys/kek/rotate (mailos_admin, step-up): re-wrap every
+// data key under the new KEK configured on every replica.
+func (h *TenantHandler) RotateKEK(c *gin.Context) {
+	var in rotateKEKInput
+	if !bind(c, &in) {
+		return
+	}
+	r, err := h.keys.StartKEKRotation(c.Request.Context(), middleware.PrincipalFrom(c).Actor(), in.Reason)
+	if err != nil {
+		response.FromError(c, err)
+		return
+	}
+	response.Created(c, appkm.RotationStatus(*r))
 }
