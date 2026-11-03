@@ -42,10 +42,14 @@ type Permission string
 // body is its own permission, audited and behind step-up.
 const (
 	PermTemplatesRead    Permission = "templates:read"
-	PermTemplatesEdit    Permission = "templates:edit" // create, metadata, drafts, restore, preview, test send
+	PermTemplatesEdit    Permission = "templates:edit" // create, metadata, drafts, restore, preview
 	PermTemplatesPublish Permission = "templates:publish"
-	PermTemplatesDelete  Permission = "templates:delete"
-	PermBrandingEdit     Permission = "branding:edit"
+	// PermTemplatesTest is sending the saved draft as a test: editors check
+	// their work and publishers check what they are about to publish. It
+	// changes nothing, so it needs no step-up.
+	PermTemplatesTest   Permission = "templates:test"
+	PermTemplatesDelete Permission = "templates:delete"
+	PermBrandingEdit    Permission = "branding:edit"
 
 	PermProvidersRead   Permission = "providers:read"
 	PermProvidersManage Permission = "providers:manage" // providers and their credentials
@@ -101,12 +105,12 @@ func with(base []Permission, extra ...Permission) []Permission {
 // rolePermissions is contract §5's table.
 var rolePermissions = map[Role][]Permission{
 	RoleAdmin: with(readOnly,
-		PermTemplatesEdit, PermTemplatesPublish, PermTemplatesDelete, PermBrandingEdit,
+		PermTemplatesEdit, PermTemplatesPublish, PermTemplatesTest, PermTemplatesDelete, PermBrandingEdit,
 		PermProvidersManage, PermProvidersTest, PermDomainsManage, PermWebhooksManage, PermSettingsManage, PermRolesView,
 		PermMessageBodies, PermMessagesOperate, PermMessagesSend, PermSuppressionsEdit, PermContactsManage,
 		PermCampaignsManage, PermApplicationsManage, PermAuditRead, PermAuditExport),
-	RoleTemplateEditor:    with(readOnly, PermTemplatesEdit),
-	RoleTemplatePublisher: with(readOnly, PermTemplatesPublish),
+	RoleTemplateEditor:    with(readOnly, PermTemplatesEdit, PermTemplatesTest),
+	RoleTemplatePublisher: with(readOnly, PermTemplatesPublish, PermTemplatesTest),
 	RoleOperator: with(readOnly, PermMessagesOperate, PermMessagesSend, PermMessageBodies, PermSuppressionsEdit,
 		PermContactsManage, PermCampaignsManage),
 	RoleAuditor: with(readOnly, PermMessageBodies, PermAuditRead, PermAuditExport),

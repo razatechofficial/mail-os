@@ -38,7 +38,8 @@ func NewTemplateHandler(svc *apptemplate.Service, limiter middleware.WindowCount
 
 // Mount registers the routes with the roles of the API's table: reads for
 // every role, edits for editors and admins, publishing (step-up) for
-// publishers and admins, delete and branding for admins.
+// publishers and admins, test sends for all three, delete and branding for
+// admins.
 func (h *TemplateHandler) Mount(api *gin.RouterGroup, g middleware.Guard) {
 	read, edit := g.Require(access.PermTemplatesRead), g.Require(access.PermTemplatesEdit)
 	api.GET("/templates", read, h.List)
@@ -56,7 +57,7 @@ func (h *TemplateHandler) Mount(api *gin.RouterGroup, g middleware.Guard) {
 	api.POST("/templates/:id/versions/:version/restore", edit, h.Restore)
 	api.POST("/templates/:id/preview", edit,
 		middleware.RateLimit(h.limiter, "template_preview", middleware.PerUser, h.limits.PreviewPerMinute, time.Minute), h.Preview)
-	api.POST("/templates/:id/test-send", edit,
+	api.POST("/templates/:id/test-send", g.Require(access.PermTemplatesTest),
 		middleware.RateLimit(h.limiter, "template_test_send", middleware.PerUser, h.limits.TestSendPerHour, time.Hour), h.TestSend)
 
 	api.GET("/template-branding", read, h.GetBranding)
