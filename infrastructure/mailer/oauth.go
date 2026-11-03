@@ -196,6 +196,7 @@ func classifyOAuth(e *message.SendError, body []byte) {
 // application, with a client secret or a certificate assertion
 // (RFC 7523), for scope.
 func microsoftTokens(kind provider.Kind, s provider.Settings, c provider.Credentials, scope string, opts Options) (*tokenSource, error) {
+	opts = opts.withDefaults()
 	invalid := func(d string) error { return message.NewSendError(string(kind), message.ReasonConfig, 0, d) }
 	if s.TenantID == "" || s.ClientID == "" {
 		return nil, invalid("the tenant ID and client ID are required")
@@ -280,6 +281,7 @@ func signJWT(key *rsa.PrivateKey, so *jose.SignerOptions, claims map[string]any)
 // googleTokens returns the JWT bearer flow (RFC 7523) of a service account
 // acting as subject through domain-wide delegation, for scope.
 func googleTokens(kind provider.Kind, keyFile, subject, scope string, opts Options) (*tokenSource, error) {
+	opts = opts.withDefaults()
 	invalid := func(d string) error { return message.NewSendError(string(kind), message.ReasonConfig, 0, d) }
 	sa, problem := provider.ParseServiceAccount(keyFile)
 	if problem != "" {
