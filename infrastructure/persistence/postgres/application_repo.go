@@ -25,14 +25,16 @@ func NewApplicationRepository(db *Pool) *ApplicationRepository { return &Applica
 
 const applicationCols = `id, org_id, name, description, kind, client_id, status, suspended_reason, environment, stream,
 	message_types, senders, default_from_email, default_from_name, default_reply_to, rate_limit_per_minute, daily_quota,
-	browser_templates, user_rate_limit_per_hour, allowed_origins, system, created_by, updated_by, created_at, updated_at`
+	browser_templates, user_rate_limit_per_hour, allowed_origins, system, created_by, updated_by, created_at, updated_at,
+	smtp_password_auth`
 
 func scanApplication(row pgx.Row) (domain.Application, error) {
 	var a domain.Application
 	var kind, status, env, stream string
 	err := row.Scan(&a.ID, &a.TenantID, &a.Name, &a.Description, &kind, &a.ClientID, &status, &a.SuspendedReason, &env, &stream,
 		&a.MessageTypes, &a.Senders, &a.DefaultFromEmail, &a.DefaultFromName, &a.DefaultReplyTo, &a.RatePerMinute, &a.DailyQuota,
-		&a.BrowserTemplates, &a.UserRatePerHour, &a.AllowedOrigins, &a.System, &a.CreatedBy, &a.UpdatedBy, &a.CreatedAt, &a.UpdatedAt)
+		&a.BrowserTemplates, &a.UserRatePerHour, &a.AllowedOrigins, &a.System, &a.CreatedBy, &a.UpdatedBy, &a.CreatedAt, &a.UpdatedAt,
+		&a.SMTPPasswordAuth)
 	a.Kind, a.Status, a.Environment, a.Stream = domain.Kind(kind), domain.Status(status), domain.Environment(env), domain.Stream(stream)
 	return a, err
 }
@@ -53,11 +55,12 @@ func applicationConflict(err error) error {
 func (r *ApplicationRepository) Create(ctx context.Context, a domain.Application) error {
 	_, err := QuerierFromContext(ctx, r.db).Exec(ctx, `
 		INSERT INTO applications (`+applicationCols+`)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25,
+			$26)`,
 		a.ID, a.TenantID, a.Name, a.Description, string(a.Kind), a.ClientID, string(a.Status), a.SuspendedReason,
 		string(a.Environment), string(a.Stream), nonNil(a.MessageTypes), nonNil(a.Senders), a.DefaultFromEmail, a.DefaultFromName,
 		a.DefaultReplyTo, a.RatePerMinute, a.DailyQuota, nonNil(a.BrowserTemplates), a.UserRatePerHour, nonNil(a.AllowedOrigins),
-		a.System, a.CreatedBy, a.UpdatedBy, a.CreatedAt, a.UpdatedAt)
+		a.System, a.CreatedBy, a.UpdatedBy, a.CreatedAt, a.UpdatedAt, a.SMTPPasswordAuth)
 	return applicationConflict(err)
 }
 
@@ -67,12 +70,12 @@ func (r *ApplicationRepository) Update(ctx context.Context, a domain.Application
 		UPDATE applications SET name = $3, description = $4, kind = $5, client_id = $6, status = $7, suspended_reason = $8,
 			environment = $9, stream = $10, message_types = $11, senders = $12, default_from_email = $13, default_from_name = $14,
 			default_reply_to = $15, rate_limit_per_minute = $16, daily_quota = $17, browser_templates = $18,
-			user_rate_limit_per_hour = $19, allowed_origins = $20, updated_by = $21, updated_at = $22
+			user_rate_limit_per_hour = $19, allowed_origins = $20, updated_by = $21, updated_at = $22, smtp_password_auth = $23
 		WHERE id = $1 AND org_id = $2`,
 		a.ID, a.TenantID, a.Name, a.Description, string(a.Kind), a.ClientID, string(a.Status), a.SuspendedReason,
 		string(a.Environment), string(a.Stream), nonNil(a.MessageTypes), nonNil(a.Senders), a.DefaultFromEmail, a.DefaultFromName,
 		a.DefaultReplyTo, a.RatePerMinute, a.DailyQuota, nonNil(a.BrowserTemplates), a.UserRatePerHour, nonNil(a.AllowedOrigins),
-		a.UpdatedBy, a.UpdatedAt)
+		a.UpdatedBy, a.UpdatedAt, a.SMTPPasswordAuth)
 	if err != nil {
 		return applicationConflict(err)
 	}

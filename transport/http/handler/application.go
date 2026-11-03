@@ -57,6 +57,7 @@ type applicationView struct {
 	BrowserTemplates []string  `json:"browser_templates"`
 	UserRatePerHour  int       `json:"user_rate_limit_per_hour"`
 	AllowedOrigins   []string  `json:"allowed_origins"`
+	SMTPPasswordAuth bool      `json:"smtp_password_auth"`
 	System           bool      `json:"system"`
 	CreatedBy        string    `json:"created_by"`
 	UpdatedBy        string    `json:"updated_by"`
@@ -77,7 +78,7 @@ func applicationViewOf(a domain.Application) applicationView {
 		MessageTypes: orEmpty(a.MessageTypes), Senders: orEmpty(a.Senders), DefaultFromEmail: a.DefaultFromEmail,
 		DefaultFromName: a.DefaultFromName, DefaultReplyTo: a.DefaultReplyTo, RatePerMinute: a.RatePerMinute,
 		DailyQuota: a.DailyQuota, BrowserTemplates: orEmpty(a.BrowserTemplates), UserRatePerHour: a.UserRatePerHour,
-		AllowedOrigins: orEmpty(a.AllowedOrigins), System: a.System, CreatedBy: a.CreatedBy, UpdatedBy: a.UpdatedBy,
+		AllowedOrigins: orEmpty(a.AllowedOrigins), SMTPPasswordAuth: a.SMTPPasswordAuth, System: a.System, CreatedBy: a.CreatedBy, UpdatedBy: a.UpdatedBy,
 		CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt}
 }
 
@@ -100,6 +101,8 @@ type applicationRequest struct {
 	BrowserTemplates []string `json:"browser_templates"`
 	UserRatePerHour  int      `json:"user_rate_limit_per_hour"`
 	AllowedOrigins   []string `json:"allowed_origins"`
+	// SMTPPasswordAuth opts a server application in to SMTP credentials.
+	SMTPPasswordAuth bool `json:"smtp_password_auth"`
 }
 
 func (r applicationRequest) input() applications.Input {
@@ -107,7 +110,8 @@ func (r applicationRequest) input() applications.Input {
 		Environment: domain.Environment(r.Environment), Stream: domain.Stream(r.Stream), MessageTypes: r.MessageTypes,
 		Senders: r.Senders, DefaultFromEmail: r.DefaultFromEmail, DefaultFromName: r.DefaultFromName,
 		DefaultReplyTo: r.DefaultReplyTo, RatePerMinute: r.RatePerMinute, DailyQuota: r.DailyQuota,
-		BrowserTemplates: r.BrowserTemplates, UserRatePerHour: r.UserRatePerHour, AllowedOrigins: r.AllowedOrigins}
+		BrowserTemplates: r.BrowserTemplates, UserRatePerHour: r.UserRatePerHour, AllowedOrigins: r.AllowedOrigins,
+		SMTPPasswordAuth: r.SMTPPasswordAuth}
 }
 
 // List is GET /applications?status&kind.
