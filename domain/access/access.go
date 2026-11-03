@@ -49,13 +49,16 @@ const (
 
 	PermProvidersRead   Permission = "providers:read"
 	PermProvidersManage Permission = "providers:manage" // providers and their credentials
-	PermDomainsRead     Permission = "domains:read"
-	PermDomainsManage   Permission = "domains:manage" // sending domains and DKIM keys
-	PermWebhooksRead    Permission = "webhooks:read"
-	PermWebhooksManage  Permission = "webhooks:manage"
-	PermSettingsRead    Permission = "settings:read"
-	PermSettingsManage  Permission = "settings:manage" // four-eyes, retention
-	PermRolesView       Permission = "roles:view"      // the caller's and users' MailOS roles
+	// PermProvidersTest is testing a stored provider: a connection test or
+	// a test send. It changes nothing, so it needs no step-up.
+	PermProvidersTest  Permission = "providers:test"
+	PermDomainsRead    Permission = "domains:read"
+	PermDomainsManage  Permission = "domains:manage" // sending domains and DKIM keys
+	PermWebhooksRead   Permission = "webhooks:read"
+	PermWebhooksManage Permission = "webhooks:manage"
+	PermSettingsRead   Permission = "settings:read"
+	PermSettingsManage Permission = "settings:manage" // four-eyes, retention
+	PermRolesView      Permission = "roles:view"      // the caller's and users' MailOS roles
 
 	PermMessagesRead    Permission = "messages:read"      // metadata, never bodies
 	PermMessageBodies   Permission = "messages:read_body" // read or export bodies
@@ -99,7 +102,7 @@ func with(base []Permission, extra ...Permission) []Permission {
 var rolePermissions = map[Role][]Permission{
 	RoleAdmin: with(readOnly,
 		PermTemplatesEdit, PermTemplatesPublish, PermTemplatesDelete, PermBrandingEdit,
-		PermProvidersManage, PermDomainsManage, PermWebhooksManage, PermSettingsManage, PermRolesView,
+		PermProvidersManage, PermProvidersTest, PermDomainsManage, PermWebhooksManage, PermSettingsManage, PermRolesView,
 		PermMessageBodies, PermMessagesOperate, PermMessagesSend, PermSuppressionsEdit, PermContactsManage,
 		PermCampaignsManage, PermApplicationsManage, PermAuditRead, PermAuditExport),
 	RoleTemplateEditor:    with(readOnly, PermTemplatesEdit),
