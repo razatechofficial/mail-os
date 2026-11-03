@@ -241,3 +241,26 @@ func TestCapturedIsFinal(t *testing.T) {
 		t.Fatalf("default stream %q", m.Stream)
 	}
 }
+
+func TestCarriedHeaders(t *testing.T) {
+	m := otpMessage()
+	m.Headers = map[string]string{"List-Unsubscribe": "<https://bank.example/u/1>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"}
+	if err := m.Validate(); err != nil {
+		t.Fatal(codes(err))
+	}
+	out, err := m.Outgoing()
+	if err != nil || out.Headers["List-Unsubscribe"] != "<https://bank.example/u/1>" || len(out.Headers) != 2 {
+		t.Fatalf("outgoing headers %v %v", out.Headers, err)
+	}
+	if err := out.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	m.Headers = map[string]string{"Bcc": "x@evil.example"}
+	if got := codes(m.Validate()); !slices.Contains(got, "headers:not_allowed") {
+		t.Fatalf("a structural header is refused: %v", got)
+	}
+	m.Headers = map[string]string{"List-Unsubscribe": "<https://x>\r\nBcc: x@evil.example"}
+	if got := codes(m.Validate()); !slices.Contains(got, "headers:invalid") {
+		t.Fatalf("a folded header value is refused: %v", got)
+	}
+}

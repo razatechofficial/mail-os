@@ -19,27 +19,29 @@ import (
 
 // Config is the whole service configuration.
 type Config struct {
-	App          App          `yaml:"app"`
-	HTTP         HTTP         `yaml:"http"`
-	GRPC         GRPC         `yaml:"grpc"`
-	CORS         CORS         `yaml:"cors"`
-	Postgres     Postgres     `yaml:"postgres"`
-	Redis        Redis        `yaml:"redis"`
-	IAM          IAM          `yaml:"iam"`
-	Idempotency  Idempotency  `yaml:"idempotency"`
-	StepUp       StepUp       `yaml:"step_up"`
-	Kafka        Kafka        `yaml:"kafka"`
-	Audit        Audit        `yaml:"audit"`
-	KeyManager   KeyManager   `yaml:"key_manager"`
-	Retention    Retention    `yaml:"retention"`
-	Worker       Worker       `yaml:"worker"`
-	RateLimit    RateLimit    `yaml:"rate_limit"`
-	SMTP         SMTP         `yaml:"smtp"`
-	Telemetry    Telemetry    `yaml:"telemetry"`
-	Metrics      Metrics      `yaml:"metrics"`
-	E2EHooks     E2EHooks     `yaml:"e2e_hooks"`
-	FeatureFlags FeatureFlags `yaml:"feature_flags"`
-	Shutdown     Shutdown     `yaml:"shutdown"`
+	App         App         `yaml:"app"`
+	HTTP        HTTP        `yaml:"http"`
+	GRPC        GRPC        `yaml:"grpc"`
+	CORS        CORS        `yaml:"cors"`
+	Postgres    Postgres    `yaml:"postgres"`
+	Redis       Redis       `yaml:"redis"`
+	IAM         IAM         `yaml:"iam"`
+	Idempotency Idempotency `yaml:"idempotency"`
+	StepUp      StepUp      `yaml:"step_up"`
+	Kafka       Kafka       `yaml:"kafka"`
+	Audit       Audit       `yaml:"audit"`
+	KeyManager  KeyManager  `yaml:"key_manager"`
+	Retention   Retention   `yaml:"retention"`
+	Worker      Worker      `yaml:"worker"`
+	RateLimit   RateLimit   `yaml:"rate_limit"`
+	SMTP        SMTP        `yaml:"smtp"`
+	// SMTPSubmission is the SMTP listener legacy applications submit to.
+	SMTPSubmission SMTPSubmission `yaml:"smtp_submission"`
+	Telemetry      Telemetry      `yaml:"telemetry"`
+	Metrics        Metrics        `yaml:"metrics"`
+	E2EHooks       E2EHooks       `yaml:"e2e_hooks"`
+	FeatureFlags   FeatureFlags   `yaml:"feature_flags"`
+	Shutdown       Shutdown       `yaml:"shutdown"`
 }
 
 // App identifies the deployment.
@@ -444,6 +446,9 @@ func (c *Config) Validate() error {
 		}
 	}
 	if err := c.SMTP.validate(plaintext); err != nil {
+		return err
+	}
+	if err := c.SMTPSubmission.validate(); err != nil {
 		return err
 	}
 	if c.Telemetry.Enabled {

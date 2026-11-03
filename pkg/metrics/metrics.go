@@ -31,6 +31,21 @@ var (
 	tasks = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "mailos", Name: "worker_tasks_total", Help: "Worker tasks by type and result.",
 	}, []string{"type", "result"})
+	smtpConnections = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "mailos", Name: "smtp_connections_total", Help: "SMTP submission connections by listener and outcome (accepted, limit).",
+	}, []string{"listener", "outcome"})
+	smtpActive = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "mailos", Name: "smtp_active_connections", Help: "Open SMTP submission connections.",
+	})
+	smtpAuth = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "mailos", Name: "smtp_auth_total", Help: "SMTP AUTH attempts by mechanism and result (ok, failed, throttled, error).",
+	}, []string{"mechanism", "result"})
+	smtpMessages = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "mailos", Name: "smtp_messages_total", Help: "SMTP transactions by outcome (queued, or the refusal reason).",
+	}, []string{"outcome"})
+	smtpRecipients = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "mailos", Name: "smtp_recipients_queued_total", Help: "Messages queued from SMTP submissions (one per recipient).",
+	})
 )
 
 // ObserveHTTP records one HTTP request.
@@ -50,6 +65,26 @@ func Send(provider, result string) { sends.WithLabelValues(provider, result).Inc
 
 // Task records a worker task result.
 func Task(typ, result string) { tasks.WithLabelValues(typ, result).Inc() }
+
+// SMTPConnection records an SMTP connection accepted or refused at a limit.
+func SMTPConnection(listener, outcome string) {
+	smtpConnections.WithLabelValues(listener, outcome).Inc()
+}
+
+// SMTPActive moves the open SMTP connections gauge by delta.
+func SMTPActive(delta float64) { smtpActive.Add(delta) }
+
+// SMTPAuth records an SMTP AUTH attempt.
+func SMTPAuth(mechanism, result string) { smtpAuth.WithLabelValues(mechanism, result).Inc() }
+
+// SMTPMessage records an SMTP transaction's outcome and, when queued, its
+// recipients.
+func SMTPMessage(outcome string, recipients int) {
+	smtpMessages.WithLabelValues(outcome).Inc()
+	if recipients > 0 {
+		smtpRecipients.Add(float64(recipients))
+	}
+}
 
 // Handler serves the registry.
 func Handler() http.Handler { return promhttp.Handler() }

@@ -65,6 +65,8 @@ var criticalActions = map[string]struct{}{
 	"event.refused":           {},
 	"access_denied":           {},
 	"step_up_required":        {},
+	"smtp_credential.revoked": {},
+	"smtp.auth_failed":        {},
 }
 
 // Classify returns TierCritical or TierActivity for an action name.

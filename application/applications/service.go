@@ -56,6 +56,9 @@ type Input struct {
 	BrowserTemplates []string
 	UserRatePerHour  int
 	AllowedOrigins   []string
+	// SMTPPasswordAuth opts a server application in to MailOS-generated
+	// SMTP credentials (application/smtpcred).
+	SMTPPasswordAuth bool
 }
 
 func (in Input) apply(a *domain.Application) {
@@ -65,6 +68,7 @@ func (in Input) apply(a *domain.Application) {
 	a.DefaultFromEmail, a.DefaultFromName, a.DefaultReplyTo = in.DefaultFromEmail, in.DefaultFromName, in.DefaultReplyTo
 	a.RatePerMinute, a.DailyQuota = in.RatePerMinute, in.DailyQuota
 	a.BrowserTemplates, a.UserRatePerHour, a.AllowedOrigins = in.BrowserTemplates, in.UserRatePerHour, in.AllowedOrigins
+	a.SMTPPasswordAuth = in.SMTPPasswordAuth
 	if a.Environment == "" {
 		a.Environment = domain.EnvSandbox
 	}
@@ -91,6 +95,7 @@ type record struct {
 	BrowserTemplates []string `json:"browser_templates,omitempty"`
 	UserRatePerHour  int      `json:"user_rate_limit_per_hour,omitempty"`
 	AllowedOrigins   []string `json:"allowed_origins,omitempty"`
+	SMTPPasswordAuth bool     `json:"smtp_password_auth"`
 }
 
 func recordOf(a domain.Application) record {
@@ -98,7 +103,7 @@ func recordOf(a domain.Application) record {
 		SuspendedReason: a.SuspendedReason, Environment: string(a.Environment), Stream: string(a.Stream),
 		MessageTypes: a.MessageTypes, Senders: a.Senders, DefaultFromEmail: a.DefaultFromEmail, DefaultReplyTo: a.DefaultReplyTo,
 		RatePerMinute: a.RatePerMinute, DailyQuota: a.DailyQuota, BrowserTemplates: a.BrowserTemplates,
-		UserRatePerHour: a.UserRatePerHour, AllowedOrigins: a.AllowedOrigins}
+		UserRatePerHour: a.UserRatePerHour, AllowedOrigins: a.AllowedOrigins, SMTPPasswordAuth: a.SMTPPasswordAuth}
 }
 
 // check validates a and its senders against the tenant's verified

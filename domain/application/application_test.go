@@ -187,3 +187,21 @@ func TestReasons(t *testing.T) {
 		t.Fatal("classification")
 	}
 }
+
+func TestSMTPPasswordAuthOnlyForConsoleServers(t *testing.T) {
+	a := validServer()
+	a.SMTPPasswordAuth = true
+	if err := a.Validate(false); err != nil {
+		t.Fatalf("a server application may opt in to SMTP credentials: %v", err)
+	}
+	spa := validSPA()
+	spa.SMTPPasswordAuth = true
+	if got := fields(spa.Validate(false)); got["smtp_password_auth"] != "not_allowed" {
+		t.Fatalf("spa with SMTP credentials: %v", got)
+	}
+	sys := validServer()
+	sys.System, sys.SMTPPasswordAuth = true, true
+	if got := fields(sys.Validate(false)); got["smtp_password_auth"] != "not_allowed" {
+		t.Fatalf("system application with SMTP credentials: %v", got)
+	}
+}

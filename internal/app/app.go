@@ -1,6 +1,8 @@
-// Package app runs the processes: the API server (REST, gRPC, metrics and,
-// with FEATURE_PUBSUB_INGEST, the Kafka consumer) and the worker (asynq
-// queues and schedules), each with graceful shutdown on SIGINT/SIGTERM.
+// Package app runs the processes: the API server (REST, gRPC, metrics,
+// with FEATURE_PUBSUB_INGEST the Kafka consumer, and with
+// SMTP_SUBMISSION_ENABLED the SMTP submission listener) and the worker
+// (asynq queues and schedules), each with graceful shutdown on
+// SIGINT/SIGTERM.
 package app
 
 import (
@@ -8,6 +10,7 @@ import (
 	"errors"
 	"net/http"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -22,6 +25,7 @@ import (
 	grpctransport "github.com/razatechofficial/mail-os/transport/grpc"
 	transporthttp "github.com/razatechofficial/mail-os/transport/http"
 	"github.com/razatechofficial/mail-os/transport/http/e2ehooks"
+	smtptransport "github.com/razatechofficial/mail-os/transport/smtp"
 )
 
 // Router builds the REST engine from the container.
@@ -58,9 +62,19 @@ func RunServer(cfg *config.Config) error {
 		register(grpcSrv.Registrar())
 	}
 
+	var smtpSrv *smtptransport.Server
+	if cfg.SMTPSubmission.Enabled {
+		if smtpSrv, err = c.SMTPServer(); err != nil {
+			return err
+		}
+	}
+
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(httpSrv.Start)
 	g.Go(grpcSrv.Start)
+	if smtpSrv != nil {
+		g.Go(smtpSrv.Start)
+	}
 	if cfg.Metrics.Enabled {
 		g.Go(func() error { return serveMetrics(gctx, cfg.Metrics.Addr) })
 	}
@@ -72,8 +86,19 @@ func RunServer(cfg *config.Config) error {
 		sctx, cancel := context.WithTimeout(context.Background(), cfg.Shutdown.Timeout)
 		defer cancel()
 		logger.Info("shutting down")
+		// SMTP sessions finish their transaction while HTTP and gRPC drain.
+		var wg sync.WaitGroup
+		if smtpSrv != nil {
+			wg.Go(func() {
+				if err := smtpSrv.Shutdown(sctx); err != nil {
+					logger.Warn("smtp submission shutdown", logger.Err(err))
+				}
+			})
+		}
 		grpcSrv.Stop()
-		return httpSrv.Shutdown(sctx)
+		err := httpSrv.Shutdown(sctx)
+		wg.Wait()
+		return err
 	})
 	logger.Info("mailos server started", logger.String("env", cfg.App.Env))
 	return g.Wait()

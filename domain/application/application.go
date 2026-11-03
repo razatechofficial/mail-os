@@ -131,6 +131,12 @@ type Application struct {
 	// AllowedOrigins are the spa's web origins; a self-send from another
 	// Origin is refused.
 	AllowedOrigins []string
+	// SMTPPasswordAuth opts a server application in to SMTP credentials
+	// MailOS generates (transport/smtp): the one exception to "MailOS issues
+	// no secret", for legacy software that can only send over SMTP with a
+	// username and password. Off, the application submits over SMTP only
+	// with an IAM access token (OAUTHBEARER, XOAUTH2).
+	SMTPPasswordAuth bool
 	// System marks the application MailOS seeds from its configuration
 	// (IAM's own client). Only its status can be changed in the console.
 	System    bool
@@ -357,6 +363,9 @@ func (a Application) Validate(allowPlaintext bool) error {
 	}
 	if a.System && a.Kind != KindServer {
 		add("kind", "invalid", "a system application is a server")
+	}
+	if a.SMTPPasswordAuth && (a.Kind != KindServer || a.System) {
+		add("smtp_password_auth", "not_allowed", "SMTP credentials are for server applications registered in the console only")
 	}
 	if len(errs) > 0 {
 		return apperrors.Validation(errs...)

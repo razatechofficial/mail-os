@@ -418,3 +418,40 @@ func TestUsageCounts(t *testing.T) {
 		t.Fatal("91 days accepted")
 	}
 }
+
+func TestAuthorizeSubmission(t *testing.T) {
+	e := newEnv()
+	in := serverInput()
+	in.MessageTypes = append(in.MessageTypes, domain.RawType)
+	a := e.create(t, in)
+	ctx := svcCtx(a)
+	if err := e.svc.AuthorizeSubmission(ctx, a.ID, "Reports@Alerts.Bank.Example"); err != nil {
+		t.Fatalf("an allowed sender: %v", err)
+	}
+	for from, want := range map[string]string{"ceo@bank.example": "sender_not_allowed", "": "sender_required"} {
+		if r, _ := refusal(t, e.svc.AuthorizeSubmission(ctx, a.ID, from)); r != want {
+			t.Errorf("%q: reason %q, want %q", from, r, want)
+		}
+		if last := e.audit.last(); last.Action != AuditSendRefused || last.Meta["reason"] != want {
+			t.Errorf("%q: audit %+v", from, last)
+		}
+	}
+	// Nothing was counted against the limits (rate 2, quota 3).
+	for i := 0; i < 2; i++ {
+		if _, err := e.svc.AuthorizeSend(ctx, a.ID, Ask{Raw: true, FromEmail: "otp@bank.example"}); err != nil {
+			t.Fatalf("send %d: %v", i, err)
+		}
+	}
+
+	noRaw := newEnv()
+	b := noRaw.create(t, serverInput())
+	if r, _ := refusal(t, noRaw.svc.AuthorizeSubmission(svcCtx(b), b.ID, "otp@bank.example")); r != "raw_content_not_allowed" {
+		t.Fatalf("an application without raw: %q", r)
+	}
+	if _, err := noRaw.svc.Suspend(context.Background(), tenantA, b.ID, "", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := refusal(t, noRaw.svc.AuthorizeSubmission(svcCtx(b), b.ID, "otp@bank.example")); r != "application_suspended" {
+		t.Fatalf("a suspended application: %q", r)
+	}
+}

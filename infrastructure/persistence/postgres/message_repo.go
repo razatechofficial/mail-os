@@ -31,7 +31,7 @@ const messageCols = `id, org_id, COALESCE(campaign_id, ''), COALESCE(provider_id
 	COALESCE(locale, ''), template_data, secret_keys, COALESCE(event_id, ''), COALESCE(actor_type, ''), COALESCE(actor_id, ''),
 	COALESCE(idempotency_key, ''), COALESCE(provider_msg_id, ''), attempts, COALESCE(last_error, ''), scheduled_at,
 	last_attempt_at, sent_at, delivered_at, bounced_at, failed_at, cancelled_at, opened_at, clicked_at, body_purged_at,
-	created_at, updated_at, COALESCE(application_id, ''), sandbox, stream`
+	created_at, updated_at, COALESCE(application_id, ''), sandbox, stream, headers`
 
 // finalStatuses are the statuses whose body the purge may erase.
 const finalStatuses = `('sent', 'delivered', 'bounced', 'failed', 'cancelled', 'suppressed', 'captured')`
@@ -40,13 +40,13 @@ func scanMessage(row pgx.Row) (domain.Message, error) {
 	var m domain.Message
 	var typ, status, actorType, stream string
 	var priority int
-	var meta, data []byte
+	var meta, data, headers []byte
 	err := row.Scan(&m.ID, &m.OrgID, &m.CampaignID, &m.ProviderID, &m.FromName, &m.FromEmail, &m.ToEmail, &m.ToName, &m.ReplyTo,
 		&m.Subject, &m.HTMLBody, &m.TextBody, &typ, &status, &priority, &m.Tags, &meta, &m.Topic, &m.TemplateID,
 		&m.TemplateVersionID, &m.Locale, &data, &m.SecretKeys, &m.EventID, &actorType, &m.Actor.ID, &m.IdempotencyKey,
 		&m.ProviderMessageID, &m.Attempts, &m.LastError, &m.ScheduledAt, &m.LastAttemptAt, &m.SentAt, &m.DeliveredAt,
 		&m.BouncedAt, &m.FailedAt, &m.CancelledAt, &m.OpenedAt, &m.ClickedAt, &m.BodyPurgedAt, &m.CreatedAt, &m.UpdatedAt,
-		&m.ApplicationID, &m.Sandbox, &stream)
+		&m.ApplicationID, &m.Sandbox, &stream, &headers)
 	if err != nil {
 		return m, err
 	}
@@ -58,6 +58,9 @@ func scanMessage(row pgx.Row) (domain.Message, error) {
 	if len(data) > 0 && string(data) != "null" {
 		_ = json.Unmarshal(data, &m.TemplateData)
 	}
+	if len(headers) > 0 && string(headers) != "null" {
+		_ = json.Unmarshal(headers, &m.Headers)
+	}
 	return m, nil
 }
 
@@ -66,6 +69,14 @@ func jsonOrNil(v map[string]any) []byte {
 		return nil
 	}
 	raw, _ := json.Marshal(v)
+	return raw
+}
+
+func headersOrNil(h map[string]string) []byte {
+	if len(h) == 0 {
+		return nil
+	}
+	raw, _ := json.Marshal(h)
 	return raw
 }
 
@@ -91,16 +102,16 @@ func (r *MessageRepository) Create(ctx context.Context, m domain.Message) error 
 		INSERT INTO messages (id, org_id, campaign_id, provider_id, from_name, from_email, to_email, to_name, reply_to, subject,
 			html_body, text_body, type, status, priority, tags, metadata, topic, source, template_id, template_version_id, locale,
 			template_data, secret_keys, event_id, actor_type, actor_id, idempotency_key, provider_msg_id, attempts, last_error,
-			scheduled_at, created_at, updated_at, application_id, sandbox, stream)
+			scheduled_at, created_at, updated_at, application_id, sandbox, stream, headers)
 		VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), $10, NULLIF($11, ''),
 			NULLIF($12, ''), $13, $14, $15, $16, $17, NULLIF($18, ''), NULLIF($19, ''), NULLIF($20, ''), NULLIF($21, ''),
 			NULLIF($22, ''), $23, $24, NULLIF($25, ''), NULLIF($26, ''), NULLIF($27, ''), NULLIF($28, ''), NULLIF($29, ''),
-			$30, NULLIF($31, ''), $32, $33, $34, NULLIF($35, ''), $36, $37)`,
+			$30, NULLIF($31, ''), $32, $33, $34, NULLIF($35, ''), $36, $37, $38)`,
 		m.ID, m.OrgID, m.CampaignID, m.ProviderID, m.FromName, m.FromEmail, m.ToEmail, m.ToName, m.ReplyTo, m.Subject,
 		m.HTMLBody, m.TextBody, string(m.Type), string(m.Status), int(m.Priority), nonNil(m.Tags), jsonObject(m.Metadata),
 		m.Topic, source, m.TemplateID, m.TemplateVersionID, m.Locale, jsonOrNil(m.TemplateData), nonNil(m.SecretKeys),
 		m.EventID, string(m.Actor.Type), m.Actor.ID, m.IdempotencyKey, m.ProviderMessageID, m.Attempts, m.LastError,
-		m.ScheduledAt, m.CreatedAt, m.UpdatedAt, m.ApplicationID, m.Sandbox, string(stream(m)))
+		m.ScheduledAt, m.CreatedAt, m.UpdatedAt, m.ApplicationID, m.Sandbox, string(stream(m)), headersOrNil(m.Headers))
 	if IsUniqueViolation(err) && m.IdempotencyKey != "" {
 		return app.ErrDuplicateKey
 	}

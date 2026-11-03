@@ -69,6 +69,9 @@ type SendInput struct {
 	IdempotencyKey string
 	ScheduleAt     *time.Time
 	Type           domainmsg.Type
+	// Headers are carried headers (domainmsg.CarriedHeaders) of a direct
+	// send: SMTP submissions pass List-Unsubscribe through.
+	Headers map[string]string
 }
 
 // Result is a queued message's id and status.
@@ -111,7 +114,7 @@ func (s *Service) Send(ctx context.Context, in SendInput) (Result, error) {
 	m := domainmsg.Message{
 		ID: id.New(), OrgID: in.TenantID, FromName: in.FromName, FromEmail: in.FromEmail, ToEmail: in.ToEmail,
 		ToName: in.ToName, ReplyTo: in.ReplyTo, Subject: in.Subject, HTMLBody: in.HTML, TextBody: in.Text,
-		Type: in.Type, Priority: domainmsg.Priority(in.Priority), Tags: in.Tags, Metadata: in.Metadata,
+		Type: in.Type, Priority: domainmsg.Priority(in.Priority), Tags: in.Tags, Metadata: in.Metadata, Headers: in.Headers,
 		IdempotencyKey: in.IdempotencyKey, Actor: actorOf(ctx), CreatedAt: now, UpdatedAt: now,
 	}
 	if err := s.schedule(&m, in.ScheduleAt, now); err != nil {
