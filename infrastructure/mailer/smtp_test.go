@@ -5,11 +5,15 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/hmac"
+	"crypto/md5"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/pem"
 	"math/big"
 	"net"
 	"net/textproto"
@@ -28,8 +32,9 @@ import (
 
 // testCA is a CA and a server certificate for 127.0.0.1 it signed.
 type testCA struct {
-	pool *x509.CertPool
-	cert tls.Certificate
+	pool  *x509.CertPool
+	cert  tls.Certificate
+	caPEM string
 }
 
 func newTestCA(t *testing.T) testCA {
@@ -58,7 +63,8 @@ func newTestCA(t *testing.T) testCA {
 	}
 	pool := x509.NewCertPool()
 	pool.AddCert(ca)
-	return testCA{pool: pool, cert: tls.Certificate{Certificate: [][]byte{leafDER}, PrivateKey: leafKey}}
+	caPEM := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER}))
+	return testCA{pool: pool, cert: tls.Certificate{Certificate: [][]byte{leafDER}, PrivateKey: leafKey}, caPEM: caPEM}
 }
 
 // received is one message the test server accepted.
@@ -79,6 +85,10 @@ type smtpServer struct {
 	startTLS bool
 	user     string
 	pass     string
+	// mechs are the AUTH mechanisms offered (default PLAIN); token is the
+	// XOAUTH2 bearer token accepted.
+	mechs string
+	token string
 	// replies override the reply to a verb ("RCPT", "MAIL", "DATA").
 	replies map[string]string
 
@@ -86,11 +96,20 @@ type smtpServer struct {
 	msgs []received
 	// plainMail counts MAIL commands seen without TLS.
 	plainMail int
+	// helo is the last EHLO name; clientCN the last client certificate's
+	// common name; authMech the last mechanism that succeeded.
+	helo, clientCN, authMech string
+}
+
+func (s *smtpServer) seen() (helo, clientCN, mech string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.helo, s.clientCN, s.authMech
 }
 
 func startSMTP(t *testing.T, ca testCA, configure func(*smtpServer)) *smtpServer {
 	t.Helper()
-	s := &smtpServer{t: t, startTLS: true, replies: map[string]string{},
+	s := &smtpServer{t: t, startTLS: true, replies: map[string]string{}, mechs: "PLAIN",
 		tlsCfg: &tls.Config{Certificates: []tls.Certificate{ca.cert}, MinVersion: tls.VersionTLS12}}
 	if configure != nil {
 		configure(s)
@@ -152,12 +171,15 @@ func (s *smtpServer) serve(c net.Conn) {
 		}
 		switch verb {
 		case "EHLO", "HELO":
+			s.mu.Lock()
+			s.helo = arg
+			s.mu.Unlock()
 			lines := []string{"250-test"}
 			if s.startTLS && version == 0 {
 				lines = append(lines, "250-STARTTLS")
 			}
 			if s.user != "" {
-				lines = append(lines, "250-AUTH PLAIN")
+				lines = append(lines, "250-AUTH "+s.mechs)
 			}
 			lines = append(lines, "250 8BITMIME")
 			for _, l := range lines {
@@ -170,16 +192,24 @@ func (s *smtpServer) serve(c net.Conn) {
 				return
 			}
 			version = tc.ConnectionState().Version
+			if pc := tc.ConnectionState().PeerCertificates; len(pc) > 0 {
+				s.mu.Lock()
+				s.clientCN = pc[0].Subject.CommonName
+				s.mu.Unlock()
+			}
 			c = tc
 			tp = textproto.NewConn(tc)
 			reply = func(line string) { _ = tp.PrintfLine("%s", line) }
 		case "AUTH":
 			parts := strings.Fields(arg)
-			raw, _ := base64.StdEncoding.DecodeString(parts[len(parts)-1])
-			f := bytes.Split(raw, []byte{0})
-			if len(f) == 3 && string(f[1]) == s.user && string(f[2]) == s.pass {
+			mech := strings.ToUpper(parts[0])
+			ok := s.authenticate(mech, parts, tp, reply)
+			if ok {
 				authed = true
 				cur.authUser = s.user
+				s.mu.Lock()
+				s.authMech = mech
+				s.mu.Unlock()
 				reply("235 ok")
 			} else {
 				reply("535 5.7.8 authentication failed")
@@ -217,6 +247,43 @@ func (s *smtpServer) serve(c net.Conn) {
 			reply("502 unknown")
 		}
 	}
+}
+
+// authenticate runs one AUTH exchange.
+func (s *smtpServer) authenticate(mech string, parts []string, tp *textproto.Conn, reply func(string)) bool {
+	b64 := func(v string) string { return base64.StdEncoding.EncodeToString([]byte(v)) }
+	read := func() string {
+		line, _ := tp.ReadLine()
+		raw, _ := base64.StdEncoding.DecodeString(line)
+		return string(raw)
+	}
+	switch mech {
+	case "PLAIN":
+		raw, _ := base64.StdEncoding.DecodeString(parts[len(parts)-1])
+		f := bytes.Split(raw, []byte{0})
+		return len(f) == 3 && string(f[1]) == s.user && string(f[2]) == s.pass
+	case "LOGIN":
+		reply("334 " + b64("Username:"))
+		user := read()
+		reply("334 " + b64("Password:"))
+		return user == s.user && read() == s.pass
+	case "CRAM-MD5":
+		challenge := "<1896.697170952@test>"
+		reply("334 " + b64(challenge))
+		user, digest, _ := strings.Cut(read(), " ")
+		mac := hmac.New(md5.New, []byte(s.pass))
+		mac.Write([]byte(challenge))
+		return user == s.user && digest == hex.EncodeToString(mac.Sum(nil))
+	case "XOAUTH2":
+		raw, _ := base64.StdEncoding.DecodeString(parts[len(parts)-1])
+		if string(raw) == "user="+s.user+"\x01auth=Bearer "+s.token+"\x01\x01" {
+			return true
+		}
+		reply("334 " + b64(`{"status":"401","schemes":"bearer"}`))
+		_ = read()
+		return false
+	}
+	return false
 }
 
 func smtpConfig(s *smtpServer, mode string) SMTPConfig {
