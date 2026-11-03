@@ -86,7 +86,9 @@ func (r *memRepo) Touch(_ context.Context, id string, at time.Time, ip string) e
 	return nil
 }
 
-type memApps struct{ apps map[string]domainapp.Application }
+type memApps struct {
+	apps map[string]domainapp.Application
+}
 
 func (m *memApps) Get(_ context.Context, tenantID, id string) (domainapp.Application, error) {
 	a, ok := m.apps[id]
