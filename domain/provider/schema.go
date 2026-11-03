@@ -222,7 +222,7 @@ func microsoftFields(cond ...Condition) []Field {
 	with := func(extra ...Condition) []Condition { return append(slices.Clone(cond), extra...) }
 	return []Field{
 		{Key: "tenant_id", Label: "Directory (tenant) ID", Type: FieldText, Required: true, Group: "authentication",
-			Help: "From the app registration's Overview page in the Microsoft Entra admin center: a GUID or a verified domain.",
+			Help:        "From the app registration's Overview page in the Microsoft Entra admin center: a GUID or a verified domain.",
 			Placeholder: "00000000-0000-0000-0000-000000000000", Validation: &Validation{Format: FormatEntraID, MaxLength: 253},
 			VisibleWhen: with(), lower: true},
 		{Key: "client_id", Label: "Application (client) ID", Type: FieldText, Required: true, Group: "authentication",
@@ -232,7 +232,7 @@ func microsoftFields(cond ...Condition) []Field {
 			Help:    "A certificate is preferred for production: it cannot be copied from a configuration screen and can be kept in an HSM-backed store.",
 			Options: []Option{{MicrosoftSecret, "Client secret"}, {MicrosoftCertificate, "Certificate"}}, VisibleWhen: with()},
 		{Key: "client_secret", Label: "Client secret", Type: FieldPassword, Required: true, Secret: true, Group: "authentication",
-			Help: "The secret's Value (not its ID). Secrets expire: note the expiry date and rotate before it.",
+			Help:       "The secret's Value (not its ID). Secrets expire: note the expiry date and rotate before it.",
 			Validation: &Validation{MaxLength: 1024}, VisibleWhen: with(when("auth_method", MicrosoftSecret))},
 		{Key: "client_certificate", Label: "Certificate (PEM)", Type: FieldFile, Required: true, Group: "authentication", Accept: ".pem,.crt,.cer",
 			Help:       "The public certificate uploaded to the app registration under Certificates & secrets.",
@@ -282,7 +282,7 @@ func smtpSchema() TypeSchema {
 			Help: "Sent only after TLS is established.", Validation: &Validation{MaxLength: 4096},
 			VisibleWhen: []Condition{when("auth_mechanism", AuthPlain, AuthLogin, AuthCRAMMD5)}},
 		{Key: "oauth_provider", Label: "OAuth identity platform", Type: FieldSelect, Required: true, Default: OAuthMicrosoft, Group: "authentication",
-			Help: "Microsoft: an Entra ID app with the SMTP.SendAsApp permission, registered in Exchange Online as a service principal with access to the mailbox. Google: a service account with domain-wide delegation for https://mail.google.com/.",
+			Help:        "Microsoft: an Entra ID app with the SMTP.SendAsApp permission, registered in Exchange Online as a service principal with access to the mailbox. Google: a service account with domain-wide delegation for https://mail.google.com/.",
 			Options:     []Option{{OAuthMicrosoft, "Microsoft 365 / Exchange Online"}, {OAuthGoogle, "Google Workspace"}},
 			VisibleWhen: []Condition{xoauth}},
 	}
