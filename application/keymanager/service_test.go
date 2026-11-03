@@ -1,9 +1,11 @@
 package keymanager_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -17,8 +19,9 @@ import (
 )
 
 type memStore struct {
-	mu   sync.Mutex
-	keys []domain.EncryptionKey
+	mu        sync.Mutex
+	keys      []domain.EncryptionKey
+	rotations []domain.KEKRotation
 }
 
 func (m *memStore) ListKeys(context.Context) ([]domain.EncryptionKey, error) {
@@ -58,8 +61,59 @@ func (m *memStore) DeleteKey(_ context.Context, id uuid.UUID) error {
 	}
 	return nil
 }
+func (m *memStore) ReplaceKeyRef(_ context.Context, id uuid.UUID, oldRef, newRef []byte, kekID string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.keys {
+		if m.keys[i].ID == id && bytes.Equal(m.keys[i].KeyRef, oldRef) {
+			m.keys[i].KeyRef, m.keys[i].KEKID, m.keys[i].Provider = newRef, kekID, domain.KEKProvider(kekID)
+			return true, nil
+		}
+	}
+	return false, nil
+}
 func (m *memStore) WithLock(ctx context.Context, fn func(context.Context) error) (bool, error) {
 	return true, fn(ctx)
+}
+func (m *memStore) LatestKEKRotation(context.Context) (*domain.KEKRotation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.rotations) == 0 {
+		return nil, nil
+	}
+	r := m.rotations[len(m.rotations)-1]
+	return &r, nil
+}
+func (m *memStore) ListKEKRotations(_ context.Context, limit int) ([]domain.KEKRotation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := append([]domain.KEKRotation(nil), m.rotations...)
+	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt.After(out[j].StartedAt) })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+func (m *memStore) InsertKEKRotation(_ context.Context, r domain.KEKRotation) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, x := range m.rotations {
+		if x.State == domain.RotationRewrapping {
+			return errors.New("duplicate running rotation")
+		}
+	}
+	m.rotations = append(m.rotations, r)
+	return nil
+}
+func (m *memStore) UpdateKEKRotation(_ context.Context, r domain.KEKRotation) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.rotations {
+		if m.rotations[i].ID == r.ID {
+			m.rotations[i] = r
+		}
+	}
+	return nil
 }
 
 // column is one sealed column of provider credentials.
@@ -98,13 +152,28 @@ func (a *auditLog) Append(_ context.Context, _, _, action string, _ map[string]a
 	return nil
 }
 
-func newService(t *testing.T, store *memStore, audit *auditLog) *app.Service {
+// masterKey is a software KEK of 32 copies of b.
+func masterKey(t *testing.T, b byte) app.KEK {
 	t.Helper()
-	p, err := infra.NewSoftwareProvider(base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	k, err := infra.NewSoftwareKEK("KEY_MANAGER_MASTER_KEY", base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{b}, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := app.New(p, store, audit, app.Config{ReencryptBatch: 1, DestroyGrace: time.Nanosecond})
+	return k
+}
+
+func keks(t *testing.T, current, next app.KEK) *app.KEKs {
+	t.Helper()
+	k, err := app.NewKEKs(current, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
+}
+
+func newService(t *testing.T, store *memStore, audit *auditLog) *app.Service {
+	t.Helper()
+	s := app.New(keks(t, masterKey(t, 0), nil), store, audit, app.Config{ReencryptBatch: 1, DestroyGrace: time.Nanosecond})
 	if err := s.Bootstrap(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -185,8 +254,7 @@ func TestTamperedValueRefused(t *testing.T) {
 func TestWrongMasterKeyCannotLoad(t *testing.T) {
 	store := &memStore{}
 	newService(t, store, &auditLog{})
-	other, _ := infra.NewSoftwareProvider(base64.StdEncoding.EncodeToString([]byte(strings.Repeat("x", 32))))
-	if err := app.New(other, store, nil, app.Config{}).Bootstrap(context.Background()); err == nil {
+	if err := app.New(keks(t, masterKey(t, 'x'), nil), store, nil, app.Config{}).Bootstrap(context.Background()); err == nil {
 		t.Fatal("keys unwrapped with another master key")
 	}
 }
