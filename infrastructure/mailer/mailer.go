@@ -1,9 +1,12 @@
 // Package mailer hands messages to mail providers: an SMTP relay (STARTTLS
-// or implicit TLS, DKIM-signed) and the HTTPS APIs of Amazon SES,
-// SendGrid, Mailgun and Postmark. Every failure comes back as a
-// message.SendError, classified permanent or transient, so the queue knows
-// whether to retry and the Router whether to try the tenant's next
-// provider.
+// or implicit TLS, DKIM-signed; PLAIN, LOGIN, CRAM-MD5 or XOAUTH2; private
+// CAs and client certificates) and the HTTPS APIs of Microsoft Graph,
+// Gmail, Azure Communication Services, Amazon SES, SendGrid, Mailgun,
+// Postmark, SparkPost, Brevo, Mailjet, Mandrill and Resend. Every failure
+// comes back as a message.SendError, classified permanent or transient, so
+// the queue knows whether to retry and the Router whether to try the
+// tenant's next provider. Every sender can also test its connection and
+// credentials without sending (Checker).
 //
 // Transport rules (contract §2): TLS 1.2 or later with certificate
 // verification everywhere; plaintext SMTP and http:// API URLs only when
@@ -201,13 +204,19 @@ func classifyNetwork(ctx context.Context, kind provider.Kind, err error) *messag
 	case errors.Is(err, context.DeadlineExceeded) || isTimeout(err):
 		e.Detail = "the provider did not answer in time"
 	case strings.Contains(err.Error(), "refusing to connect"):
-		e.Reason, e.Detail = message.ReasonConfig, "the provider's address is not allowed"
+		e.Reason, e.Detail = message.ReasonConfig, addressRefused
 	case errors.As(err, &ue), errors.As(err, &he), errors.As(err, &ce), errors.As(err, &ve), errors.As(err, &rh),
 		strings.Contains(err.Error(), "tls:"), strings.Contains(err.Error(), "x509:"):
-		e.Reason, e.Detail = message.ReasonConfig, "the provider's TLS certificate is not trusted, or the handshake failed"
+		e.Reason, e.Detail = message.ReasonConfig, tlsDetail
 	}
 	return e
 }
+
+// Details the hints recognise.
+const (
+	addressRefused = "the provider's address is not allowed"
+	tlsDetail      = "the provider's TLS certificate is not trusted, or the handshake failed"
+)
 
 func isTimeout(err error) bool {
 	var ne net.Error
@@ -253,6 +262,8 @@ func (a *httpAPI) CloseIdleConnections() { a.client.CloseIdleConnections() }
 // request is one API call. prepare sets the headers (and signs) on each
 // attempt; classify refines the shared status rule from the error body.
 type request struct {
+	// method is POST unless set.
+	method      string
 	url         string
 	contentType string
 	body        []byte
@@ -260,8 +271,9 @@ type request struct {
 	classify    func(e *message.SendError, body []byte, h http.Header)
 }
 
-// post sends r, retrying only when the provider did not take the message.
-// It returns the success response's body and headers.
+// post sends r, retrying only when the provider did not take the message
+// (or, for a read, when it could not answer). It returns the success
+// response's body and headers.
 func (a *httpAPI) post(ctx context.Context, r request) ([]byte, http.Header, error) {
 	var last *message.SendError
 	for attempt := 1; attempt <= a.opts.Attempts; attempt++ {
@@ -288,13 +300,25 @@ func (a *httpAPI) post(ctx context.Context, r request) ([]byte, http.Header, err
 }
 
 func (a *httpAPI) once(ctx context.Context, r request) (_ []byte, _ http.Header, _ *message.SendError, retryable bool) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.url, bytes.NewReader(r.body))
+	method, body := r.method, io.Reader(nil)
+	if method == "" {
+		method = http.MethodPost
+	}
+	if r.body != nil {
+		body = bytes.NewReader(r.body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, r.url, body)
 	if err != nil {
 		return nil, nil, message.NewSendError(string(a.kind), message.ReasonConfig, 0, "the API URL is not valid"), false
 	}
-	req.Header.Set("Content-Type", r.contentType)
+	if r.contentType != "" {
+		req.Header.Set("Content-Type", r.contentType)
+	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "MailOS")
+	if r.prepare == nil {
+		r.prepare = func(*http.Request) error { return nil }
+	}
 	if err := r.prepare(req); err != nil {
 		return nil, nil, message.NewSendError(string(a.kind), message.ReasonConfig, 0, "the request cannot be authorised"), false
 	}
