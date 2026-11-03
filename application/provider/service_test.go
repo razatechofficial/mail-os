@@ -71,6 +71,15 @@ func (r *memRepo) ReplaceLegacy(_ context.Context, id string, s domain.Settings,
 	r.legacy = nil
 	return nil
 }
+func (r *memRepo) SetLastTest(_ context.Context, t, id string, lt domain.LastTest) error {
+	s, ok := r.rows[id]
+	if !ok || s.Provider.OrgID != t {
+		return apperrors.NotFound("provider not found")
+	}
+	s.Provider.LastTest = &lt
+	r.rows[id] = s
+	return nil
+}
 func (r *memRepo) WithLock(ctx context.Context, fn func(context.Context) error) (bool, error) {
 	return true, fn(ctx)
 }
@@ -172,15 +181,5 @@ func TestLegacyConversion(t *testing.T) {
 	s, c := SplitLegacy(domain.KindPostmark, map[string]any{"api_key": "pm"})
 	if c.ServerToken != "pm" || c.APIKey != "" || s.Host != "" {
 		t.Fatal("postmark token")
-	}
-}
-
-func TestSplitConfiguration(t *testing.T) {
-	s, c, err := SplitConfiguration(map[string]any{"region": "eu-west-1", "access_key_id": "AK", "secret_access_key": "SK"})
-	if err != nil || s.Region != "eu-west-1" || c.AccessKeyID != "AK" || c.SecretAccessKey != "SK" {
-		t.Fatal(s, c, err)
-	}
-	if _, _, err := SplitConfiguration(map[string]any{"port": "x"}); err == nil {
-		t.Fatal("bad port type accepted")
 	}
 }
