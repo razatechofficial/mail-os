@@ -667,6 +667,10 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "smtp_password_auth": {
+            "type": "boolean",
+            "description": "server only: opts the application in to MailOS-generated SMTP credentials for the SMTP submission listener. Off, it submits over SMTP only with an IAM token (OAUTHBEARER, XOAUTH2)."
           }
         }
       },
@@ -744,6 +748,171 @@
           "variables": {
             "type": "object",
             "description": "The template's variables; email is always the signed-in user's."
+          }
+        }
+      },
+      "SMTPEndpoint": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "host": {
+            "type": "string",
+            "description": "Host name legacy software connects to."
+          },
+          "port": {
+            "type": "integer",
+            "description": "Submission with STARTTLS (587)."
+          },
+          "implicit_tls_port": {
+            "type": "integer",
+            "description": "Submission over implicit TLS (465); 0 when off."
+          },
+          "password_auth": {
+            "type": "boolean",
+            "description": "Whether AUTH PLAIN and LOGIN are offered at all."
+          }
+        }
+      },
+      "SMTPCredential": {
+        "type": "object",
+        "description": "An application's SMTP username. The password is never returned after the response that creates or rotates it.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string",
+            "description": "Generated: smtp_ and 24 base32 characters."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rotated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "rotated_by": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_used_ip": {
+            "type": "string"
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "revoked_by": {
+            "type": "string"
+          }
+        }
+      },
+      "SMTPCredentialSecret": {
+        "type": "object",
+        "description": "A credential with its password, returned once.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string",
+            "description": "Generated: smtp_ and 24 base32 characters."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rotated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "rotated_by": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_used_ip": {
+            "type": "string"
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "revoked_by": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string",
+            "description": "Shown once; MailOS keeps only an Argon2id hash."
+          },
+          "smtp": {
+            "$ref": "#/components/schemas/SMTPEndpoint"
+          }
+        }
+      },
+      "SMTPCredentialList": {
+        "type": "object",
+        "properties": {
+          "credentials": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SMTPCredential"
+            }
+          },
+          "smtp": {
+            "$ref": "#/components/schemas/SMTPEndpoint"
           }
         }
       }
@@ -3397,6 +3566,180 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/applications/{id}/smtp-credentials": {
+      "get": {
+        "operationId": "list_application_smtp_credentials",
+        "summary": "List SMTP credentials",
+        "tags": [
+          "applications"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "applications:read",
+        "description": "The application's SMTP credentials, newest first, revoked ones included, with the SMTP submission endpoint. Never a password or hash. Permission: `applications:read`.",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SMTPCredentialList"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "create_application_smtp_credential",
+        "summary": "Create SMTP credential",
+        "tags": [
+          "applications"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "applications:manage",
+        "description": "Body {description}. Generates a username and password for a server application opted in to SMTP credentials (smtp_password_auth; 409 otherwise); at most 2 are active (409). The password is in this response only. Audited smtp_credential.created. Permission: `applications:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SMTPCredentialSecret"
+                }
+              }
+            }
+          }
+        },
+        "x-step-up": true,
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/applications/{id}/smtp-credentials/{credential_id}/rotate": {
+      "post": {
+        "operationId": "rotate_application_smtp_credential",
+        "summary": "Rotate SMTP credential",
+        "tags": [
+          "applications"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "applications:manage",
+        "description": "A new password for the same username, effective at once (the old one stops). For a rotation without downtime, create a second credential, switch, then revoke the first. Audited smtp_credential.rotated. Permission: `applications:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SMTPCredentialSecret"
+                }
+              }
+            }
+          }
+        },
+        "x-step-up": true,
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "credential_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/applications/{id}/smtp-credentials/{credential_id}": {
+      "delete": {
+        "operationId": "revoke_application_smtp_credential",
+        "summary": "Revoke SMTP credential",
+        "tags": [
+          "applications"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "applications:manage",
+        "description": "The credential stops at once, including SMTP sessions it opened (checked again at each MAIL FROM). Kept for the audit trail. Audited smtp_credential.revoked. Permission: `applications:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "x-step-up": true,
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "credential_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     }
   },

@@ -39,6 +39,7 @@ func allRoutes() []Routes {
 		handler.NewCampaignHandler(nil),
 		handler.NewMessageHandler(nil, nil, nil),
 		handler.NewApplicationHandler(nil),
+		handler.NewSMTPCredentialHandler(nil, handler.SMTPEndpoint{}),
 		handler.NewProviderHandler(nil),
 		handler.NewSendingDomainHandler(nil),
 		handler.NewSuppressionHandler(nil, nil),
