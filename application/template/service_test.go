@@ -351,7 +351,7 @@ func TestTestSend(t *testing.T) {
 	if _, _, err := f.svc.TestSend(ctx, tenantA, tpl.ID, in); apperrors.KindOf(err) != apperrors.KindUnavailable {
 		t.Fatalf("unwired test send: %v", err)
 	}
-	f.svc.SetTestSend(f.sender, templatetest.Domains{Verified: []string{"mail.averox.com"}})
+	f.svc.SetTestSend(f.sender, templatetest.Domains{Verified: []string{"mail.averox.com"}}, templatetest.Defaults{})
 	if _, _, err := f.svc.TestSend(ctx, tenantA, tpl.ID, in); apperrors.DetailsOf(err)[0].Code != domain.CodeNoDraft {
 		t.Fatalf("no draft: %v", err)
 	}
@@ -377,6 +377,32 @@ func TestTestSend(t *testing.T) {
 	}
 	if action, meta := f.audit.Last(); action != "template.test_sent" || meta["to_email"] != "qa@example.com" {
 		t.Fatalf("audit: %s %v", action, meta)
+	}
+
+	// No sender: the default sender of the template's type, if any.
+	none := in
+	none.FromEmail, none.FromName = "", ""
+	if _, _, err := f.svc.TestSend(ctx, tenantA, tpl.ID, none); apperrors.DetailsOf(err)[0].Code != app.CodeNoVerifiedSender {
+		t.Fatalf("no default sender: %v", err)
+	}
+	f.svc.SetTestSend(f.sender, templatetest.Domains{}, templatetest.Defaults{Email: "alerts@bank.example", Name: "Bank", OK: true})
+	if _, _, err := f.svc.TestSend(ctx, tenantA, tpl.ID, none); err != nil {
+		t.Fatal(err)
+	}
+	if m := f.sender.Sent[1]; m.FromEmail != "alerts@bank.example" || m.FromName != "Bank" {
+		t.Fatalf("application default sender: %+v", m)
+	}
+	// The platform sender (the system application's) is an empty address.
+	f.svc.SetTestSend(f.sender, templatetest.Domains{}, templatetest.Defaults{OK: true})
+	if _, _, err := f.svc.TestSend(ctx, tenantA, tpl.ID, none); err != nil {
+		t.Fatal(err)
+	}
+	if m := f.sender.Sent[2]; m.FromEmail != "" {
+		t.Fatalf("platform sender: %+v", m)
+	}
+	// A sender the person names must still be on a verified domain.
+	if _, _, err := f.svc.TestSend(ctx, tenantA, tpl.ID, in); apperrors.DetailsOf(err)[0].Code != app.CodeUnverifiedDomain {
+		t.Fatalf("named sender, unverified: %v", err)
 	}
 }
 

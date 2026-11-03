@@ -133,7 +133,7 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 		StaleSending: 3*cfg.Worker.SendTimeout + time.Minute})
 
 	if c.Templates != nil {
-		c.Templates.SetTestSend(c.Messages, c.SendingDomains)
+		c.Templates.SetTestSend(c.Messages, c.SendingDomains, c.Apps)
 	}
 	providers.SetTesting(mailer.Tester{Options: sendOpts}, c.Messages)
 	// Events (buildEvents) and campaigns (buildMarketing) send through the

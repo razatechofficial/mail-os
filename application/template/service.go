@@ -101,6 +101,13 @@ type DomainChecker interface {
 	VerifiedFrom(ctx context.Context, tenantID, fromEmail string) (bool, error)
 }
 
+// SenderDefaults finds the sender a test send uses when it names none
+// (applications.Service.DefaultSender): an empty email with ok true is the
+// platform sender, and ok false means the tenant has no verified sender.
+type SenderDefaults interface {
+	DefaultSender(ctx context.Context, tenantID string, keys ...string) (email, name string, ok bool, err error)
+}
+
 // Deps are the service's collaborators. Sender and Domains may be nil
 // until messaging is wired: test sends then answer 503.
 type Deps struct {
@@ -123,6 +130,7 @@ type Service struct {
 	audit    Auditor
 	sender   TestSender
 	domains  DomainChecker
+	defaults SenderDefaults
 	rawHTML  bool
 	now      func() time.Time
 	newID    func() string
@@ -141,9 +149,10 @@ func New(d Deps) *Service {
 	return s
 }
 
-// SetTestSend wires test sends to messaging.
-func (s *Service) SetTestSend(sender TestSender, domains DomainChecker) {
-	s.sender, s.domains = sender, domains
+// SetTestSend wires test sends to messaging, the sending domains and the
+// applications' default senders.
+func (s *Service) SetTestSend(sender TestSender, domains DomainChecker, defaults SenderDefaults) {
+	s.sender, s.domains, s.defaults = sender, domains, defaults
 }
 
 // Editor is who changes content: the IAM user, and whether they are a

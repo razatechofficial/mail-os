@@ -253,6 +253,9 @@ func TestTemplatePreviewAndTestSendLimits(t *testing.T) {
 	a.expect("POST", "/api/v1/templates/"+id+"/preview", other, preview, 200, "")
 
 	send := map[string]any{"locale": "en", "to_email": "qa@example.com", "from_name": "A", "from_email": "a@example.com"}
+	a.expect("POST", "/api/v1/templates/"+id+"/test-send", a.token(tenantA, "", "mailos_viewer"), send, 403, "FORBIDDEN")
+	// A publisher may test-send the draft they are about to publish.
+	a.expect("POST", "/api/v1/templates/"+id+"/test-send", a.token(tenantA, publisherID, "mailos_template_publisher"), send, 503, "SERVICE_UNAVAILABLE")
 	a.expect("POST", "/api/v1/templates/"+id+"/test-send", ed, send, 503, "SERVICE_UNAVAILABLE")
 	a.expect("POST", "/api/v1/templates/"+id+"/test-send", ed, send, 429, "RATE_LIMITED")
 }

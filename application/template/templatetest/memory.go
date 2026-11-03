@@ -334,3 +334,14 @@ func (d Domains) VerifiedFrom(_ context.Context, _, fromEmail string) (bool, err
 	_, host, ok := strings.Cut(fromEmail, "@")
 	return ok && slices.Contains(d.Verified, strings.ToLower(host)), nil
 }
+
+// Defaults is a fixed default sender (SenderDefaults).
+type Defaults struct {
+	Email, Name string
+	OK          bool
+}
+
+// DefaultSender returns the fixed sender.
+func (d Defaults) DefaultSender(context.Context, string, ...string) (string, string, bool, error) {
+	return d.Email, d.Name, d.OK, nil
+}

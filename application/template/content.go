@@ -289,13 +289,19 @@ const (
 )
 
 // CodeUnverifiedDomain is a from_email outside the tenant's verified
-// sending domains.
-const CodeUnverifiedDomain = "unverified_domain"
+// sending domains; CodeNoVerifiedSender is a test send that names no
+// sender when the tenant has no default sender to use.
+const (
+	CodeUnverifiedDomain = "unverified_domain"
+	CodeNoVerifiedSender = "no_verified_sender"
+)
 
 // TestSend renders the locale's saved draft and sends it as transactional
-// mail to one address, from a verified sending domain, and audits it.
+// mail to one address, and audits it. The sender is from_email, which must
+// be on a verified sending domain, or with none the default sender of the
+// application that sends the template's type (SenderDefaults).
 func (s *Service) TestSend(ctx context.Context, tenantID, templateID string, in TestSendInput) (messageID, status string, err error) {
-	if s.sender == nil || s.domains == nil {
+	if s.sender == nil || s.domains == nil || s.defaults == nil {
 		return "", "", apperrors.Unavailable("test sends are not available yet")
 	}
 	t, err := s.repo.Get(ctx, tenantID, templateID)
@@ -309,12 +315,9 @@ func (s *Service) TestSend(ctx context.Context, tenantID, templateID string, in 
 	if errs := validateTestSend(in); len(errs) > 0 {
 		return "", "", apperrors.Validation(errs...)
 	}
-	ok, err := s.domains.VerifiedFrom(ctx, tenantID, in.FromEmail)
+	from, fromName, err := s.testSender(ctx, tenantID, t, in)
 	if err != nil {
 		return "", "", err
-	}
-	if !ok {
-		return "", "", apperrors.Invalid("from_email", CodeUnverifiedDomain, "from_email must be on one of your verified sending domains")
 	}
 	d, saved, err := s.repo.Draft(ctx, t.ID, l)
 	if err != nil {
@@ -331,22 +334,54 @@ func (s *Service) TestSend(ctx context.Context, tenantID, templateID string, in 
 	if err != nil {
 		return "", "", err
 	}
-	messageID, status, err = s.sender.SendTest(ctx, TestMessage{TenantID: tenantID, FromName: strings.TrimSpace(in.FromName),
-		FromEmail: in.FromEmail, To: in.ToEmail, Subject: TestPrefix + out.Subject, HTML: out.HTML, Text: out.Text, Tags: []string{TestTag}})
+	messageID, status, err = s.sender.SendTest(ctx, TestMessage{TenantID: tenantID, FromName: fromName,
+		FromEmail: from, To: in.ToEmail, Subject: TestPrefix + out.Subject, HTML: out.HTML, Text: out.Text, Tags: []string{TestTag}})
 	if err != nil {
 		return "", "", err
 	}
 	if err := s.audit.Append(ctx, "template", t.ID, "template.test_sent", map[string]any{
-		"locale": string(l), "revision": d.Revision, "to_email": in.ToEmail, "from_email": in.FromEmail, "message_id": messageID,
+		"locale": string(l), "revision": d.Revision, "to_email": in.ToEmail, "from_email": from, "message_id": messageID,
 	}); err != nil {
 		return "", "", err
 	}
 	return messageID, status, nil
 }
 
+// testSender is a test send's sender address and name: from_email on a
+// verified sending domain, or the default sender for the template's type.
+// An empty address is the platform sender (the system application's).
+func (s *Service) testSender(ctx context.Context, tenantID string, t domain.Template, in TestSendInput) (email, name string, err error) {
+	name = strings.TrimSpace(in.FromName)
+	if in.FromEmail != "" {
+		ok, err := s.domains.VerifiedFrom(ctx, tenantID, in.FromEmail)
+		if err != nil {
+			return "", "", err
+		}
+		if !ok {
+			return "", "", apperrors.Invalid("from_email", CodeUnverifiedDomain, "The sender must be on one of your verified sending domains")
+		}
+		return in.FromEmail, name, nil
+	}
+	email, defName, ok, err := s.defaults.DefaultSender(ctx, tenantID, t.Topic, t.Slug)
+	if err != nil {
+		return "", "", err
+	}
+	if !ok {
+		return "", "", apperrors.Invalid("from_email", CodeNoVerifiedSender,
+			"There is no verified sender for this template: verify a sending domain, or enter a sender on one")
+	}
+	if name == "" {
+		name = defName
+	}
+	return email, name, nil
+}
+
 func validateTestSend(in TestSendInput) []apperrors.FieldError {
 	var errs []apperrors.FieldError
 	for _, f := range []struct{ field, val string }{{"to_email", in.ToEmail}, {"from_email", in.FromEmail}} {
+		if f.field == "from_email" && f.val == "" {
+			continue // the default sender
+		}
 		if a, err := mail.ParseAddress(f.val); err != nil || a.Address != f.val {
 			errs = append(errs, apperrors.FieldError{Field: f.field, Code: domain.CodeInvalidEmail, Message: f.field + " must be an email address"})
 		}
