@@ -150,6 +150,65 @@ func (r *fakeProviderRepo) Get(_ context.Context, _, id string) (appprovider.Sto
 	return r.rows[id], nil
 }
 
+func (r *fakeProviderRepo) SetLastTest(_ context.Context, _, id string, t domainprovider.LastTest) error {
+	s := r.rows[id]
+	s.Provider.LastTest = &t
+	r.rows[id] = s
+	return nil
+}
+
+// okTester passes every test.
+type okTester struct{}
+
+func (okTester) Test(context.Context, domainprovider.Provider, domainprovider.Credentials) domainprovider.Diagnosis {
+	return domainprovider.Diagnosis{OK: true, Kind: domainprovider.TestConnection, Steps: []domainprovider.Step{{Name: "auth", OK: true}}}
+}
+
+func (okTester) Send(context.Context, domainprovider.Provider, domainprovider.Credentials, domainmsg.Outgoing) domainprovider.Diagnosis {
+	return domainprovider.Diagnosis{OK: true, Kind: domainprovider.TestSend}
+}
+
+type nopRecorder struct{}
+
+func (nopRecorder) RecordProviderTest(context.Context, appprovider.TestMessage) error { return nil }
+
+func TestProviderSchemaAndTests(t *testing.T) {
+	repo := &fakeProviderRepo{rows: map[string]appprovider.Stored{}}
+	svc := appprovider.NewService(repo, prefixCipher{}, &recAudit{}, appprovider.Config{})
+	svc.SetTesting(okTester{}, nopRecorder{})
+	h := NewProviderHandler(svc)
+	viewer := engine(t, h, []access.Role{access.RoleViewer}, time.Hour, access.ACRPassword)
+	w := do(viewer, "GET", "/api/v1/providers/schema", nil)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"type":"msgraph"`) || strings.Contains(w.Body.String(), "None, plaintext (local and test only)") {
+		t.Fatalf("schema: %d %.300s", w.Code, w.Body)
+	}
+	repo.rows["p1"] = appprovider.Stored{Provider: domainprovider.Provider{ID: "p1", Name: "SG", Kind: domainprovider.KindSendGrid,
+		Settings: domainprovider.Settings{FromEmail: "noreply@bank.example"}}}
+	if w := do(viewer, "POST", "/api/v1/providers/p1/test-connection", map[string]any{}); w.Code != http.StatusForbidden {
+		t.Fatalf("viewer tested a provider: %d", w.Code)
+	}
+	// Testing a stored provider needs no step-up; testing a draft does.
+	admin := engine(t, h, []access.Role{access.RoleAdmin}, time.Hour, access.ACRMFA)
+	if w := do(admin, "POST", "/api/v1/providers/p1/test-connection", map[string]any{}); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"ok":true`) {
+		t.Fatalf("test: %d %s", w.Code, w.Body)
+	}
+	if w := do(admin, "POST", "/api/v1/providers/p1/send-test", map[string]any{"to_email": "ops@bank.example"}); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"message_id"`) {
+		t.Fatalf("send test: %d %s", w.Code, w.Body)
+	}
+	draft := map[string]any{"type": "sendgrid", "settings": map[string]any{}, "credentials": map[string]any{"api_key": "SG.draft-key"}}
+	if w := do(admin, "POST", "/api/v1/providers/test-connection", draft); w.Code != http.StatusForbidden {
+		t.Fatalf("draft tested without step-up: %d", w.Code)
+	}
+	fresh := engine(t, h, []access.Role{access.RoleAdmin}, time.Minute, access.ACRMFA)
+	if w := do(fresh, "POST", "/api/v1/providers/test-connection", draft); w.Code != http.StatusOK {
+		t.Fatalf("draft: %d %s", w.Code, w.Body)
+	}
+	draft["settings"] = map[string]any{"port": "587"}
+	if w := do(fresh, "POST", "/api/v1/providers/test-connection", draft); w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "settings.port") {
+		t.Fatalf("bad draft: %d %s", w.Code, w.Body)
+	}
+}
+
 type prefixCipher struct{}
 
 func (prefixCipher) Seal(_ context.Context, p []byte) (string, error) {
@@ -160,7 +219,7 @@ func (prefixCipher) Open(context.Context, string) ([]byte, error) { return []byt
 func TestProviderCredentialsNeverReturnedAndStepUp(t *testing.T) {
 	repo := &fakeProviderRepo{rows: map[string]appprovider.Stored{}}
 	h := NewProviderHandler(appprovider.NewService(repo, prefixCipher{}, &recAudit{}, appprovider.Config{}))
-	body := map[string]any{"name": "SG", "type": "sendgrid", "configuration": map[string]any{"api_key": "SG.very-secret-api-key-9876"}}
+	body := map[string]any{"name": "SG", "type": "sendgrid", "settings": map[string]any{}, "credentials": map[string]any{"api_key": "SG.very-secret-api-key-9876"}}
 	if w := do(engine(t, h, []access.Role{access.RoleAdmin}, time.Hour, access.ACRMFA), "POST", "/api/v1/providers", body); w.Code != http.StatusForbidden {
 		t.Fatalf("provider created without step-up: %d", w.Code)
 	}
@@ -172,7 +231,7 @@ func TestProviderCredentialsNeverReturnedAndStepUp(t *testing.T) {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 	for _, s := range repo.rows {
-		if s.Sealed != "km1.kid00000.sealed" || s.Provider.Settings != (domainprovider.Settings{}) {
+		if s.Sealed != "km1.kid00000.sealed" || s.Provider.Settings != (domainprovider.Settings{Region: domainprovider.RegionGlobal}) {
 			t.Fatalf("stored %+v", s)
 		}
 		w := do(engine(t, h, []access.Role{access.RoleViewer}, time.Hour, access.ACRPassword), "GET", "/api/v1/providers/"+s.Provider.ID, nil)
