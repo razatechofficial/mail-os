@@ -19,6 +19,7 @@ import (
 	appkm "github.com/razatechofficial/mail-os/application/keymanager"
 	appmessage "github.com/razatechofficial/mail-os/application/message"
 	appsendingdomain "github.com/razatechofficial/mail-os/application/sendingdomain"
+	"github.com/razatechofficial/mail-os/application/smtpcred"
 	apptemplate "github.com/razatechofficial/mail-os/application/template"
 	"github.com/razatechofficial/mail-os/application/tenant"
 	"github.com/razatechofficial/mail-os/config"
@@ -94,6 +95,8 @@ type Container struct {
 	// (SendTemplated, SendTest); SendingDomains answers VerifiedFrom.
 	Messages       *appmessage.Service
 	SendingDomains *appsendingdomain.Service
+	// SMTPCredentials are applications' SMTP usernames (smtp.go).
+	SMTPCredentials *smtpcred.Service
 
 	// Routes are the REST route sets; GRPCServices register on the gRPC
 	// server; Tasks register worker handlers and schedules; Consumers run
@@ -118,6 +121,7 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 		c.buildMessaging,
 		c.buildEvents,
 		c.buildMarketing,
+		c.buildSMTP,
 	} {
 		if err := build(ctx); err != nil {
 			c.Close()
