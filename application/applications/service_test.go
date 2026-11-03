@@ -292,6 +292,38 @@ func TestAuthorizeSendRefusesSenderOnUnverifiedDomain(t *testing.T) {
 	}
 }
 
+func TestDefaultSender(t *testing.T) {
+	e := newEnv()
+	ctx := context.Background()
+	if _, _, ok, err := e.svc.DefaultSender(ctx, tenantA, "iam.auth.login", "login"); ok || err != nil {
+		t.Fatalf("no applications: %v %v", ok, err)
+	}
+	if _, err := e.svc.SeedSystem(ctx, SystemSpec{ClientID: "mailos-iam", TenantID: tenantA, Name: "IAM", Topics: []string{"iam.*"}}); err != nil {
+		t.Fatal(err)
+	}
+	// The system application sends from the platform sender.
+	if email, _, ok, err := e.svc.DefaultSender(ctx, tenantA, "iam.auth.login", "login"); !ok || email != "" || err != nil {
+		t.Fatalf("system application: %q %v %v", email, ok, err)
+	}
+	if _, _, ok, _ := e.svc.DefaultSender(ctx, tenantB, "iam.auth.login"); ok {
+		t.Fatal("another tenant's system application")
+	}
+	// An application's verified default sender.
+	e.create(t, serverInput())
+	email, name, ok, err := e.svc.DefaultSender(ctx, tenantA, "", "welcome")
+	if !ok || email != "otp@bank.example" || name != "Bank" || err != nil {
+		t.Fatalf("application default: %q %q %v %v", email, name, ok, err)
+	}
+	if _, _, ok, _ := e.svc.DefaultSender(ctx, tenantA, "", "statement"); ok {
+		t.Fatal("a type no application may send")
+	}
+	// A default sender whose domain is no longer verified is not used.
+	e.svc.domains = fakeDomains{}
+	if _, _, ok, _ := e.svc.DefaultSender(ctx, tenantA, "", "welcome"); ok {
+		t.Fatal("unverified default sender")
+	}
+}
+
 func TestAuthorizeSendSandboxAndBroadcast(t *testing.T) {
 	e := newEnv()
 	in := serverInput()

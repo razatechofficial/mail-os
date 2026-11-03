@@ -229,6 +229,42 @@ func (s *Service) checkSender(ctx context.Context, a domain.Application, from st
 	return nil
 }
 
+// maxDefaultSenderApps bounds the applications DefaultSender looks at.
+const maxDefaultSenderApps = 500
+
+// DefaultSender is the sender a template test send uses when it names
+// none: the default sender of the tenant's active application allowed to
+// send one of keys (the template's topic and slug), when that address is
+// on a verified sending domain; otherwise, when the tenant's system
+// application may send it, the platform sender, reported as an empty
+// email with ok true. ok is false when the tenant has no such sender.
+func (s *Service) DefaultSender(ctx context.Context, tenantID string, keys ...string) (email, name string, ok bool, err error) {
+	list, _, err := s.repo.List(ctx, Filter{TenantID: tenantID, Status: string(domain.StatusActive), Limit: maxDefaultSenderApps})
+	if err != nil {
+		return "", "", false, err
+	}
+	platform, platformName := false, ""
+	for _, a := range list {
+		if !a.Active() || !a.AllowsType(keys...) {
+			continue
+		}
+		if a.DefaultFromEmail == "" {
+			if a.System && !platform {
+				platform, platformName = true, a.DefaultFromName
+			}
+			continue
+		}
+		verified, err := s.domains.VerifiedFrom(ctx, tenantID, domain.NormalizeAddress(a.DefaultFromEmail))
+		if err != nil {
+			return "", "", false, err
+		}
+		if verified {
+			return a.DefaultFromEmail, a.DefaultFromName, true, nil
+		}
+	}
+	return "", platformName, platform, nil
+}
+
 // AuthorizeSubmission checks an SMTP transaction's envelope before any
 // content is read (MAIL FROM): the application is active, may send written
 // content (raw), and from is one of its senders on a domain still
