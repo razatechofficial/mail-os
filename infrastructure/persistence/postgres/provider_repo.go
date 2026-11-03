@@ -33,15 +33,15 @@ func (r *ProviderRepository) SealedColumn() appkm.SealedColumn {
 }
 
 const providerCols = `id, org_id, name, type, configuration, priority, weight, daily_limit, is_active, has_credentials,
-	credential_hints, COALESCE(credentials_sealed, ''), COALESCE(created_by, ''), COALESCE(updated_by, ''), created_at, updated_at`
+	credential_hints, COALESCE(credentials_sealed, ''), COALESCE(created_by, ''), COALESCE(updated_by, ''), last_test, created_at, updated_at`
 
 func scanProvider(row pgx.Row) (app.Stored, error) {
 	var s app.Stored
 	p := &s.Provider
 	var kind string
-	var cfg, hints []byte
+	var cfg, hints, lastTest []byte
 	err := row.Scan(&p.ID, &p.OrgID, &p.Name, &kind, &cfg, &p.Priority, &p.Weight, &p.DailyLimit, &p.Active, &p.HasCredentials,
-		&hints, &s.Sealed, &p.CreatedBy, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt)
+		&hints, &s.Sealed, &p.CreatedBy, &p.UpdatedBy, &lastTest, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return s, err
 	}
@@ -49,6 +49,12 @@ func scanProvider(row pgx.Row) (app.Stored, error) {
 	_ = json.Unmarshal(cfg, &p.Settings)
 	if len(hints) > 0 && string(hints) != "{}" {
 		_ = json.Unmarshal(hints, &p.CredentialHints)
+	}
+	if len(lastTest) > 0 && string(lastTest) != "null" {
+		var t domain.LastTest
+		if json.Unmarshal(lastTest, &t) == nil {
+			p.LastTest = &t
+		}
 	}
 	return s, nil
 }
@@ -92,6 +98,20 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// SetLastTest records the outcome of the provider's last test.
+func (r *ProviderRepository) SetLastTest(ctx context.Context, tenantID, id string, t domain.LastTest) error {
+	raw, err := json.Marshal(t)
+	if err != nil {
+		return err
+	}
+	tag, err := QuerierFromContext(ctx, r.db).Exec(ctx, `UPDATE providers SET last_test = $3
+		WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`, id, tenantID, raw)
+	if err == nil && tag.RowsAffected() == 0 {
+		return notFound(pgx.ErrNoRows, "provider")
+	}
+	return err
 }
 
 // Delete soft-deletes a provider and drops its credentials.
