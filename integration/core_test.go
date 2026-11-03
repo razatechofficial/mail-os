@@ -65,8 +65,7 @@ func TestKeyManagerReplicas(t *testing.T) {
 	ctx := context.Background()
 	master := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
 	newSvc := func() *appkm.Service {
-		p, _ := infrakm.NewSoftwareProvider(master)
-		s := appkm.New(p, postgres.NewEncryptionKeyRepository(db), nil, appkm.Config{})
+		s := appkm.New(softwareKEKs(t, master, ""), postgres.NewEncryptionKeyRepository(db), nil, appkm.Config{})
 		if err := s.Bootstrap(ctx); err != nil {
 			t.Fatal(err)
 		}
@@ -100,5 +99,85 @@ func TestKeyManagerReplicas(t *testing.T) {
 		if active != 1 {
 			t.Fatalf("%s has %d active keys", ps.Purpose, active)
 		}
+	}
+}
+
+// softwareKEKs is the software KEK of master and, when set, the new one.
+func softwareKEKs(t *testing.T, master, newMaster string) *appkm.KEKs {
+	t.Helper()
+	cur, err := infrakm.NewSoftwareKEK("KEY_MANAGER_MASTER_KEY", master)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var next appkm.KEK
+	if newMaster != "" {
+		if next, err = infrakm.NewSoftwareKEK("KEY_MANAGER_NEW_MASTER_KEY", newMaster); err != nil {
+			t.Fatal(err)
+		}
+	}
+	keks, err := appkm.NewKEKs(cur, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return keks
+}
+
+// A KEK rotation against Postgres: every data key is re-wrapped under the
+// new master key (kek_id recorded), one rotation runs at a time, and the
+// new master key alone opens what was sealed before. It rotates back at the
+// end, so the other tests keep their master key.
+func TestKEKRotationPostgres(t *testing.T) {
+	db := connectPostgres(t)
+	ctx := context.Background()
+	repo := postgres.NewEncryptionKeyRepository(db)
+	oldKey := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
+	newKey := base64.StdEncoding.EncodeToString([]byte("fedcba9876543210fedcba9876543210"))
+	a := appkm.New(softwareKEKs(t, oldKey, ""), repo, nil, appkm.Config{})
+	if err := a.Bootstrap(ctx); err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := a.Seal(ctx, domainkm.PurposeWebhook, []byte("whsec_1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotate := func(from, to string) appkm.KEKRotationStatus {
+		t.Helper()
+		s := appkm.New(softwareKEKs(t, from, to), repo, nil, appkm.Config{KEKSettle: time.Nanosecond})
+		if err := s.Bootstrap(ctx); err != nil {
+			t.Fatal(err)
+		}
+		r, err := s.StartKEKRotation(ctx, "test", "integration")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.InsertKEKRotation(ctx, *r); err == nil {
+			t.Fatal("second running rotation stored")
+		}
+		if err := s.Tick(ctx); err != nil {
+			t.Fatal(err)
+		}
+		st, err := s.KEKStatus(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(st.WrappedBy) != 1 || st.WrappedBy[r.ToKEK] == 0 || st.History[0].State != domainkm.RotationCompleted {
+			t.Fatalf("status %+v", st)
+		}
+		return st.History[0]
+	}
+	rotate(oldKey, newKey)
+	promoted := appkm.New(softwareKEKs(t, newKey, ""), repo, nil, appkm.Config{})
+	if err := promoted.Bootstrap(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := promoted.Open(ctx, domainkm.PurposeWebhook, sealed); err != nil || string(got) != "whsec_1" {
+		t.Fatalf("open after rotation: %q %v", got, err)
+	}
+	if err := appkm.New(softwareKEKs(t, oldKey, ""), repo, nil, appkm.Config{}).Bootstrap(ctx); err == nil {
+		t.Fatal("the old master key alone still loads")
+	}
+	back := rotate(newKey, oldKey)
+	if back.Rewrapped == 0 || back.Remaining != 0 {
+		t.Fatalf("rotation back %+v", back)
 	}
 }

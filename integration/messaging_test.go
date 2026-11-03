@@ -28,7 +28,6 @@ import (
 	domainprovider "github.com/razatechofficial/mail-os/domain/provider"
 	domaintemplate "github.com/razatechofficial/mail-os/domain/template"
 	"github.com/razatechofficial/mail-os/infrastructure/audit"
-	infrakm "github.com/razatechofficial/mail-os/infrastructure/keymanager"
 	"github.com/razatechofficial/mail-os/infrastructure/mailer"
 	"github.com/razatechofficial/mail-os/infrastructure/persistence/postgres"
 	"github.com/razatechofficial/mail-os/infrastructure/render"
@@ -48,8 +47,7 @@ func newMsgEnv(t *testing.T) msgEnv {
 	db := connectPostgres(t)
 	ctx := context.Background()
 	master := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
-	p, _ := infrakm.NewSoftwareProvider(master)
-	keys := appkm.New(p, postgres.NewEncryptionKeyRepository(db), nil, appkm.Config{})
+	keys := appkm.New(softwareKEKs(t, master, ""), postgres.NewEncryptionKeyRepository(db), nil, appkm.Config{})
 	if err := keys.Bootstrap(ctx); err != nil {
 		t.Fatal(err)
 	}
