@@ -3058,7 +3058,7 @@
     },
     "/api/v1/templates/{id}/test-send": {
       "post": {
-        "description": "Renders the saved draft, subject prefixed [Test], from a verified sending domain. Audited; rate limited per user. Permission: `templates:edit`.",
+        "description": "Renders the saved draft, subject prefixed [Test]. from_email must be on a verified sending domain; without it the default sender of the application that sends the template's type is used (422 no_verified_sender when there is none). Audited; rate limited per user. Permission: `templates:test` (editors, publishers, admins).",
         "operationId": "post_templates_id_test_send",
         "parameters": [
           {
@@ -3084,7 +3084,7 @@
         "tags": [
           "templates"
         ],
-        "x-permission": "templates:edit"
+        "x-permission": "templates:test"
       }
     },
     "/api/v1/templates/{id}/versions": {
