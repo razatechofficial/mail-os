@@ -193,15 +193,8 @@ func (s *Service) authorizeSend(ctx context.Context, a domain.Application, ask A
 	case g.FromEmail == "" && !a.System:
 		return Grant{}, domain.ErrSenderRequired
 	case g.FromEmail != "":
-		if !a.AllowsSender(g.FromEmail) {
-			return Grant{}, domain.ErrSenderNotAllowed
-		}
-		ok, err := s.domains.VerifiedFrom(ctx, a.TenantID, g.FromEmail)
-		if err != nil {
+		if err := s.checkSender(ctx, a, g.FromEmail); err != nil {
 			return Grant{}, err
-		}
-		if !ok {
-			return Grant{}, domain.ErrSenderUnverified
 		}
 	}
 
@@ -218,6 +211,51 @@ func (s *Service) authorizeSend(ctx context.Context, a domain.Application, ask A
 		return Grant{}, err
 	}
 	return g, nil
+}
+
+// checkSender refuses an address that is not one of the application's
+// senders, or whose domain is no longer verified.
+func (s *Service) checkSender(ctx context.Context, a domain.Application, from string) error {
+	if !a.AllowsSender(from) {
+		return domain.ErrSenderNotAllowed
+	}
+	ok, err := s.domains.VerifiedFrom(ctx, a.TenantID, domain.NormalizeAddress(from))
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return domain.ErrSenderUnverified
+	}
+	return nil
+}
+
+// AuthorizeSubmission checks an SMTP transaction's envelope before any
+// content is read (MAIL FROM): the application is active, may send written
+// content (raw), and from is one of its senders on a domain still
+// verified. Nothing is counted against the limits: each message of the
+// transaction then goes through AuthorizeSend. A refusal is audited as
+// message.refused, like any other.
+func (s *Service) AuthorizeSubmission(ctx context.Context, applicationID, from string) error {
+	p, _ := access.FromContext(ctx)
+	a, err := s.repo.Get(ctx, p.TenantID, applicationID)
+	if err != nil {
+		return err
+	}
+	ask := Ask{Raw: true, FromEmail: from}
+	switch {
+	case !a.Active():
+		err = domain.ErrSuspended
+	case !a.AllowsRaw():
+		err = domain.ErrRawNotAllowed
+	case strings.TrimSpace(from) == "":
+		err = domain.ErrSenderRequired
+	default:
+		err = s.checkSender(ctx, a, from)
+	}
+	if err != nil {
+		return s.refuse(ctx, a, ask, err)
+	}
+	return nil
 }
 
 // take counts one message against the daily quota and the per-minute
