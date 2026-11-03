@@ -38,6 +38,8 @@ func init() {
 	bootstrap.Register("sealed provider, DKIM and webhook columns",
 		"SELECT p.credentials_sealed, d.dkim_private_key_sealed, d.dkim_selector, w.secret FROM providers p, sending_domains d, webhooks w LIMIT 0",
 		true, "provider credentials, DKIM keys and webhook secrets cannot be sealed")
+	bootstrap.Register("provider last test (20261104100000)", "SELECT last_test FROM providers LIMIT 0", true,
+		"providers cannot be listed or tested")
 	bootstrap.Register("applications and their scope (20261031150000-150200)",
 		"SELECT a.client_id, m.application_id, m.sandbox, m.stream, e.application_id, w.application_id, s.application_id, k.scope "+
 			"FROM applications a, messages m, inbound_events e, webhooks w, suppressions s, idempotency_keys k LIMIT 0",
@@ -118,8 +120,9 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 		}
 	}
 
-	router := mailer.NewRouter(providerSource{providers}, c.Platform, mailer.Options{Timeout: cfg.Worker.SendTimeout,
-		AllowPlaintext: plaintext, AllowPrivateNetworks: plaintext, AllowLoopback: plaintext})
+	sendOpts := mailer.Options{Timeout: cfg.Worker.SendTimeout,
+		AllowPlaintext: plaintext, AllowPrivateNetworks: plaintext, AllowLoopback: plaintext}
+	router := mailer.NewRouter(providerSource{providers}, c.Platform, sendOpts)
 	deps := appmessage.Deps{Applications: c.Apps, Repo: postgres.NewMessageRepository(c.DB), Queue: queue, Suppressions: suppressions, Tenants: c.Tenants,
 		Render: renderContent, Sender: routerSender{router}, Signer: c.SendingDomains, Webhooks: webhooks, Stats: stats, Audit: c.Audit}
 	if c.Templates != nil {
@@ -132,6 +135,7 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 	if c.Templates != nil {
 		c.Templates.SetTestSend(c.Messages, c.SendingDomains)
 	}
+	providers.SetTesting(mailer.Tester{Options: sendOpts}, c.Messages)
 	// Events (buildEvents) and campaigns (buildMarketing) send through the
 	// message use case; both builders run after this one.
 	c.EventDispatcher = c.Messages

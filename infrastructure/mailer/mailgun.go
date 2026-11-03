@@ -13,10 +13,11 @@ import (
 
 // Mailgun sends through the Mailgun Messages API.
 type Mailgun struct {
-	api  *httpAPI
-	url  string
-	key  string
-	from message.Address
+	api    *httpAPI
+	domain string
+	url    string
+	key    string
+	from   message.Address
 }
 
 // mailgunMaxTags is Mailgun's limit of o:tag values per message.
@@ -32,7 +33,8 @@ func NewMailgun(s provider.Settings, c provider.Credentials, opts Options) (*Mai
 	if err != nil {
 		return nil, err
 	}
-	return &Mailgun{api: newHTTPAPI(provider.KindMailgun, opts), url: base + "/v3/" + url.PathEscape(s.Domain) + "/messages",
+	return &Mailgun{api: newHTTPAPI(provider.KindMailgun, opts), domain: base + "/v3/domains/" + url.PathEscape(s.Domain),
+		url: base + "/v3/" + url.PathEscape(s.Domain) + "/messages",
 		key: c.APIKey, from: message.Address{Name: s.FromName, Email: s.FromEmail}}, nil
 }
 
@@ -89,6 +91,32 @@ func (m *Mailgun) Send(ctx context.Context, out message.Outgoing) (Result, error
 		return Result{}, message.NewSendError(string(provider.KindMailgun), message.ReasonUnavailable, http.StatusOK, "Mailgun returned no message id")
 	}
 	return Result{ProviderMessageID: strings.Trim(res.ID, "<>")}, nil
+}
+
+// Check reads the sending domain. A domain sending key may not read it
+// (401/403): the key is then proven only by a test send.
+func (m *Mailgun) Check(ctx context.Context, p *Probe) error {
+	return p.Step("api", "Read the sending domain from the Mailgun API", func() (string, error) {
+		data, _, err := m.api.post(ctx, request{method: http.MethodGet, url: m.domain,
+			prepare: func(r *http.Request) error {
+				r.SetBasicAuth("api", m.key)
+				return nil
+			},
+			classify: classifyMailgun})
+		if err != nil {
+			return "", err
+		}
+		var res struct {
+			Domain struct {
+				State string `json:"state"`
+			} `json:"domain"`
+		}
+		_ = json.Unmarshal(data, &res)
+		if res.Domain.State != "" && res.Domain.State != "active" {
+			p.Warn("Mailgun reports the domain as " + res.Domain.State + ": finish its DNS verification before sending.")
+		}
+		return "API key accepted; domain " + res.Domain.State, nil
+	})
 }
 
 // classifyMailgun reads {"message": "..."}: a 400 naming the to

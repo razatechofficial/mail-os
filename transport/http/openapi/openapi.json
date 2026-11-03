@@ -2056,7 +2056,7 @@
           "providers"
         ],
         "x-permission": "providers:read",
-        "description": "Credentials are never returned; has_credentials and credential_hints only. Permission: `providers:read`."
+        "description": "Each provider's type, non-secret settings, has_credentials, credential_hints (a key per stored secret: its hint, or \"\") and last_test. Credentials are never returned. Permission: `providers:read`."
       },
       "post": {
         "operationId": "post_providers",
@@ -2075,8 +2075,51 @@
           "providers"
         ],
         "x-permission": "providers:manage",
-        "description": "Credentials in configuration (password, access_key_id, secret_access_key, api_key, server_token) are sealed with the provider key; audited with [REDACTED] secrets. Permission: `providers:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "description": "Body: name, type, settings (the type's non-secret fields from GET /providers/schema), credentials (its secret fields), priority, weight, daily_limit, is_active. Credentials are sealed with the provider key and audited as [REDACTED]; secrets the settings do not use are dropped. 422 details name settings.<key> or credentials.<key>. Permission: `providers:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
         "x-step-up": true
+      }
+    },
+    "/api/v1/providers/schema": {
+      "get": {
+        "operationId": "get_providers_schema",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Provider form schema",
+        "tags": [
+          "providers"
+        ],
+        "x-permission": "providers:read",
+        "description": "Every provider type with its label, description, category (smtp or api), SPF include, field groups, fields (key, label, type, required, default, help, placeholder, secret, group, options, validation, visible_when, accept) and presets, plus the priority, weight and daily limit explanations. Secret fields go in credentials. Permission: `providers:read`."
+      }
+    },
+    "/api/v1/providers/test-connection": {
+      "post": {
+        "operationId": "post_providers_test_connection",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Test unsaved provider settings",
+        "tags": [
+          "providers"
+        ],
+        "x-permission": "providers:manage",
+        "x-step-up": true,
+        "description": "Body: type, settings, credentials and, when editing, id (the stored secrets fill blank ones of the same type). Validates like a save, then connects and authenticates without sending mail, and returns a diagnosis: ok, steps, the failed step, error_class, detail, hint and warnings. A failed test is 200 with ok false. Audited; not kept on a provider. Permission: `providers:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge)."
       }
     },
     "/api/v1/providers/{id}": {
@@ -2166,8 +2209,70 @@
           "providers"
         ],
         "x-permission": "providers:manage",
-        "description": "Audited with before and after; secrets redacted. Permission: `providers:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
+        "description": "Settings replace the stored ones; an omitted or empty credential keeps the stored secret. The type cannot change (422 on type). Audited with before and after; secrets redacted. Permission: `providers:manage`. Needs step-up (403 STEP_UP_REQUIRED with an RFC 9470 challenge).",
         "x-step-up": true
+      }
+    },
+    "/api/v1/providers/{id}/send-test": {
+      "post": {
+        "operationId": "post_providers_id_send_test",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Send provider test message",
+        "tags": [
+          "providers"
+        ],
+        "x-permission": "providers:test",
+        "description": "Body: to_email. Sends a fixed test message from the provider's default sender through this provider only (no failover), records it as a message tagged test, keeps the outcome as last_test and audits it. Returns a diagnosis with message_id and provider_message_id. 422 when to_email is not one address or the provider has no default sender. Permission: `providers:test`."
+      }
+    },
+    "/api/v1/providers/{id}/test-connection": {
+      "post": {
+        "operationId": "post_providers_id_test_connection",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Test provider connection",
+        "tags": [
+          "providers"
+        ],
+        "x-permission": "providers:test",
+        "description": "Connects to the stored provider, negotiates TLS and authenticates (an API provider makes a harmless authenticated call) without sending mail. Returns a diagnosis (200 with ok false on failure), keeps it as the provider's last_test and audits it. Permission: `providers:test`."
       }
     },
     "/api/v1/sending-domains": {

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 // signed with SigV4.
 type SES struct {
 	api    *httpAPI
+	base   string
 	url    string
 	region string
 	creds  aws.Credentials
@@ -39,7 +41,7 @@ func NewSES(s provider.Settings, c provider.Credentials, opts Options) (*SES, er
 		return nil, err
 	}
 	return &SES{
-		api: newHTTPAPI(provider.KindSES, opts), url: base + "/v2/email/outbound-emails", region: s.Region,
+		api: newHTTPAPI(provider.KindSES, opts), base: base, url: base + "/v2/email/outbound-emails", region: s.Region,
 		creds:  aws.Credentials{AccessKeyID: c.AccessKeyID, SecretAccessKey: c.SecretAccessKey, Source: "mailos"},
 		cfgSet: s.ConfigurationSet, from: message.Address{Name: s.FromName, Email: s.FromEmail}, signer: v4.NewSigner(),
 	}, nil
@@ -146,6 +148,47 @@ func (s *SES) Send(ctx context.Context, out message.Outgoing) (Result, error) {
 		return Result{}, message.NewSendError(string(provider.KindSES), message.ReasonUnavailable, http.StatusOK, "SES returned no message id")
 	}
 	return Result{ProviderMessageID: res.MessageID}, nil
+}
+
+// emptySHA256 is the payload hash of a request without a body.
+const emptySHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+// Check calls GetAccount: it proves the keys and reports whether the
+// account may send and is out of the sandbox. A key without
+// ses:GetAccount is refused after its signature was accepted, which still
+// proves it.
+func (s *SES) Check(ctx context.Context, p *Probe) error {
+	return p.Step("api", "Authenticate to Amazon SES in "+s.region, func() (string, error) {
+		data, _, err := s.api.post(ctx, request{
+			method: http.MethodGet, url: s.base + "/v2/email/account",
+			prepare: func(r *http.Request) error {
+				return s.signer.SignHTTP(r.Context(), s.creds, r, emptySHA256, "ses", s.region, time.Now())
+			},
+			classify: classifySES,
+		})
+		if se, ok := message.AsSendError(err); ok && strings.HasPrefix(se.Detail, "AccessDeniedException") {
+			p.Warn("The keys lack ses:GetAccount, so only their signature was checked. Sending needs ses:SendEmail.")
+			return "access keys accepted", nil
+		}
+		if err != nil {
+			return "", err
+		}
+		var acct struct {
+			SendingEnabled          bool `json:"SendingEnabled"`
+			ProductionAccessEnabled bool `json:"ProductionAccessEnabled"`
+			SendQuota               struct {
+				Max24HourSend float64 `json:"Max24HourSend"`
+			} `json:"SendQuota"`
+		}
+		_ = json.Unmarshal(data, &acct)
+		if !acct.SendingEnabled {
+			return "", message.NewSendError(string(provider.KindSES), message.ReasonConfig, http.StatusOK, "sending is paused for this SES account")
+		}
+		if !acct.ProductionAccessEnabled {
+			p.Warn("The SES account is in the sandbox: it can send only to verified addresses. Request production access in the SES console.")
+		}
+		return "access keys accepted; daily quota " + strconv.FormatFloat(acct.SendQuota.Max24HourSend, 'f', 0, 64), nil
+	})
 }
 
 // classifySES refines the status from the error type (restJson1:

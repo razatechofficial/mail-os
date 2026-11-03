@@ -17,10 +17,23 @@ func New(p provider.Provider, c provider.Credentials, opts Options) (Sender, err
 	s := p.Settings
 	switch p.Kind {
 	case provider.KindSMTP:
-		return NewSMTP(SMTPConfig{
-			Host: s.Host, Port: s.Port, TLSMode: s.TLSMode, Username: s.Username, Password: c.Password,
-			From: message.Address{Name: s.FromName, Email: s.FromEmail},
-		}, opts)
+		return NewSMTPProvider(s, c, opts)
+	case provider.KindMSGraph:
+		return NewMSGraph(s, c, opts)
+	case provider.KindGmail:
+		return NewGmail(s, c, opts)
+	case provider.KindACS:
+		return NewACS(s, c, opts)
+	case provider.KindSparkPost:
+		return NewSparkPost(s, c, opts)
+	case provider.KindBrevo:
+		return NewBrevo(s, c, opts)
+	case provider.KindMailjet:
+		return NewMailjet(s, c, opts)
+	case provider.KindMandrill:
+		return NewMandrill(s, c, opts)
+	case provider.KindResend:
+		return NewResend(s, c, opts)
 	case provider.KindSES:
 		return NewSES(s, c, opts)
 	case provider.KindSendGrid:

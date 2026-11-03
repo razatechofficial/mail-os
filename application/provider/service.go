@@ -9,7 +9,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"strings"
 	"time"
 
 	appkm "github.com/razatechofficial/mail-os/application/keymanager"
@@ -49,6 +48,8 @@ type Repository interface {
 	Legacy(ctx context.Context) ([]LegacyRow, error)
 	ReplaceLegacy(ctx context.Context, id string, settings domain.Settings, sealed string, hints domain.Hints) error
 	WithLock(ctx context.Context, fn func(ctx context.Context) error) (bool, error)
+	// SetLastTest records the outcome of a provider's last test.
+	SetLastTest(ctx context.Context, tenantID, id string, t domain.LastTest) error
 }
 
 // Auditor records changes with secrets redacted.
@@ -64,11 +65,13 @@ type Config struct {
 
 // Service is the provider use case.
 type Service struct {
-	repo   Repository
-	cipher appkm.Cipher
-	audit  Auditor
-	cfg    Config
-	now    func() time.Time
+	repo     Repository
+	cipher   appkm.Cipher
+	audit    Auditor
+	cfg      Config
+	tester   Tester
+	recorder TestRecorder
+	now      func() time.Time
 }
 
 // NewService builds the service. cipher is the key manager's provider
@@ -92,10 +95,11 @@ type Input struct {
 }
 
 // Patch changes a provider; nil fields are kept. Credentials are merged:
-// a blank secret keeps the stored one, unless the kind changes.
+// a blank secret keeps the stored one.
 type Patch struct {
+	// Kind, when set, must be the stored kind: a provider's kind is fixed.
+	Kind        domain.Kind
 	Name        *string
-	Kind        *domain.Kind
 	Settings    *domain.Settings
 	Credentials *domain.Credentials
 	Priority    *int
@@ -120,24 +124,25 @@ func fingerprint(c domain.Credentials) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-func (s *Service) validate(p *domain.Provider, c domain.Credentials) error {
+// validate normalizes p and checks it with credentials c, after dropping
+// the secrets its settings no longer use (a password after switching to
+// OAuth), and returns the credentials to keep.
+func (s *Service) validate(p *domain.Provider, c domain.Credentials) (domain.Credentials, error) {
 	p.Normalize()
 	var details []apperrors.FieldError
 	if err := p.Validate(s.cfg.AllowPlaintext); err != nil {
 		details = append(details, apperrors.DetailsOf(err)...)
 	}
 	if p.Kind.Valid() {
-		if err := domain.ValidateCredentials(p.Kind, c); err != nil {
+		c = domain.PruneCredentials(p.Kind, p.Settings, c)
+		if err := domain.ValidateCredentials(p.Kind, p.Settings, c); err != nil {
 			details = append(details, apperrors.DetailsOf(err)...)
 		}
 	}
-	if c.Password != "" && p.Settings.Username == "" {
-		details = append(details, apperrors.FieldError{Field: "settings.username", Code: "required", Message: "an SMTP password needs a username"})
-	}
 	if len(details) > 0 {
-		return apperrors.Validation(details...)
+		return c, apperrors.Validation(details...)
 	}
-	return nil
+	return c, nil
 }
 
 func (s *Service) seal(ctx context.Context, c domain.Credentials) (string, error) {
@@ -178,19 +183,20 @@ func (s *Service) Create(ctx context.Context, tenantID string, in Input, actor s
 	if in.Active != nil {
 		p.Active = *in.Active
 	}
-	if err := s.validate(&p, in.Credentials); err != nil {
-		return domain.Provider{}, err
-	}
-	sealed, err := s.seal(ctx, in.Credentials)
+	creds, err := s.validate(&p, in.Credentials)
 	if err != nil {
 		return domain.Provider{}, err
 	}
-	p.SetCredentials(in.Credentials)
+	sealed, err := s.seal(ctx, creds)
+	if err != nil {
+		return domain.Provider{}, err
+	}
+	p.SetCredentials(creds)
 	if err := s.repo.Create(ctx, Stored{Provider: p, Sealed: sealed}); err != nil {
 		return domain.Provider{}, err
 	}
 	if err := s.audit.Change(ctx, "provider", p.ID, "provider.created", nil,
-		record{View: p.View(), Credentials: fingerprint(in.Credentials)}, map[string]any{"kind": string(p.Kind)}); err != nil {
+		record{View: p.View(), Credentials: fingerprint(creds)}, map[string]any{"kind": string(p.Kind)}); err != nil {
 		return domain.Provider{}, err
 	}
 	return p, nil
@@ -219,12 +225,11 @@ func (s *Service) Update(ctx context.Context, tenantID, id string, in Patch, act
 		return domain.Provider{}, err
 	}
 	p := st.Provider
-	kindChanged := in.Kind != nil && *in.Kind != p.Kind
+	if in.Kind != "" && in.Kind != p.Kind {
+		return domain.Provider{}, apperrors.Invalid("type", "immutable", "a provider's type cannot change: add a new provider instead")
+	}
 	if in.Name != nil {
 		p.Name = *in.Name
-	}
-	if in.Kind != nil {
-		p.Kind = *in.Kind
 	}
 	if in.Settings != nil {
 		p.Settings = *in.Settings
@@ -242,15 +247,11 @@ func (s *Service) Update(ctx context.Context, tenantID, id string, in Patch, act
 		p.Active = *in.Active
 	}
 	creds := stored
-	switch {
-	case kindChanged && in.Credentials != nil:
-		creds = *in.Credentials
-	case kindChanged:
-		creds = domain.Credentials{}
-	case in.Credentials != nil:
+	if in.Credentials != nil {
 		creds = stored.Merge(*in.Credentials)
 	}
-	if err := s.validate(&p, creds); err != nil {
+	creds, err = s.validate(&p, creds)
+	if err != nil {
 		return domain.Provider{}, err
 	}
 	var sealed *string
@@ -414,30 +415,4 @@ func (s *Service) Bootstrap(ctx context.Context) (int, error) {
 		return nil
 	})
 	return n, err
-}
-
-// SplitConfiguration separates the console's single configuration map
-// into settings and credentials (the secret keys of domain.Credentials).
-func SplitConfiguration(cfg map[string]any) (domain.Settings, domain.Credentials, error) {
-	secrets := map[string]any{}
-	rest := map[string]any{}
-	for k, v := range cfg {
-		switch strings.ToLower(k) {
-		case "password", "access_key_id", "secret_access_key", "api_key", "server_token":
-			secrets[strings.ToLower(k)] = v
-		default:
-			rest[k] = v
-		}
-	}
-	var s domain.Settings
-	var c domain.Credentials
-	raw, _ := json.Marshal(rest)
-	if err := json.Unmarshal(raw, &s); err != nil {
-		return s, c, apperrors.Invalid("configuration", "invalid", "configuration has a value of the wrong type")
-	}
-	raw, _ = json.Marshal(secrets)
-	if err := json.Unmarshal(raw, &c); err != nil {
-		return s, c, apperrors.Invalid("configuration", "invalid", "credentials must be strings")
-	}
-	return s, c, nil
 }
