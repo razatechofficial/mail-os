@@ -166,11 +166,12 @@ func (c *Container) buildInfrastructure(ctx context.Context) error {
 		c.closers = append(c.closers, c.AuditStream.Close)
 	}
 
-	provider, err := infrakm.NewSoftwareProvider(cfg.KeyManager.MasterKey)
+	keks, closeKEKs, err := infrakm.Open(ctx, cfg.KeyManager)
 	if err != nil {
-		return err
+		return fmt.Errorf("key manager: %w", err)
 	}
-	c.Keys = appkm.New(provider, postgres.NewEncryptionKeyRepository(db), c.Audit, appkm.Config{
+	c.closers = append(c.closers, closeKEKs)
+	c.Keys = appkm.New(keks, postgres.NewEncryptionKeyRepository(db), c.Audit, appkm.Config{
 		RotationPeriod: cfg.KeyManager.EncryptionRotationPeriod, ReencryptBatch: cfg.KeyManager.ReencryptBatch,
 	})
 
