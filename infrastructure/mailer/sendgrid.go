@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/razatechofficial/mail-os/domain/message"
@@ -13,6 +14,7 @@ import (
 // SendGrid sends through the SendGrid v3 Mail Send API.
 type SendGrid struct {
 	api  *httpAPI
+	base string
 	url  string
 	key  string
 	from message.Address
@@ -26,14 +28,14 @@ func NewSendGrid(s provider.Settings, c provider.Credentials, opts Options) (*Se
 		return nil, message.NewSendError(string(provider.KindSendGrid), message.ReasonConfig, 0, "the SendGrid API key is required")
 	}
 	def := "https://api.sendgrid.com"
-	if s.Region == provider.SendGridEU {
+	if s.Region == provider.RegionEU {
 		def = "https://api.eu.sendgrid.com"
 	}
 	base, err := opts.baseURL(provider.KindSendGrid, def)
 	if err != nil {
 		return nil, err
 	}
-	return &SendGrid{api: newHTTPAPI(provider.KindSendGrid, opts), url: base + "/v3/mail/send", key: c.APIKey,
+	return &SendGrid{api: newHTTPAPI(provider.KindSendGrid, opts), base: base, url: base + "/v3/mail/send", key: c.APIKey,
 		from: message.Address{Name: s.FromName, Email: s.FromEmail}}, nil
 }
 
@@ -108,6 +110,28 @@ func (s *SendGrid) Send(ctx context.Context, out message.Outgoing) (Result, erro
 		return Result{}, err
 	}
 	return Result{ProviderMessageID: h.Get("X-Message-Id")}, nil
+}
+
+// Check lists the key's scopes and fails when mail.send is not one.
+func (s *SendGrid) Check(ctx context.Context, p *Probe) error {
+	return p.Step("api", "Authenticate to the SendGrid API", func() (string, error) {
+		data, _, err := s.api.post(ctx, request{method: http.MethodGet, url: s.base + "/v3/scopes",
+			prepare: func(r *http.Request) error {
+				r.Header.Set("Authorization", "Bearer "+s.key)
+				return nil
+			},
+			classify: classifySendGrid})
+		if err != nil {
+			return "", err
+		}
+		var res struct {
+			Scopes []string `json:"scopes"`
+		}
+		if json.Unmarshal(data, &res) == nil && !slices.Contains(res.Scopes, "mail.send") {
+			return "", message.NewSendError(string(provider.KindSendGrid), message.ReasonAuth, http.StatusOK, "the API key does not have Mail Send access")
+		}
+		return "API key accepted with Mail Send access", nil
+	})
 }
 
 // classifySendGrid reads {"errors":[{"message","field"}]}: an error on a
