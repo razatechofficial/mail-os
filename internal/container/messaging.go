@@ -38,7 +38,7 @@ func init() {
 	bootstrap.Register("sealed provider, DKIM and webhook columns",
 		"SELECT p.credentials_sealed, d.dkim_private_key_sealed, d.dkim_selector, w.secret FROM providers p, sending_domains d, webhooks w LIMIT 0",
 		true, "provider credentials, DKIM keys and webhook secrets cannot be sealed")
-	bootstrap.Register("provider last test (20261104100000)", "SELECT last_test FROM providers LIMIT 0", true,
+	bootstrap.Register("provider last test (20261104110000)", "SELECT last_test FROM providers LIMIT 0", true,
 		"providers cannot be listed or tested")
 	bootstrap.Register("applications and their scope (20261031150000-150200)",
 		"SELECT a.client_id, m.application_id, m.sandbox, m.stream, e.application_id, w.application_id, s.application_id, k.scope "+
