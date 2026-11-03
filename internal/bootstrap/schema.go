@@ -39,8 +39,8 @@ var schemaProbes = []schemaProbe{
 		consequence: "no change can be audited, so every write is refused",
 	},
 	{
-		what:        "encryption_keys",
-		query:       "SELECT kid, purpose, state, key_ref FROM encryption_keys LIMIT 0",
+		what:        "encryption_keys and kek_rotations",
+		query:       "SELECT k.kid, k.purpose, k.state, k.kek_id, k.key_ref, r.to_kek_id FROM encryption_keys k, kek_rotations r LIMIT 0",
 		required:    true,
 		consequence: "credentials, DKIM keys and webhook secrets cannot be sealed or opened",
 	},
