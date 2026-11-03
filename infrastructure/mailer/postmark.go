@@ -13,6 +13,7 @@ import (
 // Postmark sends through the Postmark Email API.
 type Postmark struct {
 	api    *httpAPI
+	base   string
 	url    string
 	token  string
 	stream string
@@ -29,7 +30,7 @@ func NewPostmark(s provider.Settings, c provider.Credentials, opts Options) (*Po
 	if err != nil {
 		return nil, err
 	}
-	return &Postmark{api: newHTTPAPI(provider.KindPostmark, opts), url: base + "/email", token: c.ServerToken,
+	return &Postmark{api: newHTTPAPI(provider.KindPostmark, opts), base: base, url: base + "/email", token: c.ServerToken,
 		stream: s.PostmarkStream(), from: message.Address{Name: s.FromName, Email: s.FromEmail}}, nil
 }
 
@@ -111,6 +112,26 @@ func (p *Postmark) Send(ctx context.Context, out message.Outgoing) (Result, erro
 		return Result{}, message.NewSendError(string(provider.KindPostmark), message.ReasonUnavailable, http.StatusOK, "Postmark returned no message id")
 	}
 	return Result{ProviderMessageID: res.MessageID}, nil
+}
+
+// Check reads the server the token belongs to.
+func (p *Postmark) Check(ctx context.Context, probe *Probe) error {
+	return probe.Step("api", "Authenticate to the Postmark API", func() (string, error) {
+		data, _, err := p.api.post(ctx, request{method: http.MethodGet, url: p.base + "/server",
+			prepare: func(r *http.Request) error {
+				r.Header.Set("X-Postmark-Server-Token", p.token)
+				return nil
+			},
+			classify: classifyPostmark})
+		if err != nil {
+			return "", err
+		}
+		var res struct {
+			Name string `json:"Name"`
+		}
+		_ = json.Unmarshal(data, &res)
+		return "server token accepted for the server " + res.Name, nil
+	})
 }
 
 // classifyPostmark reads {"ErrorCode", "Message"} (sent with 401 and 422).
