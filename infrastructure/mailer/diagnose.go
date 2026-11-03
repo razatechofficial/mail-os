@@ -54,9 +54,11 @@ func errorDetail(err error) string {
 	return message.SafeDetail(err)
 }
 
+func now() time.Time { return time.Now().UTC() }
+
 // Test runs s's connection test.
 func Test(ctx context.Context, kind provider.Kind, s Sender) provider.Diagnosis {
-	d := provider.Diagnosis{Kind: provider.TestConnection, At: time.Now().UTC()}
+	d := provider.Diagnosis{Kind: provider.TestConnection, At: now()}
 	p := &Probe{}
 	c, ok := s.(Checker)
 	if !ok {
@@ -67,7 +69,7 @@ func Test(ctx context.Context, kind provider.Kind, s Sender) provider.Diagnosis 
 
 // TestSend sends out through s and reports it as a diagnosis.
 func TestSend(ctx context.Context, kind provider.Kind, s Sender, out message.Outgoing) provider.Diagnosis {
-	d := provider.Diagnosis{Kind: provider.TestSend, At: time.Now().UTC()}
+	d := provider.Diagnosis{Kind: provider.TestSend, At: now()}
 	p := &Probe{}
 	var res Result
 	err := p.Step("send", "Send the test message to "+out.To.Email, func() (string, error) {
