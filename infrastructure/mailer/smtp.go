@@ -73,7 +73,9 @@ func NewSMTP(cfg SMTPConfig, opts Options) (*SMTP, error) {
 
 // NewSMTPProvider returns the sender of a tenant's SMTP provider.
 func NewSMTPProvider(s provider.Settings, c provider.Credentials, opts Options) (*SMTP, error) {
-	invalid := func(d string) error { return message.NewSendError(string(provider.KindSMTP), message.ReasonConfig, 0, d) }
+	invalid := func(d string) error {
+		return message.NewSendError(string(provider.KindSMTP), message.ReasonConfig, 0, d)
+	}
 	cfg := SMTPConfig{
 		Host: s.Host, Port: s.Port, TLSMode: s.TLSMode, Auth: s.AuthMechanism, Username: s.Username, Password: c.Password,
 		CACertPEM: s.CACert, HELOName: s.HELOName, From: message.Address{Name: s.FromName, Email: s.FromEmail},

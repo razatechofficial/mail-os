@@ -32,7 +32,9 @@ type ACS struct {
 // be an ACS host, so the key is only ever used with Azure.
 func NewACS(s provider.Settings, c provider.Credentials, opts Options) (*ACS, error) {
 	opts = opts.withDefaults()
-	invalid := func(d string) error { return message.NewSendError(string(provider.KindACS), message.ReasonConfig, 0, d) }
+	invalid := func(d string) error {
+		return message.NewSendError(string(provider.KindACS), message.ReasonConfig, 0, d)
+	}
 	if !provider.ACSEndpointAllowed(s.Endpoint) {
 		return nil, invalid("the endpoint must be an Azure Communication Services endpoint")
 	}

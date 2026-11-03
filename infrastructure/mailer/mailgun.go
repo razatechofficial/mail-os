@@ -16,8 +16,8 @@ type Mailgun struct {
 	api    *httpAPI
 	domain string
 	url    string
-	key  string
-	from message.Address
+	key    string
+	from   message.Address
 }
 
 // mailgunMaxTags is Mailgun's limit of o:tag values per message.
