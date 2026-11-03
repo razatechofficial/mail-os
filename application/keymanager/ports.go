@@ -14,16 +14,19 @@ import (
 	domain "github.com/razatechofficial/mail-os/domain/keymanager"
 )
 
-// Provider wraps data keys under the master key (software) or an HSM.
-type Provider interface {
-	Name() string
-	// NewDataKey creates a random AES-256 key and returns it wrapped.
-	NewDataKey(ctx context.Context, aad []byte) ([]byte, error)
-	// UnwrapDataKey returns the raw key of a wrapped reference.
-	UnwrapDataKey(ctx context.Context, ref, aad []byte) ([]byte, error)
+// KEK is a key-encryption key: it wraps data keys and never leaves where
+// it lives (a master key from Vault, an HSM, a cloud KMS).
+type KEK interface {
+	// ID names the KEK (domain.KEKID); it is stored beside each data key
+	// the KEK wraps.
+	ID() string
+	// Wrap encrypts a data key, bound to aad.
+	Wrap(ctx context.Context, dek, aad []byte) ([]byte, error)
+	// Unwrap returns the data key Wrap encrypted with the same aad.
+	Unwrap(ctx context.Context, wrapped, aad []byte) ([]byte, error)
 }
 
-// Store persists keys.
+// Store persists keys and KEK rotations.
 type Store interface {
 	ListKeys(ctx context.Context) ([]domain.EncryptionKey, error)
 	// InsertKey fails with a unique violation when another replica already
@@ -31,9 +34,19 @@ type Store interface {
 	InsertKey(ctx context.Context, k domain.EncryptionKey) error
 	RetireKey(ctx context.Context, id uuid.UUID, at time.Time) error
 	DeleteKey(ctx context.Context, id uuid.UUID) error
+	// ReplaceKeyRef stores a data key re-wrapped under kekID if the row
+	// still holds oldRef; false means it changed or was deleted meanwhile.
+	ReplaceKeyRef(ctx context.Context, id uuid.UUID, oldRef, newRef []byte, kekID string) (bool, error)
 	// WithLock runs fn under a cluster-wide advisory lock; ran is false when
 	// another replica holds it.
 	WithLock(ctx context.Context, fn func(ctx context.Context) error) (ran bool, err error)
+
+	// LatestKEKRotation returns the newest KEK rotation, nil when none ran.
+	LatestKEKRotation(ctx context.Context) (*domain.KEKRotation, error)
+	ListKEKRotations(ctx context.Context, limit int) ([]domain.KEKRotation, error)
+	// InsertKEKRotation fails when another rotation is running.
+	InsertKEKRotation(ctx context.Context, r domain.KEKRotation) error
+	UpdateKEKRotation(ctx context.Context, r domain.KEKRotation) error
 }
 
 // SealedColumn is one table column holding values of one purpose. The

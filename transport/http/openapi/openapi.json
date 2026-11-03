@@ -1693,6 +1693,50 @@
         "x-step-up": true
       }
     },
+    "/api/v1/keys/kek": {
+      "get": {
+        "description": "The key-encryption keys by id (software:<fingerprint>, pkcs11:<HSM label>, kms:<key ARN>), never material: the current one, the new one when configured, the one wrapping new data keys, how many data keys each wraps, and the last KEK rotations. Permission: `settings:manage`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
+        "operationId": "get_keys_kek",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Key-encryption keys",
+        "tags": [
+          "keys"
+        ],
+        "x-permission": "settings:manage",
+        "x-step-up": true
+      }
+    },
+    "/api/v1/keys/kek/rotate": {
+      "post": {
+        "description": "Starts a KEK rotation to the new key-encryption key configured on every replica (KEY_MANAGER_NEW_MASTER_KEY, KEY_MANAGER_PKCS11_NEW_KEK_LABEL or KEY_MANAGER_KMS_NEW_KEK_KEY_ID). New data keys are wrapped under it at once; the key schedule re-wraps the others without changing them. Body: {\"reason\": string}. 409 NO_NEW_KEK, KEK_ROTATION_RUNNING or KEK_ALREADY_CURRENT. Permission: `settings:manage`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
+        "operationId": "post_keys_kek_rotate",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Rotate the key-encryption key",
+        "tags": [
+          "keys"
+        ],
+        "x-permission": "settings:manage",
+        "x-step-up": true
+      }
+    },
     "/api/v1/me": {
       "get": {
         "description": "The token's subject, tenant, MailOS roles and the permissions they grant. Permission: `templates:read`.",

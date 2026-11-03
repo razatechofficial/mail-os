@@ -50,13 +50,17 @@ const (
 	StateRetired State = "retired"
 )
 
-// EncryptionKey is one data-encryption key, wrapped by the provider.
+// EncryptionKey is one data-encryption key, wrapped under a key-encryption
+// key (KEK).
 type EncryptionKey struct {
-	ID        uuid.UUID
-	KID       string
-	Purpose   Purpose
-	State     State
-	Provider  string
+	ID       uuid.UUID
+	KID      string
+	Purpose  Purpose
+	State    State
+	Provider string
+	// KEKID names the KEK that wraps KeyRef (see KEKID); "" for a key
+	// wrapped before KEKs were recorded.
+	KEKID     string
 	KeyRef    []byte
 	CreatedBy string
 	CreatedAt time.Time

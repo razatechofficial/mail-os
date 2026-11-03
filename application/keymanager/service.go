@@ -1,6 +1,7 @@
 package keymanager
 
 import (
+	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -25,6 +26,10 @@ type Config struct {
 	// DestroyGrace keeps a drained retired key a little longer, for values
 	// read just before the swap.
 	DestroyGrace time.Duration
+	// KEKSettle is how long a KEK rotation stays running at least, so a
+	// data key another replica wrapped under the old KEK as it started is
+	// re-wrapped before the rotation completes.
+	KEKSettle time.Duration
 }
 
 type loaded struct {
@@ -34,11 +39,11 @@ type loaded struct {
 
 // Service is the keyring and its schedule.
 type Service struct {
-	provider Provider
-	store    Store
-	audit    Auditor
-	cfg      Config
-	now      func() time.Time
+	keks  *KEKs
+	store Store
+	audit Auditor
+	cfg   Config
+	now   func() time.Time
 
 	columns []SealedColumn
 
@@ -49,14 +54,17 @@ type Service struct {
 }
 
 // New builds the service; call Bootstrap before serving.
-func New(provider Provider, store Store, audit Auditor, cfg Config) *Service {
+func New(keks *KEKs, store Store, audit Auditor, cfg Config) *Service {
 	if cfg.ReencryptBatch <= 0 {
 		cfg.ReencryptBatch = 500
 	}
 	if cfg.DestroyGrace <= 0 {
 		cfg.DestroyGrace = time.Hour
 	}
-	return &Service{provider: provider, store: store, audit: audit, cfg: cfg, now: time.Now,
+	if cfg.KEKSettle <= 0 {
+		cfg.KEKSettle = 2 * time.Minute
+	}
+	return &Service{keks: keks, store: store, audit: audit, cfg: cfg, now: time.Now,
 		keys: map[string]loaded{}, active: map[domain.Purpose]string{}}
 }
 
@@ -70,8 +78,12 @@ var (
 	ErrWrongPurpose   = errors.New("the value was not sealed for this purpose")
 )
 
-// Bootstrap makes sure each purpose has an active key, then loads them.
+// Bootstrap picks the wrapping KEK, makes sure each purpose has an active
+// key, then loads them.
 func (s *Service) Bootstrap(ctx context.Context) error {
+	if err := s.syncKEK(ctx); err != nil {
+		return err
+	}
 	if err := s.Reload(ctx); err != nil {
 		return err
 	}
@@ -98,24 +110,34 @@ func (s *Service) Bootstrap(ctx context.Context) error {
 	return s.Reload(ctx)
 }
 
-// Reload reads every key and unwraps it.
+// Reload reads every key and unwraps the ones not loaded yet (or
+// re-wrapped since), so an HSM or KMS is called once per key.
 func (s *Service) Reload(ctx context.Context) error {
 	list, err := s.store.ListKeys(ctx)
 	if err != nil {
 		return fmt.Errorf("list keys: %w", err)
 	}
+	s.mu.RLock()
+	prev := s.keys
+	s.mu.RUnlock()
 	keys := make(map[string]loaded, len(list))
 	active := map[domain.Purpose]string{}
 	for _, k := range list {
-		raw, err := s.provider.UnwrapDataKey(ctx, k.KeyRef, domain.WrapAdditionalData(k.KID))
-		if err != nil {
-			return fmt.Errorf("unwrap key %s: %w", k.KID, err)
+		if l, ok := prev[k.KID]; ok && bytes.Equal(l.key.KeyRef, k.KeyRef) {
+			l.key = k
+			keys[k.KID] = l
+		} else {
+			raw, err := s.keks.unwrap(ctx, k.KEKID, k.KeyRef, domain.WrapAdditionalData(k.KID))
+			if err != nil {
+				return fmt.Errorf("unwrap key %s: %w", k.KID, err)
+			}
+			aead, err := newGCM(raw)
+			clear(raw)
+			if err != nil {
+				return err
+			}
+			keys[k.KID] = loaded{key: k, aead: aead}
 		}
-		aead, err := newGCM(raw)
-		if err != nil {
-			return err
-		}
-		keys[k.KID] = loaded{key: k, aead: aead}
 		if k.State == domain.StateActive {
 			active[k.Purpose] = k.KID
 		}
@@ -215,17 +237,28 @@ func (s *Service) Open(ctx context.Context, p domain.Purpose, ciphertext string)
 	return out, nil
 }
 
+// createKey makes a random AES-256 data key and stores it wrapped under the
+// wrapping KEK, after checking no KEK rotation started meanwhile.
 func (s *Service) createKey(ctx context.Context, p domain.Purpose, by string) (domain.EncryptionKey, error) {
+	if err := s.syncKEK(ctx); err != nil {
+		return domain.EncryptionKey{}, err
+	}
 	kid, err := domain.NewKID()
 	if err != nil {
 		return domain.EncryptionKey{}, err
 	}
-	ref, err := s.provider.NewDataKey(ctx, domain.WrapAdditionalData(kid))
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return domain.EncryptionKey{}, err
+	}
+	kek := s.keks.Wrapping()
+	ref, err := kek.Wrap(ctx, raw, domain.WrapAdditionalData(kid))
+	clear(raw)
 	if err != nil {
-		return domain.EncryptionKey{}, fmt.Errorf("new data key: %w", err)
+		return domain.EncryptionKey{}, fmt.Errorf("wrap data key under %s: %w", kek.ID(), err)
 	}
 	k := domain.EncryptionKey{ID: uuid.Must(uuid.NewV7()), KID: kid, Purpose: p, State: domain.StateActive,
-		Provider: s.provider.Name(), KeyRef: ref, CreatedBy: by, CreatedAt: s.now().UTC()}
+		Provider: domain.KEKProvider(kek.ID()), KEKID: kek.ID(), KeyRef: ref, CreatedBy: by, CreatedAt: s.now().UTC()}
 	if err := s.store.InsertKey(ctx, k); err != nil {
 		return domain.EncryptionKey{}, err
 	}
@@ -271,10 +304,14 @@ func (s *Service) rotateLocked(ctx context.Context, p domain.Purpose, by string)
 }
 
 // Tick is the schedule (an asynq task every minute, one replica at a time):
-// rotate keys past their cryptoperiod, re-encrypt a batch of what retired
-// keys sealed, and destroy retired keys with nothing left after the grace.
+// re-wrap data keys under the wrapping KEK, rotate keys past their
+// cryptoperiod, re-encrypt a batch of what retired keys sealed, and destroy
+// retired keys with nothing left after the grace.
 func (s *Service) Tick(ctx context.Context) error {
 	_, err := s.store.WithLock(ctx, func(ctx context.Context) error {
+		if err := s.rewrapKEKs(ctx); err != nil {
+			return fmt.Errorf("KEK pass: %w", err)
+		}
 		list, err := s.store.ListKeys(ctx)
 		if err != nil {
 			return err
@@ -350,6 +387,7 @@ type KeyStatus struct {
 	KID       string       `json:"kid"`
 	State     domain.State `json:"state"`
 	Provider  string       `json:"provider"`
+	KEKID     string       `json:"kek_id"`
 	CreatedAt time.Time    `json:"created_at"`
 	RetiredAt *time.Time   `json:"retired_at,omitempty"`
 	Values    int          `json:"values"`
@@ -368,7 +406,7 @@ func (s *Service) Status(ctx context.Context) ([]PurposeStatus, error) {
 			if k.Purpose != p {
 				continue
 			}
-			ks := KeyStatus{KID: k.KID, State: k.State, Provider: k.Provider, CreatedAt: k.CreatedAt, RetiredAt: k.RetiredAt}
+			ks := KeyStatus{KID: k.KID, State: k.State, Provider: k.Provider, KEKID: k.KEKID, CreatedAt: k.CreatedAt, RetiredAt: k.RetiredAt}
 			for _, col := range s.columns {
 				if col.Purpose() == p {
 					n, err := col.CountByKID(ctx, k.KID)
