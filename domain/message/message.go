@@ -144,6 +144,12 @@ const (
 	minSecretLen = 4
 )
 
+// CarriedHeaders are the headers a sender may set on a message and that
+// travel to the provider: one-click unsubscribe (RFC 2369, RFC 8058). The
+// structural headers (From, To, Message-ID, DKIM-Signature…) are always
+// MailOS's own.
+var CarriedHeaders = []string{"List-Unsubscribe", "List-Unsubscribe-Post"}
+
 // Message is one email to one recipient.
 type Message struct {
 	ID string
@@ -172,6 +178,9 @@ type Message struct {
 	Priority Priority
 	Tags     []string
 	Metadata map[string]any
+	// Headers are the extra headers the sender asked for, among
+	// CarriedHeaders only (List-Unsubscribe for broadcast mail).
+	Headers map[string]string
 
 	// Topic is the event topic that produced the message, if any.
 	Topic             string
@@ -293,6 +302,13 @@ func (m *Message) Validate() error {
 	}
 	if len(m.Metadata) > MaxMetadataKeys {
 		add("metadata", "too_many", fmt.Sprintf("at most %d metadata keys", MaxMetadataKeys))
+	}
+	for k, v := range m.Headers {
+		if !slices.Contains(CarriedHeaders, k) {
+			add("headers", "not_allowed", "header "+k+" cannot be set")
+			break
+		}
+		oneLine("headers", v, maxHeaderValue)
 	}
 	oneLine("idempotency_key", m.IdempotencyKey, MaxIdempotencyKey)
 	oneLine("topic", m.Topic, maxLine)
@@ -533,6 +549,12 @@ func (m *Message) Outgoing() (Outgoing, error) {
 		HTML:      m.HTMLBody,
 		Text:      m.TextBody,
 		Tags:      slices.Clone(m.Tags),
+	}
+	if len(m.Headers) > 0 {
+		out.Headers = make(map[string]string, len(m.Headers))
+		for k, v := range m.Headers {
+			out.Headers[k] = v
+		}
 	}
 	if m.ReplyTo != "" {
 		out.ReplyTo = Address{Email: m.ReplyTo}
