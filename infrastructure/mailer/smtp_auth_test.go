@@ -91,6 +91,29 @@ func TestSMTPXOAUTH2WithMicrosoftToken(t *testing.T) {
 	}
 }
 
+// A provider saved with a username and password but no mechanism signs in
+// with PLAIN, as SMTPConfig documents.
+func TestSMTPProviderWithoutMechanismUsesPlain(t *testing.T) {
+	ca := newTestCA(t)
+	srv := startSMTP(t, ca, func(s *smtpServer) { s.user, s.pass, s.mechs = "relay", "secret", "PLAIN LOGIN" })
+	snd, err := NewSMTPProvider(provider.Settings{Host: "127.0.0.1", Port: srv.port(), TLSMode: provider.TLSStartTLS,
+		Username: "relay", FromEmail: "noreply@bank.example"}, provider.Credentials{Password: "secret"}, testOpts(ca))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := snd.Send(context.Background(), sampleOutgoing()); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, mech := srv.seen(); mech != "PLAIN" {
+		t.Fatalf("mech %s", mech)
+	}
+	// A password without a username is still refused.
+	if _, err := NewSMTPProvider(provider.Settings{Host: "127.0.0.1", Port: srv.port(), TLSMode: provider.TLSStartTLS},
+		provider.Credentials{Password: "secret"}, testOpts(ca)); err == nil {
+		t.Fatal("a password without a username was accepted")
+	}
+}
+
 func TestSMTPPrivateCAAndClientCertificate(t *testing.T) {
 	ca := newTestCA(t)
 	client := newRSACert(t, "mailos-client")
