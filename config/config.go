@@ -222,11 +222,20 @@ type Audit struct {
 }
 
 // KeyManager seals stored secrets with per-purpose data keys wrapped under
-// a master key from Vault (IAM key-manager design).
+// a key-encryption key (KEK): a master key from Vault, an HSM key or a KMS
+// key (IAM key-manager design; docs/key-manager-providers.md).
 type KeyManager struct {
-	MasterKey                string        `yaml:"master_key" env:"KEY_MANAGER_MASTER_KEY" env-default:""`
+	// Provider holds the KEK: software, pkcs11 or kms.
+	Provider string `yaml:"provider" env:"KEY_MANAGER_PROVIDER" env-default:"software"`
+	// MasterKey is the software KEK, a base64 32-byte AES-256 key.
+	MasterKey string `yaml:"master_key" env:"KEY_MANAGER_MASTER_KEY" env-default:""`
+	// NewMasterKey is the software KEK a rotation moves data keys to.
+	NewMasterKey             string        `yaml:"new_master_key" env:"KEY_MANAGER_NEW_MASTER_KEY" env-default:""`
 	EncryptionRotationPeriod time.Duration `yaml:"encryption_rotation_period" env:"KEY_MANAGER_ENCRYPTION_ROTATION_PERIOD" env-default:"8760h"`
 	ReencryptBatch           int           `yaml:"reencrypt_batch" env:"KEY_MANAGER_REENCRYPT_BATCH" env-default:"500"`
+
+	PKCS11 KeyManagerPKCS11 `yaml:"pkcs11"`
+	KMS    KeyManagerKMS    `yaml:"kms"`
 }
 
 // Retention purges message bodies (contract §6: default 30 days).
