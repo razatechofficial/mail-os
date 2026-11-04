@@ -10,6 +10,7 @@ import (
 
 	"github.com/razatechofficial/mail-os/domain/message"
 	"github.com/razatechofficial/mail-os/domain/provider"
+	"github.com/razatechofficial/mail-os/pkg/logger"
 )
 
 // New builds the sender for a tenant provider and its opened credentials.
@@ -74,8 +75,52 @@ type Router struct {
 	build    Builder
 	platform Sender
 
+	failures FailureRecorder
+
 	mu      sync.Mutex
 	senders map[string]cachedSender
+}
+
+// FailureRecorder keeps the outcome of live sends on the provider: a
+// configuration or credentials failure marks it failing (its last test
+// becomes a failed delivery), and the next success through it clears that.
+type FailureRecorder interface {
+	RecordDelivery(ctx context.Context, tenantID, providerID string, t provider.LastTest) error
+}
+
+// SetFailureRecorder records providers' configuration failures in live
+// sends.
+func (r *Router) SetFailureRecorder(f FailureRecorder) { r.failures = f }
+
+// DeliveryOutcome is a live send's outcome as a provider's last test.
+func DeliveryOutcome(kind provider.Kind, se *message.SendError, at time.Time) provider.LastTest {
+	t := provider.LastTest{Kind: provider.TestDelivery, OK: se == nil, At: at}
+	if se != nil {
+		t.Step, t.ErrorClass, t.Detail, t.Hint = "send", string(se.Reason), errorDetail(se), Hint(kind, "", se)
+	}
+	return t
+}
+
+// recordOutcome marks c failing after a configuration or credentials
+// failure, and clears a failed delivery after a success. Recording never
+// fails the send.
+func (r *Router) recordOutcome(ctx context.Context, tenantID string, c Configured, se *message.SendError) {
+	if r.failures == nil {
+		return
+	}
+	switch {
+	case se != nil && se.Reason != message.ReasonAuth && se.Reason != message.ReasonConfig:
+		return
+	case se == nil && (c.Provider.LastTest == nil || c.Provider.LastTest.OK || c.Provider.LastTest.Kind != provider.TestDelivery):
+		return
+	}
+	if se != nil {
+		logger.FromContext(ctx).Warn("provider refused a send for its configuration", logger.String("provider_id", c.Provider.ID),
+			logger.String("provider_kind", string(c.Provider.Kind)), logger.String("error_class", string(se.Reason)))
+	}
+	if err := r.failures.RecordDelivery(context.WithoutCancel(ctx), tenantID, c.Provider.ID, DeliveryOutcome(c.Provider.Kind, se, now())); err != nil {
+		logger.FromContext(ctx).Warn("record provider delivery outcome", logger.String("provider_id", c.Provider.ID), logger.Err(err))
+	}
 }
 
 type cachedSender struct {
@@ -128,6 +173,7 @@ func (r *Router) Send(ctx context.Context, out message.Outgoing) (Result, error)
 			var res Result
 			if res, err = s.Send(ctx, out); err == nil {
 				res.ProviderID, res.Kind = c.Provider.ID, c.Provider.Kind
+				r.recordOutcome(ctx, out.TenantID, c, nil)
 				return res, nil
 			}
 		}
@@ -135,6 +181,9 @@ func (r *Router) Send(ctx context.Context, out message.Outgoing) (Result, error)
 			return Result{}, err
 		}
 		se, ok := message.AsSendError(err)
+		if ok {
+			r.recordOutcome(ctx, out.TenantID, c, se)
+		}
 		if ok && !se.Reason.ProviderFault() {
 			return Result{}, err
 		}

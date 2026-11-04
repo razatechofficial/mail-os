@@ -251,8 +251,9 @@ const (
 const noSTARTTLS = "the server does not offer STARTTLS"
 
 // classifySMTP maps an SMTP failure to a send error. 5xx replies are
-// permanent (RFC 5321 §4.2.1): at RCPT the recipient is refused, at AUTH
-// the credentials; 4xx replies are transient.
+// permanent (RFC 5321 §4.2.1): at AUTH the credentials are refused, at
+// MAIL, RCPT and DATA classifyPermanent reads the reply for what it
+// refuses; 4xx replies are transient.
 func classifySMTP(ctx context.Context, stage string, err error) *message.SendError {
 	kind := string(provider.KindSMTP)
 	var te *textproto.Error
@@ -273,14 +274,10 @@ func classifySMTP(ctx context.Context, stage string, err error) *message.SendErr
 		switch stage {
 		case stageAuth:
 			e.Reason = message.ReasonAuth
-		case stageRcpt:
-			e.Reason = message.ReasonInvalidRecipient
-			if te.Code == 552 || te.Code == 554 {
-				// Mailbox full or a policy refusal: the address exists.
-				e.Reason = message.ReasonRejected
-			}
-		case stageMail, stageData:
-			e.Reason = message.ReasonRejected
+		case stageMail, stageRcpt, stageData:
+			// Only a reply naming the recipient bounces (and suppresses);
+			// a refused sender or relay is the provider's configuration.
+			e.Reason = classifyPermanent(stage, te.Code, te.Msg)
 		default:
 			e.Reason = message.ReasonConfig
 		}

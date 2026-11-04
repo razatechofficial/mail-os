@@ -143,6 +143,7 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 	sendOpts := mailer.Options{Timeout: cfg.Worker.SendTimeout,
 		AllowPlaintext: plaintext, AllowPrivateNetworks: plaintext, AllowLoopback: plaintext}
 	router := mailer.NewRouter(providerSource{providers}, c.Platform, sendOpts)
+	router.SetFailureRecorder(providers)
 	deps := appmessage.Deps{Applications: c.Apps, Repo: postgres.NewMessageRepository(c.DB), Queue: queue, Suppressions: suppressions, Tenants: c.Tenants,
 		Render: renderContent, Sender: routerSender{router}, Signer: c.SendingDomains, Webhooks: webhooks, Stats: stats, Audit: c.Audit,
 		Events: postgres.NewMessageEventRepository(c.DB), Feedback: suppressions}
