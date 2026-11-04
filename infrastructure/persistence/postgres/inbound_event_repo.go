@@ -12,7 +12,10 @@ type InboundEventRepository struct {
 	db *Pool
 }
 
-var _ inbound.Store = (*InboundEventRepository)(nil)
+var (
+	_ inbound.Store        = (*InboundEventRepository)(nil)
+	_ inbound.RecordReader = (*InboundEventRepository)(nil)
+)
 
 // NewInboundEventRepository returns the repository.
 func NewInboundEventRepository(db *Pool) *InboundEventRepository {
@@ -51,4 +54,16 @@ func (r *InboundEventRepository) Complete(ctx context.Context, tenantID, eventID
 	_, err := QuerierFromContext(ctx, r.db).Exec(ctx,
 		`UPDATE inbound_events SET message_id = $3 WHERE org_id = $1 AND event_id = $2`, tenantID, eventID, messageID)
 	return err
+}
+
+// Record reads the tenant's received event.
+func (r *InboundEventRepository) Record(ctx context.Context, tenantID, eventID string) (inbound.Record, error) {
+	var rec inbound.Record
+	err := QuerierFromContext(ctx, r.db).QueryRow(ctx, `
+		SELECT org_id, event_id, topic, client_id, COALESCE(application_id, ''), transport, data_sha256,
+			COALESCE(message_id, ''), received_at
+		FROM inbound_events WHERE org_id = $1 AND event_id = $2`, tenantID, eventID).
+		Scan(&rec.TenantID, &rec.EventID, &rec.Topic, &rec.ClientID, &rec.ApplicationID, &rec.Transport,
+			&rec.DataSHA256, &rec.MessageID, &rec.ReceivedAt)
+	return rec, notFound(err, "event")
 }

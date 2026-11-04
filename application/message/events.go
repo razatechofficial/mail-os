@@ -197,3 +197,14 @@ func (s *Service) Events(ctx context.Context, tenantID, messageID string) ([]dom
 	}
 	return s.d.Events.List(ctx, tenantID, messageID)
 }
+
+// Delivery returns a message with its delivery events, for the sender's
+// status API (inbound.Deliveries).
+func (s *Service) Delivery(ctx context.Context, tenantID, id string) (domainmsg.Message, []domainmsg.DeliveryEvent, error) {
+	m, err := s.d.Repo.Get(ctx, tenantID, id)
+	if err != nil {
+		return domainmsg.Message{}, nil, err
+	}
+	events, err := s.Events(ctx, tenantID, id)
+	return m, events, err
+}
