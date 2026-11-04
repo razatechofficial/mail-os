@@ -79,10 +79,16 @@ const (
 	TopicDomainRevoked            = "iam.domain.revoked"
 )
 
-// TopicTenantSignupReviewRequested is sent to each platform administrator
-// when a workspace request has a confirmed address and waits for review
-// (IAM's tenant sign-up governance), payload pkg/events.TenantSignupNotice.
-const TopicTenantSignupReviewRequested = "iam.tenant_signup.review_requested"
+// Workspace request topics (IAM's tenant sign-up governance), payload
+// pkg/events.TenantSignupNotice. The first three go to the person who
+// asked for a workspace; review_requested goes to each platform
+// administrator once the requester's address is confirmed.
+const (
+	TopicTenantSignupEmailVerification = "iam.tenant_signup.email_verification_requested"
+	TopicTenantSignupApproved          = "iam.tenant_signup.approved"
+	TopicTenantSignupRejected          = "iam.tenant_signup.rejected"
+	TopicTenantSignupReviewRequested   = "iam.tenant_signup.review_requested"
+)
 
 // TopicCampaign is MailOS's own topic: a campaign sent to contacts.
 const TopicCampaign = "mailos.campaign"
@@ -228,17 +234,27 @@ var catalogue = []topicSpec{
 	domainTopic(TopicDomainRevoked, "Domain revoked", "A platform operator removed a verified domain from this tenant",
 		req("domain_id", "Domain ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000004"),
 		req("reason", "Reason", KindText, "Ownership dispute upheld")),
-	{Topic: Topic{Key: TopicTenantSignupReviewRequested, Name: "Workspace request waiting for review", Source: SourceIAM,
-		Description: "A workspace request with a confirmed address waits for a platform administrator",
-		Variables: []Variable{recipientEmail,
-			req("request_id", "Request ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000005"),
-			req("organization_name", "Organization", KindText, "Averox Labs"),
-			req("workspace_name", "Workspace", KindText, "Averox Labs"),
-			opt("workspace_slug", "Workspace slug", KindText, "averox-labs"),
-			req("requester_email", "Requested by", KindEmail, "founder@averox-labs.example"),
-			req("link", "Review link", KindURL, "https://iam.example.com/platform/signup-requests/sample"),
-			req("occurred_at", "When", KindDatetime, "2026-10-31T09:30:00Z"),
-		}}},
+	signupTopic(TopicTenantSignupEmailVerification, "Workspace request: confirm your email",
+		"A link that confirms the address of someone asking for a workspace",
+		req("verify_link", "Verification link", KindURL, "https://iam.example.com/signup/workspace/verify#token=sample"),
+		opt("expires_at", "Link expires", KindDatetime, "2026-11-01T09:30:00Z")),
+	signupTopic(TopicTenantSignupApproved, "Workspace request approved",
+		"A platform administrator approved the request and the workspace was created",
+		req("workspace_name", "Workspace", KindText, "Averox Labs"),
+		opt("workspace_slug", "Workspace slug", KindText, "averox-labs"),
+		req("link", "Sign-in link", KindURL, "https://iam.example.com/login")),
+	signupTopic(TopicTenantSignupRejected, "Workspace request rejected",
+		"A platform administrator rejected the request",
+		opt("reason", "Reason", KindText, "We could not confirm the organization")),
+	signupTopic(TopicTenantSignupReviewRequested, "Workspace request waiting for review",
+		"A workspace request with a confirmed address waits for a platform administrator",
+		req("workspace_name", "Workspace", KindText, "Averox Labs"),
+		opt("workspace_slug", "Workspace slug", KindText, "averox-labs"),
+		req("requester_email", "Requester email", KindEmail, "founder@averox-labs.example"),
+		opt("requester_name", "Requester name", KindText, "Sara Ahmed"),
+		opt("domain", "Email domain", KindText, "averox-labs.example"),
+		opt("expires_at", "Request expires", KindDatetime, "2026-11-07T09:30:00Z"),
+		req("link", "Review link", KindURL, "https://iam.example.com/platform/workspace-requests?request=sample")),
 	{Topic: Topic{Key: TopicCampaign, Name: "Campaign", Source: SourceMailOS,
 		Description: "A marketing campaign sent to a contact list",
 		Variables: []Variable{
@@ -258,6 +274,17 @@ func domainTopic(key, name, description string, extra ...Variable) topicSpec {
 		req("domain", "Domain", KindText, "example.com"),
 		req("occurred_at", "When", KindDatetime, "2026-10-31T09:30:00Z"),
 		req("link", "Domains page", KindURL, "https://iam.example.com/settings/domains"),
+	}
+	return topicSpec{Topic: Topic{Key: key, Name: name, Description: description, Source: SourceIAM, Variables: append(vars, extra...)}}
+}
+
+// signupTopic is a workspace request topic: the fields every
+// TenantSignupNotice carries, then the topic's own.
+func signupTopic(key, name, description string, extra ...Variable) topicSpec {
+	vars := []Variable{recipientEmail,
+		req("request_id", "Request ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000005"),
+		req("organization_name", "Organization", KindText, "Averox Labs"),
+		req("occurred_at", "When", KindDatetime, "2026-10-31T09:30:00Z"),
 	}
 	return topicSpec{Topic: Topic{Key: key, Name: name, Description: description, Source: SourceIAM, Variables: append(vars, extra...)}}
 }

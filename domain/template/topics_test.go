@@ -15,6 +15,7 @@ func TestTopicsCatalogue(t *testing.T) {
 		TopicEmailVerification, TopicMFAEmailCode, TopicPasskeyEnrolment, TopicDeletionRequested, TopicAccessReview,
 		TopicLifecycleEmail, TopicDomainVerified, TopicDomainClaimExpiring, TopicDomainClaimReleased,
 		TopicDomainVerificationLapsed, TopicDomainTransferRequested, TopicDomainTransferred, TopicDomainRevoked,
+		TopicTenantSignupEmailVerification, TopicTenantSignupApproved, TopicTenantSignupRejected,
 		TopicTenantSignupReviewRequested, TopicCampaign}
 	var keys []string
 	for _, tp := range ts {
@@ -215,28 +216,48 @@ func TestDomainTopics(t *testing.T) {
 	}
 }
 
-// The platform administrators' notice of a workspace request takes IAM's
-// TenantSignupNotice with the requester's address added.
-func TestTenantSignupReviewTopic(t *testing.T) {
-	data := map[string]any{"email": "platform-admin@example.com", "user": map[string]any{"name": "Platform Admin"},
-		"request_id": "r1", "organization_name": "Averox Labs", "workspace_name": "Averox Labs", "workspace_slug": "averox-labs",
-		"requester_email": "founder@averox-labs.example", "link": "https://iam.example.com/platform/signup-requests/r1",
-		"occurred_at": "2026-10-31T09:30:00Z"}
-	if errs := ValidateData(TopicTenantSignupReviewRequested, data); len(errs) != 0 {
-		t.Fatalf("valid notice refused: %v", errs)
+// The workspace request topics take IAM's TenantSignupNotice as each is
+// sent: the common fields, then each topic's own (omitempty ones optional).
+func TestTenantSignupTopics(t *testing.T) {
+	base := map[string]any{"email": "founder@averox-labs.example", "user": map[string]any{"name": "Sara Ahmed"},
+		"request_id": "r1", "organization_name": "Averox Labs", "occurred_at": "2026-10-31T09:30:00Z"}
+	cases := map[string]struct {
+		extra    map[string]any
+		required string
+	}{
+		TopicTenantSignupEmailVerification: {map[string]any{"verify_link": "https://iam.example.com/signup/workspace/verify#token=t",
+			"expires_at": "2026-11-01T09:30:00Z"}, "verify_link"},
+		TopicTenantSignupApproved: {map[string]any{"workspace_name": "Averox Labs", "workspace_slug": "averox-labs",
+			"link": "https://iam.example.com/login"}, "link"},
+		TopicTenantSignupRejected: {map[string]any{}, "request_id"},
+		TopicTenantSignupReviewRequested: {map[string]any{"email": "platform-admin@example.com",
+			"user": map[string]any{"name": "Platform administrator"}, "workspace_name": "Averox Labs", "workspace_slug": "averox-labs",
+			"requester_email": "founder@averox-labs.example", "requester_name": "Sara Ahmed", "domain": "averox-labs.example",
+			"expires_at": "2026-11-07T09:30:00Z", "link": "https://iam.example.com/platform/workspace-requests?request=r1"}, "requester_email"},
 	}
-	tp, ok := TopicByKey(TopicTenantSignupReviewRequested)
-	if !ok || tp.Source != SourceIAM {
-		t.Fatalf("topic %+v", tp)
+	for topic, c := range cases {
+		data := map[string]any{}
+		for k, v := range base {
+			data[k] = v
+		}
+		for k, v := range c.extra {
+			data[k] = v
+		}
+		if errs := ValidateData(topic, data); len(errs) != 0 {
+			t.Errorf("%s: valid notice refused: %v", topic, errs)
+		}
+		if tp, ok := TopicByKey(topic); !ok || tp.Source != SourceIAM {
+			t.Errorf("%s: %+v", topic, tp)
+		}
+		delete(data, c.required)
+		if errs := ValidateData(topic, data); len(errs) != 1 || errs[0].Field != "data."+c.required {
+			t.Errorf("%s without %s: %v", topic, c.required, errs)
+		}
 	}
-	delete(data, "requester_email")
-	data["link"] = "not a url"
-	errs := ValidateData(TopicTenantSignupReviewRequested, data)
-	got := map[string]bool{}
-	for _, e := range errs {
-		got[e.Field] = true
-	}
-	if !got["data.requester_email"] || !got["data.link"] {
-		t.Fatalf("errors %v", errs)
+	// A rejection without a reason is still sent; a bad optional value is not.
+	bad := map[string]any{"email": "a@example.com", "request_id": "r1", "organization_name": "o", "occurred_at": "2026-10-31T09:30:00Z",
+		"expires_at": "tomorrow", "verify_link": "https://iam.example.com/v"}
+	if errs := ValidateData(TopicTenantSignupEmailVerification, bad); len(errs) != 1 || errs[0].Field != "data.expires_at" {
+		t.Errorf("bad expiry: %v", errs)
 	}
 }
