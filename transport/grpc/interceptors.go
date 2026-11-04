@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	grpclib "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -145,7 +146,9 @@ func LoggingUnary() grpclib.UnaryServerInterceptor {
 }
 
 // Status maps an application error to a gRPC status with a client-safe
-// message, as response.FromError does for HTTP.
+// message, as response.FromError does for HTTP. A validation error carries
+// the same field errors as the HTTP 422 body, as BadRequest field
+// violations (field, reason = code, description = message).
 func Status(err error) error {
 	if err == nil {
 		return nil
@@ -161,7 +164,7 @@ func Status(err error) error {
 	case apperrors.KindForbidden, apperrors.KindInactive, apperrors.KindStepUpRequired:
 		return status.Error(codes.PermissionDenied, msg)
 	case apperrors.KindInvalidInput, apperrors.KindBadRequest:
-		return status.Error(codes.InvalidArgument, msg)
+		return invalid(msg, apperrors.DetailsOf(err))
 	case apperrors.KindRateLimited:
 		return status.Error(codes.ResourceExhausted, msg)
 	case apperrors.KindUnavailable:
@@ -170,4 +173,35 @@ func Status(err error) error {
 		logger.Error("grpc internal error", logger.Err(err))
 		return status.Error(codes.Internal, "an unexpected error occurred")
 	}
+}
+
+// invalid is InvalidArgument with the field errors as details.
+func invalid(msg string, fields []apperrors.FieldError) error {
+	st := status.New(codes.InvalidArgument, msg)
+	if len(fields) == 0 {
+		return st.Err()
+	}
+	br := &errdetails.BadRequest{}
+	for _, f := range fields {
+		br.FieldViolations = append(br.FieldViolations,
+			&errdetails.BadRequest_FieldViolation{Field: f.Field, Reason: f.Code, Description: f.Message})
+	}
+	if withDetails, err := st.WithDetails(br); err == nil {
+		st = withDetails
+	}
+	return st.Err()
+}
+
+// FieldErrors reads the field errors back from a Status error (for
+// clients and tests).
+func FieldErrors(err error) []apperrors.FieldError {
+	var out []apperrors.FieldError
+	for _, d := range status.Convert(err).Details() {
+		if br, ok := d.(*errdetails.BadRequest); ok {
+			for _, v := range br.GetFieldViolations() {
+				out = append(out, apperrors.FieldError{Field: v.GetField(), Code: v.GetReason(), Message: v.GetDescription()})
+			}
+		}
+	}
+	return out
 }

@@ -14,7 +14,25 @@ import (
 	domainapp "github.com/razatechofficial/mail-os/domain/application"
 	"github.com/razatechofficial/mail-os/infrastructure/jwt"
 	"github.com/razatechofficial/mail-os/internal/testutil/fakeiam"
+	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
 )
+
+func TestStatusCarriesValidationFields(t *testing.T) {
+	err := Status(apperrors.Validation(
+		apperrors.FieldError{Field: "attachments[0].content", Code: "too_large", Message: "the file is over 1 KiB"},
+		apperrors.FieldError{Field: "attachments", Code: "too_many", Message: "at most 3 attachments"}))
+	if status.Code(err) != codes.InvalidArgument || status.Convert(err).Message() != "validation failed" {
+		t.Fatal(err)
+	}
+	f := FieldErrors(err)
+	if len(f) != 2 || f[0] != (apperrors.FieldError{Field: "attachments[0].content", Code: "too_large", Message: "the file is over 1 KiB"}) ||
+		f[1].Code != "too_many" {
+		t.Fatalf("fields %+v", f)
+	}
+	if f := FieldErrors(Status(apperrors.Unavailable("down"))); len(f) != 0 {
+		t.Fatalf("details on a non-validation error: %+v", f)
+	}
+}
 
 func TestUnaryAuth(t *testing.T) {
 	iam, _ := fakeiam.NewServer(t)
