@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"strconv"
 	"strings"
@@ -11,6 +13,7 @@ import (
 
 	app "github.com/razatechofficial/mail-os/application/campaign"
 	domain "github.com/razatechofficial/mail-os/domain/campaign"
+	domainmsg "github.com/razatechofficial/mail-os/domain/message"
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
 )
 
@@ -24,6 +27,7 @@ type CampaignRepository struct {
 var (
 	_ app.Repository = (*CampaignRepository)(nil)
 	_ app.Targets    = (*CampaignRepository)(nil)
+	_ app.Files      = (*CampaignRepository)(nil)
 )
 
 // NewCampaignRepository returns the repository.
@@ -202,4 +206,44 @@ func (r *CampaignRepository) ListExists(ctx context.Context, tenant, id string) 
 	err := QuerierFromContext(ctx, r.db).QueryRow(ctx,
 		`SELECT EXISTS (SELECT 1 FROM contact_lists WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL)`, id, tenant).Scan(&ok)
 	return ok, err
+}
+
+// Attachments reads the campaign's files in order (campaign_attachments).
+func (r *CampaignRepository) Attachments(ctx context.Context, tenant, campaignID string) ([]domainmsg.Attachment, error) {
+	rows, err := QuerierFromContext(ctx, r.db).Query(ctx, `SELECT filename, content_type, COALESCE(content_id, ''), inline, data
+		FROM campaign_attachments WHERE campaign_id = $1 AND org_id = $2 ORDER BY position`, campaignID, tenant)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domainmsg.Attachment
+	for rows.Next() {
+		var a domainmsg.Attachment
+		if err := rows.Scan(&a.Filename, &a.ContentType, &a.ContentID, &a.Inline, &a.Data); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// SetAttachments replaces the campaign's files in one transaction.
+func (r *CampaignRepository) SetAttachments(ctx context.Context, tenant, campaignID string, files []domainmsg.Attachment) error {
+	return r.db.InTx(ctx, func(ctx context.Context) error {
+		q := QuerierFromContext(ctx, r.db)
+		if _, err := q.Exec(ctx, `DELETE FROM campaign_attachments WHERE campaign_id = $1 AND org_id = $2`, campaignID, tenant); err != nil {
+			return err
+		}
+		for i, a := range files {
+			sum := sha256.Sum256(a.Data)
+			if _, err := q.Exec(ctx, `
+				INSERT INTO campaign_attachments (campaign_id, position, org_id, filename, content_type, content_id, inline,
+					size_bytes, sha256, data)
+				VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), $7, $8, $9, $10)`,
+				campaignID, i, tenant, a.Filename, a.ContentType, a.ContentID, a.Inline, len(a.Data), hex.EncodeToString(sum[:]), a.Data); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
