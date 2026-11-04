@@ -49,6 +49,15 @@ type resendRequest struct {
 	ReplyTo []string          `json:"reply_to,omitempty"`
 	Headers map[string]string `json:"headers,omitempty"`
 	Tags    []resendTag       `json:"tags,omitempty"`
+	// Attachments; an inline one is referenced by content_id.
+	Attachments []resendFile `json:"attachments,omitempty"`
+}
+
+type resendFile struct {
+	Filename    string `json:"filename"`
+	Content     string `json:"content"`
+	ContentType string `json:"content_type,omitempty"`
+	ContentID   string `json:"content_id,omitempty"`
 }
 
 // Send calls POST /emails with the MailOS id as the idempotency key, so a
@@ -62,6 +71,13 @@ func (r *Resend) Send(ctx context.Context, out message.Outgoing) (Result, error)
 		HTML: out.HTML, Text: out.Text, Headers: out.Headers}
 	if !out.ReplyTo.IsZero() {
 		body.ReplyTo = []string{out.ReplyTo.String()}
+	}
+	for _, a := range out.Attachments {
+		f := resendFile{Filename: a.Filename, Content: b64(a.Data), ContentType: a.ContentType}
+		if a.Inline {
+			f.ContentID = a.ContentID
+		}
+		body.Attachments = append(body.Attachments, f)
 	}
 	if out.MessageID != "" {
 		body.Tags = append(body.Tags, resendTag{Name: "mailos_message_id", Value: sesTagValue(out.MessageID)})

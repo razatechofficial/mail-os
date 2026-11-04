@@ -49,6 +49,14 @@ type brevoRequest struct {
 	TextContent string            `json:"textContent,omitempty"`
 	Headers     map[string]string `json:"headers,omitempty"`
 	Tags        []string          `json:"tags,omitempty"`
+	// Attachment is Brevo's list of files (no inline parts: they are
+	// attached).
+	Attachment []brevoFile `json:"attachment,omitempty"`
+}
+
+type brevoFile struct {
+	Content string `json:"content"`
+	Name    string `json:"name"`
 }
 
 func (b *Brevo) auth(r *http.Request) error {
@@ -68,6 +76,9 @@ func (b *Brevo) Send(ctx context.Context, out message.Outgoing) (Result, error) 
 	}
 	if !out.ReplyTo.IsZero() {
 		body.ReplyTo = &brevoAddress{Email: out.ReplyTo.Email, Name: out.ReplyTo.Name}
+	}
+	for _, a := range out.Attachments {
+		body.Attachment = append(body.Attachment, brevoFile{Content: b64(a.Data), Name: a.Filename})
 	}
 	if len(out.Headers) > 0 || out.MessageID != "" {
 		body.Headers = map[string]string{}
