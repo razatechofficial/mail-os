@@ -34,7 +34,7 @@ const messageCols = `id, org_id, COALESCE(campaign_id, ''), COALESCE(provider_id
 	created_at, updated_at, COALESCE(application_id, ''), sandbox, stream, headers`
 
 // finalStatuses are the statuses whose body the purge may erase.
-const finalStatuses = `('sent', 'delivered', 'bounced', 'failed', 'cancelled', 'suppressed', 'captured')`
+const finalStatuses = `('sent', 'delivered', 'bounced', 'complained', 'failed', 'cancelled', 'suppressed', 'captured')`
 
 func scanMessage(row pgx.Row) (domain.Message, error) {
 	var m domain.Message
