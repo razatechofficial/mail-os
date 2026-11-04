@@ -97,7 +97,8 @@ func newHarness(t *testing.T, mutate func(*config.SMTPSubmission, *domainapp.App
 		applications.Config{AllowPlaintext: true})
 	h.creds = smtpcred.NewService(&memCreds{creds: map[string]smtpcredential.Credential{}}, h.apps, h.audit, smtpcred.Config{})
 	h.messages = appmsg.NewService(appmsg.Deps{Applications: h.apps, Repo: h.msgs, Queue: nopQueue{},
-		Suppressions: noSuppressions{}, Tenants: nopTenants{}, Sender: h.sender, Audit: h.audit}, appmsg.Config{})
+		Suppressions: noSuppressions{}, Tenants: nopTenants{}, Sender: h.sender, Audit: h.audit},
+		appmsg.Config{Attachments: domainmsg.AttachmentLimits{MaxBytes: 1 << 20, MaxTotalBytes: 2 << 20, MaxCount: 5}})
 	verifier := jwt.NewVerifier(jwt.Config{Issuer: iamSrv.URL, Audience: "mailos"})
 
 	srv, err := NewServer(cfg, Deps{Tokens: verifier, Apps: h.apps, Credentials: h.creds, Messages: h.messages,
@@ -625,14 +626,29 @@ func TestBroadcastNeedsListUnsubscribe(t *testing.T) {
 	}
 }
 
-func TestAttachmentsAreRefused(t *testing.T) {
+func TestAttachmentsAreQueuedAndChecked(t *testing.T) {
 	h := newHarness(t, nil)
 	c := h.session()
 	msg := "From: statements@alerts.bank.example\nSubject: s\nContent-Type: multipart/mixed; boundary=x\n\n--x\n" +
-		"Content-Type: text/plain\n\nsee attached\n--x\nContent-Type: application/pdf\nContent-Disposition: attachment; filename=a.pdf\n\nJVBE\n--x--\n"
-	err := send(c, "statements@alerts.bank.example", []string{"amna@example.com"}, msg)
-	if code(err) != 554 || !strings.Contains(err.Error(), "5.6.1") {
+		"Content-Type: text/plain\n\nsee attached\n--x\nContent-Type: application/pdf\nContent-Disposition: attachment; filename=a.pdf\n" +
+		"Content-Transfer-Encoding: base64\n\nJVBERi0=\n--x--\n"
+	if err := send(c, "statements@alerts.bank.example", []string{"amna@example.com"}, msg); err != nil {
 		t.Fatalf("attachment: %v", err)
+	}
+	m := h.msgs.all()[0]
+	if len(m.Attachments) != 1 || m.Attachments[0].Filename != "a.pdf" || string(m.Attachments[0].Data) != "%PDF-" {
+		t.Fatalf("stored %+v", m.Attachments)
+	}
+	if err := h.messages.Deliver(context.Background(), tenant, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	if out := h.sender.sent(); len(out) != 1 || len(out[0].Attachments) != 1 {
+		t.Fatalf("delivered %+v", out)
+	}
+	// An executable is refused with the pipeline's reason.
+	bad := strings.Replace(msg, "filename=a.pdf", "filename=setup.exe", 1)
+	if err := send(c, "statements@alerts.bank.example", []string{"amna@example.com"}, bad); code(err) != 554 || !strings.Contains(err.Error(), ".exe") {
+		t.Fatalf("executable: %v", err)
 	}
 }
 

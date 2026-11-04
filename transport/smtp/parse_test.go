@@ -70,37 +70,6 @@ func TestParseRefusesWhatCannotBeSent(t *testing.T) {
 		raw    string
 		reason string
 	}{
-		"attachment": {`From: a@bank.example
-Subject: s
-Content-Type: multipart/mixed; boundary=x
-
---x
-Content-Type: text/plain
-
-see attached
---x
-Content-Type: application/pdf
-Content-Disposition: attachment; filename="statement.pdf"
-Content-Transfer-Encoding: base64
-
-JVBERi0=
---x--
-`, "unsupported_content"},
-		"inline image": {`From: a@bank.example
-Subject: s
-Content-Type: multipart/related; boundary=x
-
---x
-Content-Type: text/html
-
-<img src="cid:logo">
---x
-Content-Type: image/png
-Content-ID: <logo>
-
-png
---x--
-`, "unsupported_content"},
 		"two senders":    {"From: a@bank.example, b@bank.example\nSubject: s\n\nbody\n", "malformed_message"},
 		"no body":        {"From: a@bank.example\nSubject: s\nContent-Type: text/plain\n\n", "malformed_message"},
 		"bad charset":    {"From: a@bank.example\nSubject: s\nContent-Type: text/plain; charset=x-unknown\n\nbody\n", "malformed_message"},
@@ -115,6 +84,69 @@ png
 		if !errors.As(err, &ce) || ce.reason != c.reason {
 			t.Errorf("%s: %v", name, err)
 		}
+	}
+}
+
+func TestParseKeepsAttachmentsAndInlineParts(t *testing.T) {
+	m, err := parseMessage(crlf(`From: a@bank.example
+Subject: s
+Content-Type: multipart/mixed; boundary=x
+
+--x
+Content-Type: multipart/related; boundary=y
+
+--y
+Content-Type: text/html
+
+<img src="cid:logo">
+--y
+Content-Type: image/png
+Content-ID: <logo>
+Content-Transfer-Encoding: base64
+
+cG5n
+--y--
+--x
+Content-Type: application/pdf
+Content-Disposition: attachment; filename*=UTF-8''r%C3%A9sum%C3%A9.pdf
+Content-Transfer-Encoding: base64
+
+JVBERi0=
+--x
+Content-Type: text/plain; charset=utf-8; name="=?utf-8?q?notes=2Etxt?="
+
+plain file
+--x
+Content-Type: message/rfc822
+
+From: b@bank.example
+Subject: forwarded
+
+hi
+--x--
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.HTML != "<img src=\"cid:logo\">" {
+		t.Fatalf("html %q", m.HTML)
+	}
+	if len(m.Attachments) != 4 {
+		t.Fatalf("attachments %+v", m.Attachments)
+	}
+	logo, pdf, notes, eml := m.Attachments[0], m.Attachments[1], m.Attachments[2], m.Attachments[3]
+	if logo.ContentID != "logo" || !logo.Inline || string(logo.Data) != "png" || logo.ContentType != "image/png" || logo.Filename != "attachment-1.png" {
+		t.Fatalf("logo %+v", logo)
+	}
+	if pdf.Filename != "résumé.pdf" || pdf.Inline || string(pdf.Data) != "%PDF-" {
+		t.Fatalf("pdf %+v", pdf)
+	}
+	if eml.ContentType != "message/rfc822" || !strings.HasSuffix(eml.Filename, ".eml") {
+		t.Fatalf("eml %+v", eml)
+	}
+	// A named text part is a file, not the body; its charset is kept.
+	if notes.Filename != "notes.txt" || notes.ContentType != "text/plain; charset=utf-8" || string(notes.Data) != "plain file" || m.Text != "" {
+		t.Fatalf("notes %+v, text %q", notes, m.Text)
 	}
 }
 
