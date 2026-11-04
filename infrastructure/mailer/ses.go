@@ -3,6 +3,7 @@ package mailer
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -65,6 +66,15 @@ type sesTag struct {
 	Value string `json:"Value"`
 }
 
+type sesSimple struct {
+	Subject sesContent `json:"Subject"`
+	Body    struct {
+		Text *sesContent `json:"Text,omitempty"`
+		HTML *sesContent `json:"Html,omitempty"`
+	} `json:"Body"`
+	Headers []sesHeader `json:"Headers,omitempty"`
+}
+
 type sesRequest struct {
 	FromEmailAddress string `json:"FromEmailAddress"`
 	Destination      struct {
@@ -72,14 +82,11 @@ type sesRequest struct {
 	} `json:"Destination"`
 	ReplyToAddresses []string `json:"ReplyToAddresses,omitempty"`
 	Content          struct {
-		Simple struct {
-			Subject sesContent `json:"Subject"`
-			Body    struct {
-				Text *sesContent `json:"Text,omitempty"`
-				HTML *sesContent `json:"Html,omitempty"`
-			} `json:"Body"`
-			Headers []sesHeader `json:"Headers,omitempty"`
-		} `json:"Simple"`
+		Simple *sesSimple `json:"Simple,omitempty"`
+		// Raw is a whole MIME message: SES's way to send attachments.
+		Raw *struct {
+			Data string `json:"Data"`
+		} `json:"Raw,omitempty"`
 	} `json:"Content"`
 	EmailTags            []sesTag `json:"EmailTags,omitempty"`
 	ConfigurationSetName string   `json:"ConfigurationSetName,omitempty"`
@@ -107,16 +114,24 @@ func (s *SES) Send(ctx context.Context, out message.Outgoing) (Result, error) {
 	if !out.ReplyTo.IsZero() {
 		body.ReplyToAddresses = []string{out.ReplyTo.String()}
 	}
-	simple := &body.Content.Simple
-	simple.Subject = sesContent{Data: out.Subject, Charset: "UTF-8"}
-	if out.Text != "" {
-		simple.Body.Text = &sesContent{Data: out.Text, Charset: "UTF-8"}
-	}
-	if out.HTML != "" {
-		simple.Body.HTML = &sesContent{Data: out.HTML, Charset: "UTF-8"}
-	}
-	for k, v := range out.Headers {
-		simple.Headers = append(simple.Headers, sesHeader{Name: k, Value: v})
+	if len(out.Attachments) > 0 {
+		// SES signs with the identity's DKIM key; the MIME is unsigned.
+		raw, _ := buildMIME(out, time.Now())
+		body.Content.Raw = &struct {
+			Data string `json:"Data"`
+		}{Data: base64.StdEncoding.EncodeToString(raw)}
+	} else {
+		simple := &sesSimple{Subject: sesContent{Data: out.Subject, Charset: "UTF-8"}}
+		if out.Text != "" {
+			simple.Body.Text = &sesContent{Data: out.Text, Charset: "UTF-8"}
+		}
+		if out.HTML != "" {
+			simple.Body.HTML = &sesContent{Data: out.HTML, Charset: "UTF-8"}
+		}
+		for k, v := range out.Headers {
+			simple.Headers = append(simple.Headers, sesHeader{Name: k, Value: v})
+		}
+		body.Content.Simple = simple
 	}
 	if out.MessageID != "" {
 		body.EmailTags = append(body.EmailTags, sesTag{Name: "mailos_message_id", Value: sesTagValue(out.MessageID)})
