@@ -79,6 +79,11 @@ const (
 	TopicDomainRevoked            = "iam.domain.revoked"
 )
 
+// TopicTenantSignupReviewRequested is sent to each platform administrator
+// when a workspace request has a confirmed address and waits for review
+// (IAM's tenant sign-up governance), payload pkg/events.TenantSignupNotice.
+const TopicTenantSignupReviewRequested = "iam.tenant_signup.review_requested"
+
 // TopicCampaign is MailOS's own topic: a campaign sent to contacts.
 const TopicCampaign = "mailos.campaign"
 
@@ -223,6 +228,17 @@ var catalogue = []topicSpec{
 	domainTopic(TopicDomainRevoked, "Domain revoked", "A platform operator removed a verified domain from this tenant",
 		req("domain_id", "Domain ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000004"),
 		req("reason", "Reason", KindText, "Ownership dispute upheld")),
+	{Topic: Topic{Key: TopicTenantSignupReviewRequested, Name: "Workspace request waiting for review", Source: SourceIAM,
+		Description: "A workspace request with a confirmed address waits for a platform administrator",
+		Variables: []Variable{recipientEmail,
+			req("request_id", "Request ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000005"),
+			req("organization_name", "Organization", KindText, "Averox Labs"),
+			req("workspace_name", "Workspace", KindText, "Averox Labs"),
+			opt("workspace_slug", "Workspace slug", KindText, "averox-labs"),
+			req("requester_email", "Requested by", KindEmail, "founder@averox-labs.example"),
+			req("link", "Review link", KindURL, "https://iam.example.com/platform/signup-requests/sample"),
+			req("occurred_at", "When", KindDatetime, "2026-10-31T09:30:00Z"),
+		}}},
 	{Topic: Topic{Key: TopicCampaign, Name: "Campaign", Source: SourceMailOS,
 		Description: "A marketing campaign sent to a contact list",
 		Variables: []Variable{

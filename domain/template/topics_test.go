@@ -14,7 +14,8 @@ func TestTopicsCatalogue(t *testing.T) {
 	want := []string{TopicSecurityNotice, TopicApprovalRequested, TopicInvite, TopicMagicLink, TopicPasswordReset,
 		TopicEmailVerification, TopicMFAEmailCode, TopicPasskeyEnrolment, TopicDeletionRequested, TopicAccessReview,
 		TopicLifecycleEmail, TopicDomainVerified, TopicDomainClaimExpiring, TopicDomainClaimReleased,
-		TopicDomainVerificationLapsed, TopicDomainTransferRequested, TopicDomainTransferred, TopicDomainRevoked, TopicCampaign}
+		TopicDomainVerificationLapsed, TopicDomainTransferRequested, TopicDomainTransferred, TopicDomainRevoked,
+		TopicTenantSignupReviewRequested, TopicCampaign}
 	var keys []string
 	for _, tp := range ts {
 		keys = append(keys, tp.Key)
@@ -211,5 +212,31 @@ func TestDomainTopics(t *testing.T) {
 		if errs := ValidateData(topic, data); len(errs) != 1 || errs[0].Field != "data.domain" {
 			t.Errorf("%s without domain: %v", topic, errs)
 		}
+	}
+}
+
+// The platform administrators' notice of a workspace request takes IAM's
+// TenantSignupNotice with the requester's address added.
+func TestTenantSignupReviewTopic(t *testing.T) {
+	data := map[string]any{"email": "platform-admin@example.com", "user": map[string]any{"name": "Platform Admin"},
+		"request_id": "r1", "organization_name": "Averox Labs", "workspace_name": "Averox Labs", "workspace_slug": "averox-labs",
+		"requester_email": "founder@averox-labs.example", "link": "https://iam.example.com/platform/signup-requests/r1",
+		"occurred_at": "2026-10-31T09:30:00Z"}
+	if errs := ValidateData(TopicTenantSignupReviewRequested, data); len(errs) != 0 {
+		t.Fatalf("valid notice refused: %v", errs)
+	}
+	tp, ok := TopicByKey(TopicTenantSignupReviewRequested)
+	if !ok || tp.Source != SourceIAM {
+		t.Fatalf("topic %+v", tp)
+	}
+	delete(data, "requester_email")
+	data["link"] = "not a url"
+	errs := ValidateData(TopicTenantSignupReviewRequested, data)
+	got := map[string]bool{}
+	for _, e := range errs {
+		got[e.Field] = true
+	}
+	if !got["data.requester_email"] || !got["data.link"] {
+		t.Fatalf("errors %v", errs)
 	}
 }
