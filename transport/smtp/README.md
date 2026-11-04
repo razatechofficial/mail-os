@@ -95,7 +95,7 @@ This is for software that can only be given a username and a password. It is the
 - Everything else is dropped.
 - MailOS writes its own `Message-ID` and signs with the domain's DKIM key.
 
-**Not supported: attachments and inline images.** They are refused with `554 5.6.1`, never dropped silently. Link to documents instead.
+**Attachments and inline images** are kept: parts with an attachment disposition or a file name, inline parts by `Content-ID`, and forwarded messages (as `.eml`). They are checked like the send API's (`ATTACHMENTS_*` limits, blocked executable types and extensions, the virus-scan hook); a refused file is `554 5.6.0` naming it.
 
 **Broadcast applications.** Their mail must carry `List-Unsubscribe`, and for one-click unsubscribe (RFC 8058) also `List-Unsubscribe-Post: List-Unsubscribe=One-Click`.
 
@@ -113,7 +113,7 @@ This is for software that can only be given a username and a password. It is the
 | `451 4.7.1` / `452 4.7.1` | Per-minute rate / daily quota of the application |
 | `552 5.3.4` | Message over the size limit |
 | `452 4.5.3` / `553 5.1.3` | Too many recipients / invalid recipient |
-| `554 5.6.0` / `554 5.6.1` | Malformed message or invalid field / attachments and other unsupported content |
+| `554 5.6.0` / `554 5.6.1` | Malformed message, invalid field or refused attachment / too many MIME parts |
 | `451 4.3.0` | MailOS temporarily unable to queue |
 | `250 2.0.0` | Queued, with the MailOS message ids |
 
