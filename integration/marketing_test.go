@@ -66,7 +66,8 @@ func newMarketing(t *testing.T) marketing {
 		db: db, auditRepo: auditRepo, sender: snd,
 		contacts: contact.NewService(postgres.NewContactRepository(db), postgres.NewContactListRepository(db), db, w),
 		campaigns: campaign.NewService(campaign.Deps{Campaigns: repo, Targets: repo, Recipients: postgres.NewCampaignRecipientRepository(db),
-			Queue: noQueue{}, Sender: snd, Tx: db, Audit: w, ScopeTenant: audit.WithTenant}, campaign.Config{PageSize: 3, PagesPerTask: 50}),
+			Queue: noQueue{}, Sender: snd, Checker: passChecker{}, Files: repo, Tx: db, Audit: w, ScopeTenant: audit.WithTenant},
+			campaign.Config{PageSize: 3, PagesPerTask: 50}),
 	}
 }
 
