@@ -113,3 +113,12 @@ func (s *Service) RecordBounce(ctx context.Context, tenantID, email, reason stri
 		Type: domain.TypeBounce, Reason: reason, Source: domain.SourceSend, CreatedAt: time.Now().UTC()})
 	return err
 }
+
+// RecordFeedback suppresses, tenant-wide, a recipient a provider's
+// delivery webhook reported: a hard bounce (TypeBounce) or a complaint
+// (TypeComplaint). It is audited like any added entry; an address already
+// listed is kept as it is.
+func (s *Service) RecordFeedback(ctx context.Context, tenantID, email string, t domain.Type, reason string) error {
+	_, err := s.Add(ctx, domain.Suppression{OrgID: tenantID, Email: email, Type: t, Reason: reason, Source: domain.SourceWebhook})
+	return err
+}
