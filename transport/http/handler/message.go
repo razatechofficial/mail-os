@@ -192,6 +192,16 @@ type messageView struct {
 	BodyPurgedAt      *time.Time     `json:"body_purged_at,omitempty"`
 	CreatedAt         time.Time      `json:"created_at"`
 	UpdatedAt         time.Time      `json:"updated_at"`
+	// Events are the providers' delivery events (GET /messages/:id only).
+	Events []messageEventView `json:"events,omitempty"`
+}
+
+// messageEventView is one provider delivery event.
+type messageEventView struct {
+	Type       string    `json:"type"`
+	OccurredAt time.Time `json:"occurred_at"`
+	ProviderID string    `json:"provider_id,omitempty"`
+	Reason     string    `json:"reason,omitempty"`
 }
 
 func messageViewOf(v appmsg.View) messageView {
@@ -207,7 +217,19 @@ func messageViewOf(v appmsg.View) messageView {
 		ActorType: string(m.Actor.Type), ActorID: m.Actor.ID, ProviderID: m.ProviderID, ProviderMessageID: m.ProviderMessageID,
 		Attempts: m.Attempts, LastError: m.LastError, HasBody: m.BodyPurgedAt == nil && (m.HTMLBody != "" || m.TextBody != ""),
 		ScheduledAt: m.ScheduledAt, SentAt: m.SentAt, DeliveredAt: m.DeliveredAt, BouncedAt: m.BouncedAt, FailedAt: m.FailedAt,
-		CancelledAt: m.CancelledAt, BodyPurgedAt: m.BodyPurgedAt, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt}
+		CancelledAt: m.CancelledAt, BodyPurgedAt: m.BodyPurgedAt, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
+		Events: messageEventsOf(v)}
+}
+
+func messageEventsOf(v appmsg.View) []messageEventView {
+	if len(v.Events) == 0 {
+		return nil
+	}
+	out := make([]messageEventView, len(v.Events))
+	for i, e := range v.Events {
+		out[i] = messageEventView{Type: string(e.Type), OccurredAt: e.OccurredAt, ProviderID: e.ProviderID, Reason: e.Reason}
+	}
+	return out
 }
 
 // List is GET /messages?status&type&topic&to&from&until&application_id.
