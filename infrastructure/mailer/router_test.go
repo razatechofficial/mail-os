@@ -3,6 +3,7 @@ package mailer
 import (
 	"context"
 	"errors"
+	"net/textproto"
 	"sync"
 	"testing"
 	"time"
@@ -175,5 +176,71 @@ func TestNewBuildsEachKind(t *testing.T) {
 	}
 	if _, err := New(provider.Provider{Kind: provider.KindSES, Settings: provider.Settings{Region: "eu-west-1"}}, provider.Credentials{}, opts); err == nil {
 		t.Fatal("SES without keys built")
+	}
+}
+
+type recordedOutcome struct {
+	tenant, provider string
+	test             provider.LastTest
+}
+
+type memOutcomes struct{ got []recordedOutcome }
+
+func (m *memOutcomes) RecordDelivery(_ context.Context, tenantID, providerID string, t provider.LastTest) error {
+	m.got = append(m.got, recordedOutcome{tenantID, providerID, t})
+	return nil
+}
+
+// A provider that refuses a live send for its configuration (the relay
+// refuses the sender) is marked failing, the router fails over, and the
+// next success through it clears the mark. A refused recipient marks
+// nothing: it is the message's fault.
+func TestRouterMarksProviderFailingOnConfigurationRefusal(t *testing.T) {
+	senderRefused := classifySMTP(context.Background(), stageRcpt,
+		&textproto.Error{Code: 550, Msg: "5.7.60 SMTP; Client does not have permissions to send as this sender"})
+	senders := map[string]*fakeSender{"relay": {err: senderRefused}, "backup": {id: "backup"}}
+	r, _ := routerWith([]Configured{configured("relay", 10, 1), configured("backup", 1, 1)}, senders, nil)
+	rec := &memOutcomes{}
+	r.SetFailureRecorder(rec)
+	out := sampleOutgoing()
+	out.TenantID = "tenant-1"
+	res, err := r.Send(context.Background(), out)
+	if err != nil || res.ProviderID != "backup" {
+		t.Fatalf("failover = %+v, %v", res, err)
+	}
+	if len(rec.got) != 1 {
+		t.Fatalf("recorded %+v", rec.got)
+	}
+	got := rec.got[0]
+	if got.tenant != "tenant-1" || got.provider != "relay" || got.test.OK || got.test.Kind != provider.TestDelivery ||
+		got.test.ErrorClass != string(message.ReasonConfig) || got.test.Hint == "" {
+		t.Fatalf("outcome = %+v", got)
+	}
+
+	// The relay is fixed: the next send through it clears the mark once.
+	failed := got.test
+	list := []Configured{configured("relay", 10, 1)}
+	list[0].Provider.LastTest = &failed
+	senders["relay"].err = nil
+	r2, _ := routerWith(list, senders, nil)
+	r2.SetFailureRecorder(rec)
+	if _, err := r2.Send(context.Background(), out); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(rec.got); n != 2 || !rec.got[1].test.OK {
+		t.Fatalf("recovery = %+v", rec.got)
+	}
+	list[0].Provider.LastTest = &rec.got[1].test
+	r3, _ := routerWith(list, senders, nil)
+	r3.SetFailureRecorder(rec)
+	_, _ = r3.Send(context.Background(), out)
+	if len(rec.got) != 2 {
+		t.Fatal("a healthy provider was recorded on every send")
+	}
+
+	senders["relay"].err = message.NewSendError("smtp", message.ReasonInvalidRecipient, 550, "no such user")
+	_, _ = r3.Send(context.Background(), out)
+	if len(rec.got) != 2 {
+		t.Fatal("a refused recipient marked the provider failing")
 	}
 }

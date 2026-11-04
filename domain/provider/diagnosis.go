@@ -7,6 +7,11 @@ import "time"
 const (
 	TestConnection = "connection"
 	TestSend       = "send"
+	// TestDelivery is not a test: a live send failed for the provider's
+	// own reasons (credentials, sender identity, relay policy), or the
+	// next one through it succeeded. The console shows the provider failing
+	// until then.
+	TestDelivery = "delivery"
 )
 
 // Step is one stage of a test: connect, TLS, authenticate, call the API.
