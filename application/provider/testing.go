@@ -193,3 +193,10 @@ func (s *Service) SendTest(ctx context.Context, tenantID, providerID, toEmail, a
 		testAudit(d, map[string]any{"by": actor, "provider_kind": string(p.Kind), "to": logger.MaskEmail(toEmail), "message_id": out.MessageID}))
 	return d, err
 }
+
+// RecordDelivery keeps a live send's outcome through the provider as its
+// last test (mailer.FailureRecorder): a failed delivery marks it failing in
+// the console until a send through it succeeds.
+func (s *Service) RecordDelivery(ctx context.Context, tenantID, providerID string, t domain.LastTest) error {
+	return s.repo.SetLastTest(ctx, tenantID, providerID, t)
+}
