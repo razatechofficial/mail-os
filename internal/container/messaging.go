@@ -42,6 +42,9 @@ func init() {
 	bootstrap.Register("sealed provider, DKIM and webhook columns",
 		"SELECT p.credentials_sealed, d.dkim_private_key_sealed, d.dkim_selector, w.secret FROM providers p, sending_domains d, webhooks w LIMIT 0",
 		true, "provider credentials, DKIM keys and webhook secrets cannot be sealed")
+	bootstrap.Register("message attachments (20261121010000)",
+		"SELECT message_id, position, content_id, inline, sha256, data FROM message_attachments LIMIT 0", true,
+		"messages with attachments cannot be stored or sent")
 	bootstrap.Register("provider last test (20261104110000)", "SELECT last_test FROM providers LIMIT 0", true,
 		"providers cannot be listed or tested")
 	bootstrap.Register("applications and their scope (20261031150000-150200)",
@@ -156,7 +159,10 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 	}
 	c.Messages = appmessage.NewService(deps, appmessage.Config{MaxAttempts: cfg.Worker.MaxRetry + 1,
 		RetentionDays: cfg.Retention.MessageDays, PurgeBatch: cfg.Retention.PurgeBatch, DefaultFrom: cfg.SMTP.FromAddr,
-		StaleSending: 3*cfg.Worker.SendTimeout + time.Minute})
+		StaleSending: 3*cfg.Worker.SendTimeout + time.Minute,
+		Attachments: domainmsg.AttachmentLimits{MaxBytes: cfg.Attachments.MaxBytes, MaxTotalBytes: cfg.Attachments.MaxTotalBytes,
+			MaxCount: cfg.Attachments.MaxCount, AllowedTypes: cfg.Attachments.AllowedTypes, BlockedTypes: cfg.Attachments.BlockedTypes,
+			BlockedExtensions: cfg.Attachments.BlockedExtensions}})
 
 	if c.Templates != nil {
 		c.Templates.SetTestSend(c.Messages, c.SendingDomains, c.Apps)
