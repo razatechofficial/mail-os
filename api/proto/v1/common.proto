@@ -22,3 +22,26 @@ message Timestamp {
   int64 seconds = 1;
   int32 nanos = 2;
 }
+
+// Attachment is a file a message carries: an attachment, or an inline part
+// the HTML body shows by its Content-ID (<img src="cid:logo">). The same
+// limits, blocked types and virus scan apply as on the HTTP send API and
+// the SMTP relay (ATTACHMENTS_*).
+message Attachment {
+  string filename = 1;
+  // content_type is filled from the file name's extension when empty.
+  string content_type = 2;
+  bytes content = 3;
+  // content_id names an inline part, without angle brackets.
+  string content_id = 4;
+  bool inline = 5;
+}
+
+// AttachmentInfo describes a stored file, never its content.
+message AttachmentInfo {
+  string filename = 1;
+  string content_type = 2;
+  int64 size = 3;
+  string content_id = 4;
+  bool inline = 5;
+}

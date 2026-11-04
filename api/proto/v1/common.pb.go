@@ -209,6 +209,165 @@ func (x *Timestamp) GetNanos() int32 {
 	return 0
 }
 
+// Attachment is a file a message carries: an attachment, or an inline part
+// the HTML body shows by its Content-ID (<img src="cid:logo">). The same
+// limits, blocked types and virus scan apply as on the HTTP send API and
+// the SMTP relay (ATTACHMENTS_*).
+type Attachment struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Filename string                 `protobuf:"bytes,1,opt,name=filename,proto3" json:"filename,omitempty"`
+	// content_type is filled from the file name's extension when empty.
+	ContentType string `protobuf:"bytes,2,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
+	Content     []byte `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
+	// content_id names an inline part, without angle brackets.
+	ContentId     string `protobuf:"bytes,4,opt,name=content_id,json=contentId,proto3" json:"content_id,omitempty"`
+	Inline        bool   `protobuf:"varint,5,opt,name=inline,proto3" json:"inline,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Attachment) Reset() {
+	*x = Attachment{}
+	mi := &file_common_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Attachment) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Attachment) ProtoMessage() {}
+
+func (x *Attachment) ProtoReflect() protoreflect.Message {
+	mi := &file_common_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Attachment.ProtoReflect.Descriptor instead.
+func (*Attachment) Descriptor() ([]byte, []int) {
+	return file_common_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Attachment) GetFilename() string {
+	if x != nil {
+		return x.Filename
+	}
+	return ""
+}
+
+func (x *Attachment) GetContentType() string {
+	if x != nil {
+		return x.ContentType
+	}
+	return ""
+}
+
+func (x *Attachment) GetContent() []byte {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
+func (x *Attachment) GetContentId() string {
+	if x != nil {
+		return x.ContentId
+	}
+	return ""
+}
+
+func (x *Attachment) GetInline() bool {
+	if x != nil {
+		return x.Inline
+	}
+	return false
+}
+
+// AttachmentInfo describes a stored file, never its content.
+type AttachmentInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Filename      string                 `protobuf:"bytes,1,opt,name=filename,proto3" json:"filename,omitempty"`
+	ContentType   string                 `protobuf:"bytes,2,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
+	Size          int64                  `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
+	ContentId     string                 `protobuf:"bytes,4,opt,name=content_id,json=contentId,proto3" json:"content_id,omitempty"`
+	Inline        bool                   `protobuf:"varint,5,opt,name=inline,proto3" json:"inline,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AttachmentInfo) Reset() {
+	*x = AttachmentInfo{}
+	mi := &file_common_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AttachmentInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AttachmentInfo) ProtoMessage() {}
+
+func (x *AttachmentInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_common_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AttachmentInfo.ProtoReflect.Descriptor instead.
+func (*AttachmentInfo) Descriptor() ([]byte, []int) {
+	return file_common_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *AttachmentInfo) GetFilename() string {
+	if x != nil {
+		return x.Filename
+	}
+	return ""
+}
+
+func (x *AttachmentInfo) GetContentType() string {
+	if x != nil {
+		return x.ContentType
+	}
+	return ""
+}
+
+func (x *AttachmentInfo) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *AttachmentInfo) GetContentId() string {
+	if x != nil {
+		return x.ContentId
+	}
+	return ""
+}
+
+func (x *AttachmentInfo) GetInline() bool {
+	if x != nil {
+		return x.Inline
+	}
+	return false
+}
+
 var File_common_proto protoreflect.FileDescriptor
 
 const file_common_proto_rawDesc = "" +
@@ -230,7 +389,22 @@ const file_common_proto_rawDesc = "" +
 	"totalPages\";\n" +
 	"\tTimestamp\x12\x18\n" +
 	"\aseconds\x18\x01 \x01(\x03R\aseconds\x12\x14\n" +
-	"\x05nanos\x18\x02 \x01(\x05R\x05nanosB5Z3github.com/razatechofficial/mail-os/api/proto/v1;v1b\x06proto3"
+	"\x05nanos\x18\x02 \x01(\x05R\x05nanos\"\x9c\x01\n" +
+	"\n" +
+	"Attachment\x12\x1a\n" +
+	"\bfilename\x18\x01 \x01(\tR\bfilename\x12!\n" +
+	"\fcontent_type\x18\x02 \x01(\tR\vcontentType\x12\x18\n" +
+	"\acontent\x18\x03 \x01(\fR\acontent\x12\x1d\n" +
+	"\n" +
+	"content_id\x18\x04 \x01(\tR\tcontentId\x12\x16\n" +
+	"\x06inline\x18\x05 \x01(\bR\x06inline\"\x9a\x01\n" +
+	"\x0eAttachmentInfo\x12\x1a\n" +
+	"\bfilename\x18\x01 \x01(\tR\bfilename\x12!\n" +
+	"\fcontent_type\x18\x02 \x01(\tR\vcontentType\x12\x12\n" +
+	"\x04size\x18\x03 \x01(\x03R\x04size\x12\x1d\n" +
+	"\n" +
+	"content_id\x18\x04 \x01(\tR\tcontentId\x12\x16\n" +
+	"\x06inline\x18\x05 \x01(\bR\x06inlineB5Z3github.com/razatechofficial/mail-os/api/proto/v1;v1b\x06proto3"
 
 var (
 	file_common_proto_rawDescOnce sync.Once
@@ -244,11 +418,13 @@ func file_common_proto_rawDescGZIP() []byte {
 	return file_common_proto_rawDescData
 }
 
-var file_common_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_common_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_common_proto_goTypes = []any{
 	(*Pagination)(nil),     // 0: mailos.v1.Pagination
 	(*PaginationMeta)(nil), // 1: mailos.v1.PaginationMeta
 	(*Timestamp)(nil),      // 2: mailos.v1.Timestamp
+	(*Attachment)(nil),     // 3: mailos.v1.Attachment
+	(*AttachmentInfo)(nil), // 4: mailos.v1.AttachmentInfo
 }
 var file_common_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type
@@ -269,7 +445,7 @@ func file_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_common_proto_rawDesc), len(file_common_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
