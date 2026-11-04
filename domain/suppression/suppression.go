@@ -45,6 +45,8 @@ const (
 	SourceSend    = "send"    // the provider refused the recipient
 	SourceManual  = "manual"  // an operator added it
 	SourceWebhook = "webhook" // a provider's bounce or complaint event
+	// SourceUnsubscribe is the recipient's own unsubscribe link (RFC 8058).
+	SourceUnsubscribe = "unsubscribe"
 )
 
 // Suppression is one suppressed address of a tenant.
