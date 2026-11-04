@@ -11,14 +11,18 @@ import (
 	"github.com/razatechofficial/mail-os/application/analytics"
 	appmessage "github.com/razatechofficial/mail-os/application/message"
 	appprovider "github.com/razatechofficial/mail-os/application/provider"
+	"github.com/razatechofficial/mail-os/application/providerevents"
 	appsendingdomain "github.com/razatechofficial/mail-os/application/sendingdomain"
 	appsuppression "github.com/razatechofficial/mail-os/application/suppression"
+	appunsubscribe "github.com/razatechofficial/mail-os/application/unsubscribe"
 	appwebhook "github.com/razatechofficial/mail-os/application/webhook"
+	"github.com/razatechofficial/mail-os/config"
 	domainkm "github.com/razatechofficial/mail-os/domain/keymanager"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
 	"github.com/razatechofficial/mail-os/infrastructure/dnscheck"
 	"github.com/razatechofficial/mail-os/infrastructure/mailer"
 	"github.com/razatechofficial/mail-os/infrastructure/persistence/postgres"
+	"github.com/razatechofficial/mail-os/infrastructure/providerhooks"
 	"github.com/razatechofficial/mail-os/infrastructure/render"
 	"github.com/razatechofficial/mail-os/infrastructure/webhookclient"
 	"github.com/razatechofficial/mail-os/infrastructure/worker"
@@ -38,6 +42,9 @@ func init() {
 	bootstrap.Register("sealed provider, DKIM and webhook columns",
 		"SELECT p.credentials_sealed, d.dkim_private_key_sealed, d.dkim_selector, w.secret FROM providers p, sending_domains d, webhooks w LIMIT 0",
 		true, "provider credentials, DKIM keys and webhook secrets cannot be sealed")
+	bootstrap.Register("message attachments (20261121010000)",
+		"SELECT message_id, position, content_id, inline, sha256, data FROM message_attachments LIMIT 0", true,
+		"messages with attachments cannot be stored or sent")
 	bootstrap.Register("provider last test (20261104110000)", "SELECT last_test FROM providers LIMIT 0", true,
 		"providers cannot be listed or tested")
 	bootstrap.Register("applications and their scope (20261031150000-150200)",
@@ -72,6 +79,19 @@ func (s routerSender) Send(ctx context.Context, out domainmsg.Outgoing) (appmess
 func renderContent(c appmessage.Content, data map[string]any) (appmessage.Content, error) {
 	out, err := render.Render(render.Content{Subject: c.Subject, HTML: c.HTML, Text: c.Text}, data, render.Options{})
 	return appmessage.Content{Subject: out.Subject, HTML: out.HTML, Text: out.Text}, err
+}
+
+// buildUnsubscribe makes the one-click unsubscribe links (RFC 8058).
+func buildUnsubscribe(cfg config.Unsubscribe, sup *appsuppression.Service) (*appunsubscribe.Service, error) {
+	key, err := cfg.Key()
+	if err != nil {
+		return nil, err
+	}
+	signer, err := appunsubscribe.NewSigner(key)
+	if err != nil {
+		return nil, err
+	}
+	return appunsubscribe.NewService(signer, sup, appunsubscribe.Config{BaseURL: cfg.BaseURL, TTL: cfg.TokenTTL, Mailto: cfg.Mailto})
 }
 
 // buildMessaging runs before buildEvents and buildMarketing: it sets
@@ -124,13 +144,25 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 		AllowPlaintext: plaintext, AllowPrivateNetworks: plaintext, AllowLoopback: plaintext}
 	router := mailer.NewRouter(providerSource{providers}, c.Platform, sendOpts)
 	deps := appmessage.Deps{Applications: c.Apps, Repo: postgres.NewMessageRepository(c.DB), Queue: queue, Suppressions: suppressions, Tenants: c.Tenants,
-		Render: renderContent, Sender: routerSender{router}, Signer: c.SendingDomains, Webhooks: webhooks, Stats: stats, Audit: c.Audit}
+		Render: renderContent, Sender: routerSender{router}, Signer: c.SendingDomains, Webhooks: webhooks, Stats: stats, Audit: c.Audit,
+		Events: postgres.NewMessageEventRepository(c.DB), Feedback: suppressions}
 	if c.Templates != nil {
 		deps.Templates, deps.Versions, deps.Branding = c.Templates, c.Templates, c.Templates
 	}
+	if cfg.Unsubscribe.Enabled() {
+		unsub, err := buildUnsubscribe(cfg.Unsubscribe, suppressions)
+		if err != nil {
+			return err
+		}
+		deps.Unsubscribe = unsub
+		c.PublicRoutes = append(c.PublicRoutes, handler.NewUnsubscribeHandler(unsub, c.Redis, cfg.Unsubscribe.RatePerMinute))
+	}
 	c.Messages = appmessage.NewService(deps, appmessage.Config{MaxAttempts: cfg.Worker.MaxRetry + 1,
 		RetentionDays: cfg.Retention.MessageDays, PurgeBatch: cfg.Retention.PurgeBatch, DefaultFrom: cfg.SMTP.FromAddr,
-		StaleSending: 3*cfg.Worker.SendTimeout + time.Minute})
+		StaleSending: 3*cfg.Worker.SendTimeout + time.Minute,
+		Attachments: domainmsg.AttachmentLimits{MaxBytes: cfg.Attachments.MaxBytes, MaxTotalBytes: cfg.Attachments.MaxTotalBytes,
+			MaxCount: cfg.Attachments.MaxCount, AllowedTypes: cfg.Attachments.AllowedTypes, BlockedTypes: cfg.Attachments.BlockedTypes,
+			BlockedExtensions: cfg.Attachments.BlockedExtensions}})
 
 	if c.Templates != nil {
 		c.Templates.SetTestSend(c.Messages, c.SendingDomains, c.Apps)
@@ -140,6 +172,13 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 	// message use case; both builders run after this one.
 	c.EventDispatcher = c.Messages
 	c.CampaignSender = c.Messages
+
+	// The sending APIs post delivery events to a public route, each
+	// authenticated by the provider's webhook secret; SNS certificates and
+	// subscription confirmations are fetched over HTTPS from SNS only.
+	sns := &providerhooks.HTTPSFetcher{}
+	c.PublicRoutes = append(c.PublicRoutes, handler.NewProviderEventHandler(providerevents.NewService(providers,
+		&providerhooks.Verifier{Certs: sns}, sns, c.Messages, c.Audit)))
 
 	idempotent := postgres.NewIdempotencyRepository(c.DB)
 	c.Routes = append(c.Routes,

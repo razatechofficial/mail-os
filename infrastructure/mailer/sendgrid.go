@@ -56,13 +56,22 @@ type sgRequest struct {
 	Personalizations []struct {
 		To []sgAddress `json:"to"`
 	} `json:"personalizations"`
-	From       sgAddress         `json:"from"`
-	ReplyTo    *sgAddress        `json:"reply_to,omitempty"`
-	Subject    string            `json:"subject"`
-	Content    []sgContent       `json:"content"`
-	Headers    map[string]string `json:"headers,omitempty"`
-	Categories []string          `json:"categories,omitempty"`
-	CustomArgs map[string]string `json:"custom_args,omitempty"`
+	From        sgAddress         `json:"from"`
+	ReplyTo     *sgAddress        `json:"reply_to,omitempty"`
+	Subject     string            `json:"subject"`
+	Content     []sgContent       `json:"content"`
+	Headers     map[string]string `json:"headers,omitempty"`
+	Categories  []string          `json:"categories,omitempty"`
+	CustomArgs  map[string]string `json:"custom_args,omitempty"`
+	Attachments []sgAttachment    `json:"attachments,omitempty"`
+}
+
+type sgAttachment struct {
+	Content     string `json:"content"`
+	Type        string `json:"type,omitempty"`
+	Filename    string `json:"filename"`
+	Disposition string `json:"disposition,omitempty"`
+	ContentID   string `json:"content_id,omitempty"`
 }
 
 // Send calls POST /v3/mail/send. The message id comes back in
@@ -93,6 +102,10 @@ func (s *SendGrid) Send(ctx context.Context, out message.Outgoing) (Result, erro
 	}
 	if out.MessageID != "" {
 		body.CustomArgs = map[string]string{"mailos_message_id": out.MessageID}
+	}
+	for _, a := range out.Attachments {
+		body.Attachments = append(body.Attachments, sgAttachment{Content: b64(a.Data), Type: a.ContentType, Filename: a.Filename,
+			Disposition: disposition(a), ContentID: a.ContentID})
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {

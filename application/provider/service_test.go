@@ -183,3 +183,24 @@ func TestLegacyConversion(t *testing.T) {
 		t.Fatal("postmark token")
 	}
 }
+
+// The webhook receiver gets the opened webhook secret, and the console's
+// view only learns that one is stored.
+func TestWebhookSecret(t *testing.T) {
+	svc, _, _ := newSvc()
+	p, err := svc.Create(context.Background(), tenant, Input{Name: "Postmark", Kind: domain.KindPostmark,
+		Credentials: domain.Credentials{ServerToken: "pm-token", WebhookSecret: "hook-password"}}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kind, secret, err := svc.WebhookSecret(context.Background(), tenant, p.ID)
+	if err != nil || kind != domain.KindPostmark || secret != "hook-password" {
+		t.Fatalf("%s %q %v", kind, secret, err)
+	}
+	if _, ok := p.CredentialHints["webhook_secret"]; !ok || p.CredentialHints["webhook_secret"] != "" {
+		t.Fatalf("hints %v", p.CredentialHints)
+	}
+	if _, _, err := svc.WebhookSecret(context.Background(), "other-tenant", p.ID); err == nil {
+		t.Fatal("another tenant's provider was opened")
+	}
+}

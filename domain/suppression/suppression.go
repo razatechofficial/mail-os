@@ -45,6 +45,8 @@ const (
 	SourceSend    = "send"    // the provider refused the recipient
 	SourceManual  = "manual"  // an operator added it
 	SourceWebhook = "webhook" // a provider's bounce or complaint event
+	// SourceUnsubscribe is the recipient's own unsubscribe link (RFC 8058).
+	SourceUnsubscribe = "unsubscribe"
 )
 
 // Suppression is one suppressed address of a tenant.
@@ -54,12 +56,12 @@ type Suppression struct {
 	// ApplicationID scopes the entry to one application; empty is
 	// tenant-wide.
 	ApplicationID string
-	Email     string
-	Type      Type
-	Reason    string
-	Source    string
-	CreatedBy string
-	CreatedAt time.Time
+	Email         string
+	Type          Type
+	Reason        string
+	Source        string
+	CreatedBy     string
+	CreatedAt     time.Time
 }
 
 // NormalizeEmail lowercases an address, as suppressions match without case.

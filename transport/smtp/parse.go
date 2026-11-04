@@ -15,6 +15,8 @@ import (
 
 	gosmtp "github.com/emersion/go-smtp"
 	"golang.org/x/text/encoding/htmlindex"
+
+	domainmsg "github.com/razatechofficial/mail-os/domain/message"
 )
 
 // Bounds of the MIME structure a submission may have.
@@ -40,6 +42,11 @@ type submitted struct {
 	Names map[string]string
 	// Headers are the carried headers (List-Unsubscribe).
 	Headers map[string]string
+	// Attachments are the files: parts with an attachment disposition or a
+	// file name, inline parts by Content-ID, and anything that is not a
+	// text or HTML body (a forwarded message is attached as .eml). The
+	// message pipeline checks them against the attachment limits.
+	Attachments []domainmsg.Attachment
 }
 
 // contentError refuses a message for its content; Reason is for the audit
@@ -64,9 +71,9 @@ func unsupported(format string, args ...any) error {
 var decoder = &mime.WordDecoder{CharsetReader: charsetReader}
 
 // parseMessage reads a submitted RFC 5322 message: its addresses, subject,
-// carried headers, and its text and HTML bodies decoded to UTF-8. Content
-// MailOS cannot send as it was written (attachments, inline images,
-// another message) is refused, never dropped silently.
+// carried headers, its text and HTML bodies decoded to UTF-8, and its
+// attachments and inline parts. Nothing is dropped silently: a part that
+// cannot be read refuses the message.
 func parseMessage(raw []byte) (submitted, error) {
 	m, err := mail.ReadMessage(bytes.NewReader(raw))
 	if err != nil {
@@ -165,10 +172,9 @@ func walk(h mimeHeader, body io.Reader, depth int, parts *int, out *submitted) e
 	if err != nil {
 		return malformed("A Content-Type header cannot be read")
 	}
-	if disp, dparams, err := mime.ParseMediaType(h.Get("Content-Disposition")); err == nil {
-		if disp == "attachment" || dparams["filename"] != "" {
-			return unsupported("Attachments are not supported; link to the file instead")
-		}
+	disp, dparams, _ := mime.ParseMediaType(h.Get("Content-Disposition"))
+	if disp == "attachment" || dparams["filename"] != "" || (params["name"] != "" && !strings.HasPrefix(media, "multipart/")) {
+		return attach(h, body, media, params, disp, dparams, out)
 	}
 	if strings.HasPrefix(media, "multipart/") {
 		if params["boundary"] == "" {
@@ -195,7 +201,9 @@ func walk(h mimeHeader, body io.Reader, depth int, parts *int, out *submitted) e
 	case "text/html":
 		target = &out.HTML
 	default:
-		return unsupported("Content of type %s is not supported: only text and HTML bodies", media)
+		// An inline image of a multipart/related, a forwarded message, any
+		// other file without a disposition.
+		return attach(h, body, media, params, disp, dparams, out)
 	}
 	if *target != "" {
 		return unsupported("The message has more than one %s body", media)
@@ -206,6 +214,63 @@ func walk(h mimeHeader, body io.Reader, depth int, parts *int, out *submitted) e
 	}
 	*target = text
 	return nil
+}
+
+// attach reads a file part into out.Attachments: its bytes (transfer
+// encoding undone, no charset conversion), its name (Content-Disposition
+// filename, else Content-Type name, RFC 2231 or 2047 encoded; else made
+// up from the type), its type and its Content-ID.
+func attach(h mimeHeader, body io.Reader, media string, params map[string]string, disp string, dparams map[string]string, out *submitted) error {
+	data, err := decodeBytes(body, h.Get("Content-Transfer-Encoding"))
+	if err != nil {
+		return err
+	}
+	name := dparams["filename"]
+	if name == "" {
+		name = params["name"]
+	}
+	if d, err := decoder.DecodeHeader(name); err == nil {
+		name = d
+	}
+	name = strings.TrimSpace(oneLine(name))
+	if name == "" {
+		ext := ".bin"
+		switch {
+		case media == "message/rfc822":
+			ext = ".eml"
+		default:
+			if exts, _ := mime.ExtensionsByType(media); len(exts) > 0 {
+				ext = exts[0]
+			}
+		}
+		name = fmt.Sprintf("attachment-%d%s", len(out.Attachments)+1, ext)
+	}
+	ct := media
+	if cs := params["charset"]; cs != "" {
+		ct = mime.FormatMediaType(media, map[string]string{"charset": cs})
+	}
+	cid := strings.Trim(strings.TrimSpace(h.Get("Content-Id")), "<>")
+	out.Attachments = append(out.Attachments, domainmsg.Attachment{Filename: name, ContentType: ct, ContentID: cid,
+		Inline: disp == "inline" || (disp == "" && cid != ""), Data: data})
+	return nil
+}
+
+// decodeBytes undoes a part's transfer encoding.
+func decodeBytes(body io.Reader, cte string) ([]byte, error) {
+	switch strings.ToLower(strings.TrimSpace(cte)) {
+	case "", "7bit", "8bit", "binary":
+	case "base64":
+		body = base64.NewDecoder(base64.StdEncoding, &stripSpace{r: body})
+	case "quoted-printable":
+		body = quotedprintable.NewReader(body)
+	default:
+		return nil, malformed("Content-Transfer-Encoding %q is not supported", cte)
+	}
+	raw, err := io.ReadAll(body)
+	if err != nil {
+		return nil, malformed("An attachment cannot be decoded")
+	}
+	return raw, nil
 }
 
 // decodeBody undoes the transfer encoding and converts the charset to

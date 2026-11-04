@@ -73,8 +73,12 @@ func (m *Mailgun) Send(ctx context.Context, out message.Outgoing) (Result, error
 	if out.MessageID != "" {
 		form.Set("v:mailos_message_id", out.MessageID)
 	}
+	payload, ctype := []byte(form.Encode()), "application/x-www-form-urlencoded"
+	if len(out.Attachments) > 0 {
+		payload, ctype = multipartForm(form, out.Attachments)
+	}
 	data, _, err := m.api.post(ctx, request{
-		url: m.url, contentType: "application/x-www-form-urlencoded", body: []byte(form.Encode()),
+		url: m.url, contentType: ctype, body: payload,
 		prepare: func(r *http.Request) error {
 			r.SetBasicAuth("api", m.key)
 			return nil

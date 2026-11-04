@@ -3,9 +3,11 @@ package message
 import (
 	"context"
 	"errors"
+	"maps"
 	"time"
 
 	analytics "github.com/razatechofficial/mail-os/application/analytics"
+	"github.com/razatechofficial/mail-os/application/unsubscribe"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
 	"github.com/razatechofficial/mail-os/domain/webhook"
 	"github.com/razatechofficial/mail-os/infrastructure/audit"
@@ -55,8 +57,9 @@ func (s *Service) Deliver(ctx context.Context, tenantID, id string) error {
 		_, err := s.d.Repo.Update(ctx, m, domainmsg.StatusQueued)
 		return err
 	}
+	unsub := s.unsubscribeURL(ctx, m)
 	if m.TemplateVersionID != "" && m.HTMLBody == "" && m.TextBody == "" {
-		if err := s.render(ctx, &m); err != nil {
+		if err := s.render(ctx, &m, unsub); err != nil {
 			m.LastError = "the template could not be rendered"
 			if terr := m.Transition(domainmsg.StatusFailed, now); terr != nil {
 				return terr
@@ -86,6 +89,14 @@ func (s *Service) Deliver(ctx context.Context, tenantID, id string) error {
 	out, err := m.Outgoing()
 	if err != nil {
 		return err
+	}
+	if unsub != "" && out.Headers["List-Unsubscribe"] == "" {
+		if out.Headers == nil {
+			out.Headers = map[string]string{}
+		}
+		for k, v := range s.d.Unsubscribe.Headers(unsub) {
+			out.Headers[k] = v
+		}
 	}
 	if s.d.Signer != nil {
 		from := m.FromEmail
@@ -137,8 +148,26 @@ func (s *Service) Deliver(ctx context.Context, tenantID, id string) error {
 	return nil
 }
 
-// render fills the subject and bodies from the pinned version.
-func (s *Service) render(ctx context.Context, m *domainmsg.Message) error {
+// unsubscribeURL is the message's one-click unsubscribe link (RFC 8058):
+// broadcast mail only (marketing, or an application's broadcast stream),
+// and only when links are configured. A link that cannot be made leaves
+// the message as its sender wrote it.
+func (s *Service) unsubscribeURL(ctx context.Context, m domainmsg.Message) string {
+	if s.d.Unsubscribe == nil || (m.Type != domainmsg.TypeMarketing && m.Stream != domainmsg.StreamBroadcast) {
+		return ""
+	}
+	u, err := s.d.Unsubscribe.URL(unsubscribe.Link{TenantID: m.OrgID, ApplicationID: m.ApplicationID, Email: m.ToEmail,
+		CampaignID: m.CampaignID, MessageID: m.ID})
+	if err != nil {
+		logger.FromContext(ctx).Warn("unsubscribe link not made", logger.String("message_id", m.ID), logger.Err(err))
+		return ""
+	}
+	return u
+}
+
+// render fills the subject and bodies from the pinned version. unsub, when
+// set, is the {{unsubscribe_url}} variable unless the data has one.
+func (s *Service) render(ctx context.Context, m *domainmsg.Message, unsub string) error {
 	if s.d.Versions == nil || s.d.Render == nil {
 		return errors.New("templates are not available")
 	}
@@ -146,7 +175,15 @@ func (s *Service) render(ctx context.Context, m *domainmsg.Message) error {
 	if err != nil {
 		return err
 	}
-	c, err := s.d.Render(Content{Subject: v.Subject, HTML: v.HTMLBody, Text: v.TextBody}, s.withBrand(ctx, m.OrgID, m.TemplateData))
+	data := s.withBrand(ctx, m.OrgID, m.TemplateData)
+	if _, ok := data["unsubscribe_url"]; unsub != "" && !ok {
+		data = maps.Clone(data)
+		if data == nil {
+			data = map[string]any{}
+		}
+		data["unsubscribe_url"] = unsub
+	}
+	c, err := s.d.Render(Content{Subject: v.Subject, HTML: v.HTMLBody, Text: v.TextBody}, data)
 	if err != nil {
 		return err
 	}

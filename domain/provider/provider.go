@@ -214,6 +214,11 @@ type Credentials struct {
 	ServiceAccountJSON string `json:"service_account_json,omitempty"`
 	// AccessKey is the Azure Communication Services access key.
 	AccessKey string `json:"access_key,omitempty"`
+	// WebhookSecret authenticates the provider's delivery event webhooks:
+	// the SendGrid verification key, the Mailgun signing key, the Resend
+	// (Svix) signing secret, or the basic-auth password of the event URL
+	// for SES (SNS), Postmark, SparkPost, Brevo and Mailjet.
+	WebhookSecret string `json:"webhook_secret,omitempty"`
 }
 
 const redacted = "[REDACTED]"

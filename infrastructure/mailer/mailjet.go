@@ -50,6 +50,16 @@ type mjMessage struct {
 	HTMLPart string            `json:"HTMLPart,omitempty"`
 	Headers  map[string]string `json:"Headers,omitempty"`
 	CustomID string            `json:"CustomID,omitempty"`
+	// Attachments and InlinedAttachments (by ContentID).
+	Attachments        []mjFile `json:"Attachments,omitempty"`
+	InlinedAttachments []mjFile `json:"InlinedAttachments,omitempty"`
+}
+
+type mjFile struct {
+	ContentType   string `json:"ContentType"`
+	Filename      string `json:"Filename"`
+	Base64Content string `json:"Base64Content"`
+	ContentID     string `json:"ContentID,omitempty"`
 }
 
 func (m *Mailjet) auth(r *http.Request) error {
@@ -87,6 +97,15 @@ func (m *Mailjet) Send(ctx context.Context, out message.Outgoing) (Result, error
 		Subject: out.Subject, TextPart: out.Text, HTMLPart: out.HTML, Headers: out.Headers, CustomID: out.MessageID}
 	if !out.ReplyTo.IsZero() {
 		msg.ReplyTo = &mjAddress{Email: out.ReplyTo.Email, Name: out.ReplyTo.Name}
+	}
+	for _, a := range out.Attachments {
+		f := mjFile{ContentType: a.ContentType, Filename: a.Filename, Base64Content: b64(a.Data)}
+		if a.Inline && a.ContentID != "" {
+			f.ContentID = a.ContentID
+			msg.InlinedAttachments = append(msg.InlinedAttachments, f)
+		} else {
+			msg.Attachments = append(msg.Attachments, f)
+		}
 	}
 	payload, err := json.Marshal(map[string]any{"Messages": []mjMessage{msg}})
 	if err != nil {

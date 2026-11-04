@@ -2,6 +2,9 @@ package handler
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -10,6 +13,7 @@ import (
 	appmsg "github.com/razatechofficial/mail-os/application/message"
 	"github.com/razatechofficial/mail-os/domain/access"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
+	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
 	"github.com/razatechofficial/mail-os/pkg/pagination"
 	"github.com/razatechofficial/mail-os/transport/http/middleware"
 	"github.com/razatechofficial/mail-os/transport/http/response"
@@ -69,13 +73,39 @@ type sendRequest struct {
 	Priority       int            `json:"priority"`
 	ScheduleAt     *time.Time     `json:"schedule_at"`
 	Type           string         `json:"type"`
+	// Attachments are files, content base64 (standard alphabet).
+	Attachments []attachmentRequest `json:"attachments"`
 }
 
-func (r sendRequest) input(tenantID string) appmsg.SendInput {
-	return appmsg.SendInput{TenantID: tenantID, FromName: r.FromName, FromEmail: r.FromEmail, ToEmail: r.ToEmail, ToName: r.ToName,
+// attachmentRequest is one file of a send.
+type attachmentRequest struct {
+	Filename    string `json:"filename"`
+	ContentType string `json:"content_type"`
+	Content     string `json:"content"`
+	ContentID   string `json:"content_id"`
+	Inline      bool   `json:"inline"`
+}
+
+func (r sendRequest) input(tenantID string) (appmsg.SendInput, error) {
+	in := appmsg.SendInput{TenantID: tenantID, FromName: r.FromName, FromEmail: r.FromEmail, ToEmail: r.ToEmail, ToName: r.ToName,
 		ReplyTo: r.ReplyTo, Subject: r.Subject, HTML: r.HTMLBody, Text: r.TextBody, TemplateSlug: r.TemplateSlug,
 		TemplateID: r.TemplateID, Locale: r.TemplateLocale, TemplateData: r.TemplateVars, Tags: r.Tags, Metadata: r.Metadata,
 		Priority: r.Priority, ScheduleAt: r.ScheduleAt, Type: domainmsg.Type(r.Type)}
+	var errs []apperrors.FieldError
+	for i, a := range r.Attachments {
+		data, err := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(a.Content), ""))
+		if err != nil {
+			errs = append(errs, apperrors.FieldError{Field: fmt.Sprintf("attachments[%d].content", i), Code: "invalid",
+				Message: "content must be base64"})
+			continue
+		}
+		in.Attachments = append(in.Attachments, domainmsg.Attachment{Filename: a.Filename, ContentType: a.ContentType,
+			ContentID: a.ContentID, Inline: a.Inline, Data: data})
+	}
+	if len(errs) > 0 {
+		return appmsg.SendInput{}, apperrors.Validation(errs...)
+	}
+	return in, nil
 }
 
 // Send is POST /messages/send. An application's send follows its rules
@@ -86,7 +116,12 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	if !bind(c, &req) {
 		return
 	}
-	r, err := h.svc.Send(c.Request.Context(), req.input(middleware.PrincipalFrom(c).TenantID))
+	in, err := req.input(middleware.PrincipalFrom(c).TenantID)
+	if err != nil {
+		response.FromError(c, err)
+		return
+	}
+	r, err := h.svc.Send(c.Request.Context(), in)
 	if err != nil {
 		response.FromError(c, err)
 		return
@@ -105,7 +140,11 @@ func (h *MessageHandler) Batch(c *gin.Context) {
 	tenantID := middleware.PrincipalFrom(c).TenantID
 	in := make([]appmsg.SendInput, len(req.Messages))
 	for i, m := range req.Messages {
-		in[i] = m.input(tenantID)
+		var err error
+		if in[i], err = m.input(tenantID); err != nil {
+			response.FromError(c, err)
+			return
+		}
 	}
 	r, err := h.svc.Batch(c.Request.Context(), tenantID, in)
 	if err != nil {
@@ -183,15 +222,37 @@ type messageView struct {
 	Attempts          int            `json:"attempts"`
 	LastError         string         `json:"last_error,omitempty"`
 	HasBody           bool           `json:"has_body"`
-	ScheduledAt       *time.Time     `json:"scheduled_at,omitempty"`
-	SentAt            *time.Time     `json:"sent_at,omitempty"`
-	DeliveredAt       *time.Time     `json:"delivered_at,omitempty"`
-	BouncedAt         *time.Time     `json:"bounced_at,omitempty"`
-	FailedAt          *time.Time     `json:"failed_at,omitempty"`
-	CancelledAt       *time.Time     `json:"cancelled_at,omitempty"`
-	BodyPurgedAt      *time.Time     `json:"body_purged_at,omitempty"`
-	CreatedAt         time.Time      `json:"created_at"`
-	UpdatedAt         time.Time      `json:"updated_at"`
+	// Attachments describe the files (never their content); only a single
+	// message's view lists them.
+	Attachments  []attachmentView `json:"attachments,omitempty"`
+	ScheduledAt  *time.Time       `json:"scheduled_at,omitempty"`
+	SentAt       *time.Time       `json:"sent_at,omitempty"`
+	DeliveredAt  *time.Time       `json:"delivered_at,omitempty"`
+	BouncedAt    *time.Time       `json:"bounced_at,omitempty"`
+	FailedAt     *time.Time       `json:"failed_at,omitempty"`
+	CancelledAt  *time.Time       `json:"cancelled_at,omitempty"`
+	BodyPurgedAt *time.Time       `json:"body_purged_at,omitempty"`
+	CreatedAt    time.Time        `json:"created_at"`
+	UpdatedAt    time.Time        `json:"updated_at"`
+	// Events are the providers' delivery events (GET /messages/:id only).
+	Events []messageEventView `json:"events,omitempty"`
+}
+
+// messageEventView is one provider delivery event.
+type messageEventView struct {
+	Type       string    `json:"type"`
+	OccurredAt time.Time `json:"occurred_at"`
+	ProviderID string    `json:"provider_id,omitempty"`
+	Reason     string    `json:"reason,omitempty"`
+}
+
+// attachmentView is a file's description.
+type attachmentView struct {
+	Filename    string `json:"filename"`
+	ContentType string `json:"content_type"`
+	Size        int    `json:"size"`
+	ContentID   string `json:"content_id,omitempty"`
+	Inline      bool   `json:"inline"`
 }
 
 func messageViewOf(v appmsg.View) messageView {
@@ -200,14 +261,30 @@ func messageViewOf(v appmsg.View) messageView {
 	if tags == nil {
 		tags = []string{}
 	}
-	return messageView{ID: m.ID, ApplicationID: m.ApplicationID, Sandbox: m.Sandbox, Stream: string(m.Stream), CampaignID: m.CampaignID, FromName: m.FromName, FromEmail: m.FromEmail, ToEmail: m.ToEmail,
+	var files []attachmentView
+	for _, a := range m.Attachments {
+		files = append(files, attachmentView{Filename: a.Filename, ContentType: a.ContentType, Size: len(a.Data), ContentID: a.ContentID, Inline: a.Inline})
+	}
+	return messageView{Attachments: files, ID: m.ID, ApplicationID: m.ApplicationID, Sandbox: m.Sandbox, Stream: string(m.Stream), CampaignID: m.CampaignID, FromName: m.FromName, FromEmail: m.FromEmail, ToEmail: m.ToEmail,
 		ToName: m.ToName, ReplyTo: m.ReplyTo, Subject: v.MaskedSubject, Type: string(m.Type), Status: string(m.Status),
 		Priority: int(m.Priority), Tags: tags, Metadata: m.Metadata, Topic: m.Topic, TemplateID: m.TemplateID,
 		TemplateVersionID: m.TemplateVersionID, Locale: m.Locale, TemplateData: v.MaskedTemplateData, EventID: m.EventID,
 		ActorType: string(m.Actor.Type), ActorID: m.Actor.ID, ProviderID: m.ProviderID, ProviderMessageID: m.ProviderMessageID,
 		Attempts: m.Attempts, LastError: m.LastError, HasBody: m.BodyPurgedAt == nil && (m.HTMLBody != "" || m.TextBody != ""),
 		ScheduledAt: m.ScheduledAt, SentAt: m.SentAt, DeliveredAt: m.DeliveredAt, BouncedAt: m.BouncedAt, FailedAt: m.FailedAt,
-		CancelledAt: m.CancelledAt, BodyPurgedAt: m.BodyPurgedAt, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt}
+		CancelledAt: m.CancelledAt, BodyPurgedAt: m.BodyPurgedAt, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
+		Events: messageEventsOf(v)}
+}
+
+func messageEventsOf(v appmsg.View) []messageEventView {
+	if len(v.Events) == 0 {
+		return nil
+	}
+	out := make([]messageEventView, len(v.Events))
+	for i, e := range v.Events {
+		out[i] = messageEventView{Type: string(e.Type), OccurredAt: e.OccurredAt, ProviderID: e.ProviderID, Reason: e.Reason}
+	}
+	return out
 }
 
 // List is GET /messages?status&type&topic&to&from&until&application_id.

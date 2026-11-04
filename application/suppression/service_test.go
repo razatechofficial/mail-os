@@ -89,3 +89,25 @@ func TestBlocksByScope(t *testing.T) {
 		t.Fatal("the application's entry is still there")
 	}
 }
+
+// A provider's hard bounce or complaint suppresses the address
+// tenant-wide, from the webhook source, for every kind of mail.
+func TestRecordFeedback(t *testing.T) {
+	repo := &memRepo{}
+	svc := NewService(repo, nopAudit{})
+	ctx := context.Background()
+	if err := svc.RecordFeedback(ctx, "t", " Gone@Example.com ", domain.TypeComplaint, "abuse report"); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.rows) != 1 || repo.rows[0].Source != domain.SourceWebhook || repo.rows[0].ApplicationID != "" ||
+		repo.rows[0].Email != "gone@example.com" {
+		t.Fatalf("rows %+v", repo.rows)
+	}
+	sup, err := svc.Blocks(ctx, "t", "app-1", "gone@example.com", message.TypeTransactional)
+	if err != nil || sup == nil {
+		t.Fatalf("complaint must block transactional mail: %v %v", sup, err)
+	}
+	if err := svc.RecordFeedback(ctx, "t", "x", domain.TypeBounce, ""); err == nil {
+		t.Fatal("an invalid address is refused")
+	}
+}

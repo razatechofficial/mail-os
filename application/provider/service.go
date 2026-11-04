@@ -208,6 +208,21 @@ func (s *Service) Get(ctx context.Context, tenantID, id string) (domain.Provider
 	return st.Provider, err
 }
 
+// WebhookSecret returns a provider's kind and the opened secret its
+// delivery event webhooks are checked with ("" when none is set). It is
+// for the webhook receiver only; the secret is never shown.
+func (s *Service) WebhookSecret(ctx context.Context, tenantID, id string) (domain.Kind, string, error) {
+	st, err := s.repo.Get(ctx, tenantID, id)
+	if err != nil {
+		return "", "", err
+	}
+	c, err := s.open(ctx, st.Sealed)
+	if err != nil {
+		return "", "", err
+	}
+	return st.Provider.Kind, c.WebhookSecret, nil
+}
+
 // List returns a page of providers.
 func (s *Service) List(ctx context.Context, tenantID string, limit, offset int) ([]domain.Provider, int, error) {
 	return s.repo.List(ctx, tenantID, limit, offset)

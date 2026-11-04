@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -8,6 +9,7 @@ import (
 	appprovider "github.com/razatechofficial/mail-os/application/provider"
 	"github.com/razatechofficial/mail-os/domain/access"
 	domain "github.com/razatechofficial/mail-os/domain/provider"
+	"github.com/razatechofficial/mail-os/infrastructure/providerhooks"
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
 	"github.com/razatechofficial/mail-os/pkg/pagination"
 	"github.com/razatechofficial/mail-os/transport/http/middleware"
@@ -52,8 +54,11 @@ type providerView struct {
 	// CredentialHints has a key per stored secret: its hint, or "".
 	CredentialHints domain.Hints     `json:"credential_hints"`
 	LastTest        *domain.LastTest `json:"last_test"`
-	CreatedAt       time.Time        `json:"created_at"`
-	UpdatedAt       time.Time        `json:"updated_at"`
+	// EventsPath is the path (on MailOS's public address) the provider
+	// posts delivery events to, for kinds that have them.
+	EventsPath string    `json:"events_path,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 func providerViewOf(p domain.Provider) providerView {
@@ -64,7 +69,15 @@ func providerViewOf(p domain.Provider) providerView {
 	}
 	return providerView{ID: v.ID, Name: v.Name, Type: string(v.Kind), Settings: v.Settings.Map(), Priority: v.Priority, Weight: v.Weight,
 		DailyLimit: v.DailyLimit, IsActive: v.Active, HasCredentials: v.HasCredentials, CredentialHints: hints, LastTest: v.LastTest,
-		CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt}
+		EventsPath: providerEventsPath(p), CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt}
+}
+
+// providerEventsPath is the provider's event webhook path, or "".
+func providerEventsPath(p domain.Provider) string {
+	if !providerhooks.Supported(p.Kind) || p.OrgID == "" || p.ID == "" {
+		return ""
+	}
+	return strings.NewReplacer(":tenant_id", p.OrgID, ":provider_id", p.ID).Replace(ProviderEventsPath)
 }
 
 // providerRequest is a create or update. On update the type is fixed,

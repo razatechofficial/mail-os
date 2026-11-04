@@ -44,6 +44,7 @@ const (
 	StatusSent       Status = "sent"       // a provider accepted it
 	StatusDelivered  Status = "delivered"  // the receiving server accepted it
 	StatusBounced    Status = "bounced"    // the recipient does not exist or refused it
+	StatusComplained Status = "complained" // the recipient reported it as spam (provider feedback loop)
 	StatusFailed     Status = "failed"     // gave up: permanent error or attempts exhausted
 	StatusCancelled  Status = "cancelled"  // cancelled before it was sent
 	StatusSuppressed Status = "suppressed" // the recipient is on the suppression list
@@ -52,20 +53,21 @@ const (
 
 // Statuses lists every status.
 var Statuses = []Status{StatusQueued, StatusScheduled, StatusSending, StatusSent, StatusDelivered,
-	StatusBounced, StatusFailed, StatusCancelled, StatusSuppressed, StatusCaptured}
+	StatusBounced, StatusComplained, StatusFailed, StatusCancelled, StatusSuppressed, StatusCaptured}
 
 // Valid reports whether s is known.
 func (s Status) Valid() bool { return slices.Contains(Statuses, s) }
 
 // transitions are the legal status changes. Sent mail can still bounce or
 // be reported failed (dropped) by the provider; delivered mail can still
-// bounce late. A failed message may be queued again by an operator.
+// bounce late, and sent or delivered mail can draw a complaint. A failed
+// message may be queued again by an operator.
 var transitions = map[Status][]Status{
 	StatusQueued:    {StatusSending, StatusScheduled, StatusCancelled, StatusSuppressed, StatusFailed},
 	StatusScheduled: {StatusQueued, StatusCancelled, StatusSuppressed},
 	StatusSending:   {StatusSent, StatusQueued, StatusFailed, StatusBounced, StatusCaptured},
-	StatusSent:      {StatusDelivered, StatusBounced, StatusFailed},
-	StatusDelivered: {StatusBounced},
+	StatusSent:      {StatusDelivered, StatusBounced, StatusFailed, StatusComplained},
+	StatusDelivered: {StatusBounced, StatusComplained},
 	StatusFailed:    {StatusQueued},
 }
 
@@ -79,7 +81,7 @@ func CanTransition(from, to Status) bool {
 // sending: it was handed over, or it never will be.
 func (s Status) Final() bool {
 	switch s {
-	case StatusSent, StatusDelivered, StatusBounced, StatusFailed, StatusCancelled, StatusSuppressed, StatusCaptured:
+	case StatusSent, StatusDelivered, StatusBounced, StatusComplained, StatusFailed, StatusCancelled, StatusSuppressed, StatusCaptured:
 		return true
 	}
 	return false
@@ -181,6 +183,9 @@ type Message struct {
 	// Headers are the extra headers the sender asked for, among
 	// CarriedHeaders only (List-Unsubscribe for broadcast mail).
 	Headers map[string]string
+	// Attachments are the message's files; they are erased with the body.
+	// Lists do not load them.
+	Attachments []Attachment
 
 	// Topic is the event topic that produced the message, if any.
 	Topic             string
@@ -440,6 +445,7 @@ func (m *Message) PurgeBody(now time.Time) {
 	m.HTMLBody = ""
 	m.TextBody = ""
 	m.TemplateData = nil
+	m.Attachments = nil
 	m.BodyPurgedAt = &now
 	m.UpdatedAt = now
 }
@@ -549,6 +555,9 @@ func (m *Message) Outgoing() (Outgoing, error) {
 		HTML:      m.HTMLBody,
 		Text:      m.TextBody,
 		Tags:      slices.Clone(m.Tags),
+	}
+	if len(m.Attachments) > 0 {
+		out.Attachments = slices.Clone(m.Attachments)
 	}
 	if len(m.Headers) > 0 {
 		out.Headers = make(map[string]string, len(m.Headers))

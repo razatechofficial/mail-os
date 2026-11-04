@@ -53,6 +53,15 @@ type pmRequest struct {
 	Tag           string            `json:"Tag,omitempty"`
 	Metadata      map[string]string `json:"Metadata,omitempty"`
 	MessageStream string            `json:"MessageStream"`
+	Attachments   []pmAttachment    `json:"Attachments,omitempty"`
+}
+
+// pmAttachment is a file; an inline one's ContentID is "cid:<id>".
+type pmAttachment struct {
+	Name        string `json:"Name"`
+	Content     string `json:"Content"`
+	ContentType string `json:"ContentType"`
+	ContentID   string `json:"ContentID,omitempty"`
 }
 
 // Postmark API error codes
@@ -88,6 +97,13 @@ func (p *Postmark) Send(ctx context.Context, out message.Outgoing) (Result, erro
 	}
 	if out.MessageID != "" {
 		body.Metadata = map[string]string{"mailos_message_id": out.MessageID}
+	}
+	for _, a := range out.Attachments {
+		f := pmAttachment{Name: a.Filename, Content: b64(a.Data), ContentType: a.ContentType}
+		if a.Inline && a.ContentID != "" {
+			f.ContentID = "cid:" + a.ContentID
+		}
+		body.Attachments = append(body.Attachments, f)
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {

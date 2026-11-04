@@ -1639,6 +1639,68 @@
         "x-permission": "events:dispatch"
       }
     },
+    "/api/v1/events/deliveries/{delivery_id}": {
+      "get": {
+        "description": "For service clients only. Where the message an event became is, by the delivery_id POST /events returned. 200 {delivery_id, event_id, status, created_at, updated_at, last_error?, events: [{type, occurred_at}]}; status is queued, sending, sent, delivered, bounced, complained, failed, cancelled or suppressed, and events are the steps so far (queued, sent, then the provider's delivered, deferred, soft_bounced, bounced or complained). Only for the server application that sent the message, in its tenant; anything else is 404. Permission: `events:dispatch`.",
+        "operationId": "get_events_deliveries_delivery_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "delivery_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delivery status",
+        "tags": [
+          "events"
+        ],
+        "x-permission": "events:dispatch"
+      }
+    },
+    "/api/v1/events/{event_id}/delivery": {
+      "get": {
+        "description": "For service clients only. The same as GET /events/deliveries/{delivery_id}, by the sender's own event id (the envelope id, or the x-event-id gRPC metadata). 200 {delivery_id, event_id, status, created_at, updated_at, last_error?, events: [{type, occurred_at}]}; status is queued, sending, sent, delivered, bounced, complained, failed, cancelled or suppressed, and events are the steps so far (queued, sent, then the provider's delivered, deferred, soft_bounced, bounced or complained). Only for the server application that sent the message, in its tenant; anything else is 404. Permission: `events:dispatch`.",
+        "operationId": "get_events_event_id_delivery",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delivery status of an event",
+        "tags": [
+          "events"
+        ],
+        "x-permission": "events:dispatch"
+      }
+    },
     "/api/v1/keys/encryption": {
       "get": {
         "description": "Per purpose (provider, dkim, webhook): keys, state and how many values each seals. Never key material. Permission: `settings:manage`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
@@ -1717,7 +1779,7 @@
     },
     "/api/v1/keys/kek/rotate": {
       "post": {
-        "description": "Starts a KEK rotation to the new key-encryption key configured on every replica (KEY_MANAGER_NEW_MASTER_KEY, KEY_MANAGER_PKCS11_NEW_KEK_LABEL or KEY_MANAGER_KMS_NEW_KEK_KEY_ID). New data keys are wrapped under it at once; the key schedule re-wraps the others without changing them. Body: {\"reason\": string}. 409 NO_NEW_KEK, KEK_ROTATION_RUNNING or KEK_ALREADY_CURRENT. Permission: `settings:manage`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
+        "description": "Starts a KEK rotation to the new key-encryption key configured on every replica (KEY_MANAGER_NEW_MASTER_KEY, KEY_MANAGER_PKCS11_NEW_KEK_LABEL, KEY_MANAGER_KMS_NEW_KEK_KEY_ID, KEY_MANAGER_GCP_KMS_NEW_KEK_KEY, KEY_MANAGER_AZURE_NEW_KEK_KEY or KEY_MANAGER_VAULT_NEW_KEK_KEY). New data keys are wrapped under it at once; the key schedule re-wraps the others without changing them. Body: {\"reason\": string}. 409 NO_NEW_KEK, KEK_ROTATION_RUNNING or KEK_ALREADY_CURRENT. Permission: `settings:manage`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
         "operationId": "post_keys_kek_rotate",
         "responses": {
           "default": {
@@ -1830,7 +1892,7 @@
           "messages"
         ],
         "x-permission": "messages:send",
-        "description": "Direct (subject/html/text) or templated (template_slug or template_id, optional template_locale, template_vars). The send worker uses the template's published version. A suppressed recipient is stored with status suppressed. For an application's service token (client credentials, aud mailos): the tenant is the application's; the message type (topic or template slug, or raw for written content) must be among its message_types; the sender must be one of its senders on a verified domain (its default sender when none is named); a transactional application cannot send marketing, a broadcast application's mail is marketing; then its per-minute rate and daily quota (429). Sandbox applications' messages are captured, never delivered. Refusals are audited as message.refused with a stable reason. Permission: `messages:send`.",
+        "description": "Direct (subject/html/text) or templated (template_slug or template_id, optional template_locale, template_vars). The send worker uses the template's published version. A suppressed recipient is stored with status suppressed. For an application's service token (client credentials, aud mailos): the tenant is the application's; the message type (topic or template slug, or raw for written content) must be among its message_types; the sender must be one of its senders on a verified domain (its default sender when none is named); a transactional application cannot send marketing, a broadcast application's mail is marketing; then its per-minute rate and daily quota (429). Sandbox applications' messages are captured, never delivered. Refusals are audited as message.refused with a stable reason. attachments: [{filename, content_type (from the extension when omitted), content (base64), content_id and inline for an inline part}] within ATTACHMENTS_MAX_BYTES, ATTACHMENTS_MAX_TOTAL_BYTES and ATTACHMENTS_MAX_COUNT; executable and script types and extensions are refused, and a file the virus scan rejects is 422 on that attachment. Permission: `messages:send`.",
         "parameters": [
           {
             "name": "Idempotency-Key",

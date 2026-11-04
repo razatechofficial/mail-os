@@ -17,14 +17,18 @@ const e2eSinkKey = "mailos:e2e:captured"
 
 // CapturedMail is one message the e2e sink kept, as the hook route serves it.
 type CapturedMail struct {
-	ID      string    `json:"id"`
-	To      string    `json:"to"`
-	From    string    `json:"from"`
-	Subject string    `json:"subject"`
-	HTML    string    `json:"html"`
-	Text    string    `json:"text"`
-	Tags    []string  `json:"tags"`
-	SentAt  time.Time `json:"sent_at"`
+	ID      string   `json:"id"`
+	To      string   `json:"to"`
+	From    string   `json:"from"`
+	Subject string   `json:"subject"`
+	HTML    string   `json:"html"`
+	Text    string   `json:"text"`
+	Tags    []string `json:"tags"`
+	// Attachments are the files' names, and Headers the extra headers
+	// (List-Unsubscribe), for black-box tests.
+	Attachments []string          `json:"attachments,omitempty"`
+	Headers     map[string]string `json:"headers,omitempty"`
+	SentAt      time.Time         `json:"sent_at"`
 }
 
 // E2ESink is the platform sender of the black-box test run (MAILOS_E2E_HOOKS,
@@ -48,7 +52,10 @@ func (s *E2ESink) Send(ctx context.Context, out message.Outgoing) (Result, error
 		return Result{}, err
 	}
 	m := CapturedMail{ID: out.MessageID, To: out.To.Email, From: out.From.Email, Subject: out.Subject,
-		HTML: out.HTML, Text: out.Text, Tags: append([]string{}, out.Tags...), SentAt: time.Now().UTC()}
+		HTML: out.HTML, Text: out.Text, Tags: append([]string{}, out.Tags...), Headers: out.Headers, SentAt: time.Now().UTC()}
+	for _, a := range out.Attachments {
+		m.Attachments = append(m.Attachments, a.Filename)
+	}
 	raw, err := json.Marshal(m)
 	if err != nil {
 		return Result{}, err

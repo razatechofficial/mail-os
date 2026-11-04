@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -34,7 +36,7 @@ const messageCols = `id, org_id, COALESCE(campaign_id, ''), COALESCE(provider_id
 	created_at, updated_at, COALESCE(application_id, ''), sandbox, stream, headers`
 
 // finalStatuses are the statuses whose body the purge may erase.
-const finalStatuses = `('sent', 'delivered', 'bounced', 'failed', 'cancelled', 'suppressed', 'captured')`
+const finalStatuses = `('sent', 'delivered', 'bounced', 'complained', 'failed', 'cancelled', 'suppressed', 'captured')`
 
 func scanMessage(row pgx.Row) (domain.Message, error) {
 	var m domain.Message
@@ -95,8 +97,50 @@ func nonNil(s []string) []string {
 	return s
 }
 
-// Create inserts a message.
+// Create inserts a message, and its attachments in the same transaction.
 func (r *MessageRepository) Create(ctx context.Context, m domain.Message) error {
+	if len(m.Attachments) == 0 {
+		return r.create(ctx, m)
+	}
+	return r.db.InTx(ctx, func(ctx context.Context) error {
+		if err := r.create(ctx, m); err != nil {
+			return err
+		}
+		q := QuerierFromContext(ctx, r.db)
+		for i, a := range m.Attachments {
+			sum := sha256.Sum256(a.Data)
+			if _, err := q.Exec(ctx, `
+				INSERT INTO message_attachments (message_id, position, org_id, filename, content_type, content_id, inline,
+					size_bytes, sha256, data)
+				VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), $7, $8, $9, $10)`,
+				m.ID, i, m.OrgID, a.Filename, a.ContentType, a.ContentID, a.Inline, len(a.Data), hex.EncodeToString(sum[:]), a.Data); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// attachments reads a message's files in order.
+func (r *MessageRepository) attachments(ctx context.Context, messageID string) ([]domain.Attachment, error) {
+	rows, err := QuerierFromContext(ctx, r.db).Query(ctx, `SELECT filename, content_type, COALESCE(content_id, ''), inline, data
+		FROM message_attachments WHERE message_id = $1 ORDER BY position`, messageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Attachment
+	for rows.Next() {
+		var a domain.Attachment
+		if err := rows.Scan(&a.Filename, &a.ContentType, &a.ContentID, &a.Inline, &a.Data); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+func (r *MessageRepository) create(ctx context.Context, m domain.Message) error {
 	source, _ := m.Metadata["source"].(string)
 	_, err := QuerierFromContext(ctx, r.db).Exec(ctx, `
 		INSERT INTO messages (id, org_id, campaign_id, provider_id, from_name, from_email, to_email, to_name, reply_to, subject,
@@ -122,7 +166,13 @@ func (r *MessageRepository) Create(ctx context.Context, m domain.Message) error 
 func (r *MessageRepository) Get(ctx context.Context, tenantID, id string) (domain.Message, error) {
 	m, err := scanMessage(QuerierFromContext(ctx, r.db).QueryRow(ctx,
 		`SELECT `+messageCols+` FROM messages WHERE id = $1 AND org_id = $2`, id, tenantID))
-	return m, notFound(err, "message")
+	if err != nil {
+		return m, notFound(err, "message")
+	}
+	if m.BodyPurgedAt == nil {
+		m.Attachments, err = r.attachments(ctx, m.ID)
+	}
+	return m, err
 }
 
 // ByIdempotencyKey finds the tenant's message with key.
@@ -254,14 +304,20 @@ func (r *MessageRepository) PurgeCandidates(ctx context.Context, tenantID string
 		AND created_at < $2 AND status IN `+finalStatuses+` ORDER BY created_at LIMIT $3`, tenantID, before, limit)
 }
 
-// SavePurged erases the bodies and template data and stores the masked
-// subject.
+// SavePurged erases the bodies, template data and attachments and stores
+// the masked subject.
 func (r *MessageRepository) SavePurged(ctx context.Context, m domain.Message) error {
-	_, err := QuerierFromContext(ctx, r.db).Exec(ctx, `
-		UPDATE messages SET subject = $3, html_body = NULL, text_body = NULL, template_data = NULL,
-			body_purged_at = $4, updated_at = $4
-		WHERE id = $1 AND org_id = $2`, m.ID, m.OrgID, m.Subject, m.BodyPurgedAt)
-	return err
+	return r.db.InTx(ctx, func(ctx context.Context) error {
+		q := QuerierFromContext(ctx, r.db)
+		if _, err := q.Exec(ctx, `
+			UPDATE messages SET subject = $3, html_body = NULL, text_body = NULL, template_data = NULL,
+				body_purged_at = $4, updated_at = $4
+			WHERE id = $1 AND org_id = $2`, m.ID, m.OrgID, m.Subject, m.BodyPurgedAt); err != nil {
+			return err
+		}
+		_, err := q.Exec(ctx, `DELETE FROM message_attachments WHERE message_id = $1 AND org_id = $2`, m.ID, m.OrgID)
+		return err
+	})
 }
 
 // SentSince counts each provider's messages sent since t.

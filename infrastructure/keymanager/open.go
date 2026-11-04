@@ -14,9 +14,25 @@ import (
 type Opener struct {
 	OpenDevice func(config.KeyManagerPKCS11) (Device, error)
 	OpenKMS    func(context.Context, config.KeyManagerKMS) (RemoteKEKService, error)
+	// OpenRemote opens the GCP, Azure and Vault key services.
+	OpenRemote func(ctx context.Context, provider string, cfg config.KeyManager) (RemoteKEKService, error)
 
-	dev Device
-	kms RemoteKEKService
+	dev    Device
+	kms    RemoteKEKService
+	remote map[string]RemoteKEKService
+}
+
+// OpenRemoteKEKService opens a GCP, Azure or Vault key service.
+func OpenRemoteKEKService(ctx context.Context, provider string, cfg config.KeyManager) (RemoteKEKService, error) {
+	switch provider {
+	case config.KeyProviderGCPKMS:
+		return OpenGCPKMS(ctx, cfg.GCPKMS)
+	case config.KeyProviderAzureKeyVault:
+		return OpenAzureKeyVault(ctx, cfg.Azure)
+	case config.KeyProviderVaultTransit:
+		return OpenVaultTransit(ctx, cfg.Vault)
+	}
+	return nil, fmt.Errorf("no key service %q", provider)
 }
 
 // Open builds the KEKs configuration names: KEY_MANAGER_PROVIDER's and,
@@ -29,6 +45,7 @@ func Open(ctx context.Context, cfg config.KeyManager) (keks *app.KEKs, close fun
 		OpenKMS: func(ctx context.Context, c config.KeyManagerKMS) (RemoteKEKService, error) {
 			return OpenAWSKMS(ctx, c)
 		},
+		OpenRemote: OpenRemoteKEKService,
 	}
 	return o.Open(ctx, cfg)
 }
@@ -95,6 +112,20 @@ func (o *Opener) kek(ctx context.Context, cfg config.KeyManager, provider string
 			key = cfg.KMS.NewKEKKeyID
 		}
 		return NewExternalKEK(ctx, domain.ProviderKMS, o.kms, key)
+	case config.KeyProviderGCPKMS, config.KeyProviderAzureKeyVault, config.KeyProviderVaultTransit:
+		svc := o.remote[provider]
+		if svc == nil {
+			var err error
+			if svc, err = o.OpenRemote(ctx, provider, cfg); err != nil {
+				return nil, err
+			}
+			if o.remote == nil {
+				o.remote = map[string]RemoteKEKService{}
+			}
+			o.remote[provider] = svc
+		}
+		// The config and domain provider names are the same strings.
+		return NewExternalKEK(ctx, provider, svc, cfg.KEKKey(provider, isNew))
 	}
-	return nil, fmt.Errorf("KEY_MANAGER_PROVIDER must be software, pkcs11 or kms, not %q", provider)
+	return nil, fmt.Errorf("KEY_MANAGER_PROVIDER must be software, pkcs11, kms, gcp_kms, azure_key_vault or vault_transit, not %q", provider)
 }

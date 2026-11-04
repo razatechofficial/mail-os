@@ -3,6 +3,7 @@ package mailer
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"mime"
 	"mime/multipart"
@@ -78,8 +79,99 @@ func quotedPrintable(s string) []byte {
 	return b.Bytes()
 }
 
-// buildMIME renders o as an RFC 5322 message: multipart/alternative with
-// the text part first when both bodies are set.
+// entity is one MIME entity: its content headers and encoded body.
+type entity struct {
+	header textproto.MIMEHeader
+	body   []byte
+}
+
+// textEntity is a text body, quoted-printable UTF-8.
+func textEntity(contentType, body string) entity {
+	return entity{header: textproto.MIMEHeader{
+		"Content-Type":              {contentType + "; charset=utf-8"},
+		"Content-Transfer-Encoding": {"quoted-printable"},
+	}, body: quotedPrintable(body)}
+}
+
+// multipartEntity wraps parts in a multipart/subtype entity.
+func multipartEntity(subtype string, parts []entity) entity {
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	for _, p := range parts {
+		w, _ := mw.CreatePart(p.header)
+		_, _ = w.Write(p.body)
+	}
+	_ = mw.Close()
+	return entity{header: textproto.MIMEHeader{"Content-Type": {`multipart/` + subtype + `; boundary="` + mw.Boundary() + `"`}},
+		body: body.Bytes()}
+}
+
+// fileEntity is an attachment or inline part, base64 in 76-character
+// lines, its name RFC 2231-encoded when not ASCII.
+func fileEntity(a message.Attachment) entity {
+	media, params, err := mime.ParseMediaType(a.ContentType)
+	if err != nil {
+		media, params = "application/octet-stream", map[string]string{}
+	}
+	params["name"] = a.Filename
+	ct := mime.FormatMediaType(media, params)
+	if ct == "" {
+		ct = media
+	}
+	disp := "attachment"
+	if a.Inline {
+		disp = "inline"
+	}
+	cd := mime.FormatMediaType(disp, map[string]string{"filename": a.Filename})
+	if cd == "" {
+		cd = disp
+	}
+	h := textproto.MIMEHeader{"Content-Type": {ct}, "Content-Disposition": {cd}, "Content-Transfer-Encoding": {"base64"}}
+	if a.ContentID != "" {
+		h.Set("Content-Id", "<"+a.ContentID+">")
+	}
+	enc := base64.StdEncoding.EncodeToString(a.Data)
+	var b bytes.Buffer
+	for len(enc) > 76 {
+		b.WriteString(enc[:76] + "\r\n")
+		enc = enc[76:]
+	}
+	b.WriteString(enc + "\r\n")
+	return entity{header: h, body: b.Bytes()}
+}
+
+// bodyEntity is the message's content: the text and HTML bodies
+// (multipart/alternative, text first, when both are set), inside a
+// multipart/related with the inline parts, inside a multipart/mixed with
+// the attachments.
+func bodyEntity(o message.Outgoing) entity {
+	var e entity
+	switch {
+	case o.HTML != "" && o.Text != "":
+		e = multipartEntity("alternative", []entity{textEntity("text/plain", o.Text), textEntity("text/html", o.HTML)})
+	case o.HTML != "":
+		e = textEntity("text/html", o.HTML)
+	default:
+		e = textEntity("text/plain", o.Text)
+	}
+	var inline, files []entity
+	for _, a := range o.Attachments {
+		if a.Inline {
+			inline = append(inline, fileEntity(a))
+		} else {
+			files = append(files, fileEntity(a))
+		}
+	}
+	if len(inline) > 0 {
+		e = multipartEntity("related", append([]entity{e}, inline...))
+	}
+	if len(files) > 0 {
+		e = multipartEntity("mixed", append([]entity{e}, files...))
+	}
+	return e
+}
+
+// buildMIME renders o as an RFC 5322 message (bodyEntity's structure).
 func buildMIME(o message.Outgoing, now time.Time) (raw []byte, msgID string) {
 	msgID = messageID(o)
 	var b bytes.Buffer
@@ -101,36 +193,14 @@ func buildMIME(o message.Outgoing, now time.Time) (raw []byte, msgID string) {
 		writeHeader(&b, textproto.CanonicalMIMEHeaderKey(k), encodeHeader(o.Headers[k]))
 	}
 
-	part := func(contentType, body string) (textproto.MIMEHeader, []byte) {
-		return textproto.MIMEHeader{
-			"Content-Type":              {contentType + "; charset=utf-8"},
-			"Content-Transfer-Encoding": {"quoted-printable"},
-		}, quotedPrintable(body)
+	e := bodyEntity(o)
+	writeHeader(&b, "Content-Type", e.header.Get("Content-Type"))
+	if cte := e.header.Get("Content-Transfer-Encoding"); cte != "" {
+		writeHeader(&b, "Content-Transfer-Encoding", cte)
 	}
-	if o.HTML != "" && o.Text != "" {
-		var body bytes.Buffer
-		mw := multipart.NewWriter(&body)
-		for _, p := range []struct{ ct, s string }{{"text/plain", o.Text}, {"text/html", o.HTML}} {
-			h, data := part(p.ct, p.s)
-			w, _ := mw.CreatePart(h)
-			_, _ = w.Write(data)
-		}
-		_ = mw.Close()
-		writeHeader(&b, "Content-Type", `multipart/alternative; boundary="`+mw.Boundary()+`"`)
-		b.WriteString("\r\n")
-		b.Write(body.Bytes())
-		return b.Bytes(), msgID
-	}
-	ct, s := "text/plain", o.Text
-	if o.HTML != "" {
-		ct, s = "text/html", o.HTML
-	}
-	h, data := part(ct, s)
-	writeHeader(&b, "Content-Type", h.Get("Content-Type"))
-	writeHeader(&b, "Content-Transfer-Encoding", h.Get("Content-Transfer-Encoding"))
 	b.WriteString("\r\n")
-	b.Write(data)
-	if !bytes.HasSuffix(data, []byte("\r\n")) {
+	b.Write(e.body)
+	if !bytes.HasSuffix(e.body, []byte("\r\n")) {
 		b.WriteString("\r\n")
 	}
 	return b.Bytes(), msgID

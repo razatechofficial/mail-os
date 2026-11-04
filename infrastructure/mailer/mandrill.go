@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/razatechofficial/mail-os/domain/message"
 	"github.com/razatechofficial/mail-os/domain/provider"
@@ -53,6 +54,15 @@ type mandrillMessage struct {
 	Tags       []string          `json:"tags,omitempty"`
 	Subaccount string            `json:"subaccount,omitempty"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
+	// Attachments, and Images: inline images named by their Content-ID.
+	Attachments []mandrillFile `json:"attachments,omitempty"`
+	Images      []mandrillFile `json:"images,omitempty"`
+}
+
+type mandrillFile struct {
+	Type    string `json:"type"`
+	Name    string `json:"name"`
+	Content string `json:"content"`
 }
 
 // Send calls POST /messages/send; each recipient comes back with a status.
@@ -74,6 +84,13 @@ func (m *Mandrill) Send(ctx context.Context, out message.Outgoing) (Result, erro
 	}
 	if out.MessageID != "" {
 		msg.Metadata = map[string]string{"mailos_message_id": out.MessageID}
+	}
+	for _, a := range out.Attachments {
+		if a.Inline && a.ContentID != "" && strings.HasPrefix(a.ContentType, "image/") {
+			msg.Images = append(msg.Images, mandrillFile{Type: a.ContentType, Name: a.ContentID, Content: b64(a.Data)})
+		} else {
+			msg.Attachments = append(msg.Attachments, mandrillFile{Type: a.ContentType, Name: a.Filename, Content: b64(a.Data)})
+		}
 	}
 	payload, err := json.Marshal(map[string]any{"key": m.key, "message": msg})
 	if err != nil {

@@ -20,6 +20,13 @@ type Routes interface {
 	Mount(api *gin.RouterGroup, g middleware.Guard)
 }
 
+// PublicRoutes are routes served without IAM authentication, outside
+// /api/v1: each guards itself (provider webhook signatures, signed
+// unsubscribe links).
+type PublicRoutes interface {
+	MountPublic(r gin.IRouter)
+}
+
 // Deps are what the router needs besides the feature routes.
 type Deps struct {
 	Auth    *middleware.Auth
@@ -29,6 +36,8 @@ type Deps struct {
 	Ready func(*gin.Context) error
 	// Hooks are the test-only e2e routes (nil unless MAILOS_E2E_HOOKS).
 	Hooks func(r *gin.Engine)
+	// Public are the unauthenticated route sets.
+	Public []PublicRoutes
 }
 
 // NewRouter builds the engine: global middleware, health, the OpenAPI
@@ -61,6 +70,9 @@ func NewRouter(cfg *config.Config, d Deps, routes ...Routes) *gin.Engine {
 	r.GET("/api/v1/openapi.json", func(c *gin.Context) { c.Data(http.StatusOK, "application/json", openapi.Spec()) })
 	if d.Hooks != nil {
 		d.Hooks(r)
+	}
+	for _, p := range d.Public {
+		p.MountPublic(r)
 	}
 
 	api := r.Group("/api/v1", d.Auth.Required())

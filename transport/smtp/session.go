@@ -324,7 +324,7 @@ func (s *session) Data(r io.Reader) error {
 	for _, to := range s.rcpts {
 		in := appmsg.SendInput{TenantID: s.who.principal.TenantID, FromName: fromName, FromEmail: fromEmail, ToEmail: to,
 			ToName: msg.Names[to], ReplyTo: msg.ReplyTo, Subject: msg.Subject, HTML: msg.HTML, Text: msg.Text,
-			Type: domainmsg.TypeTransactional, Headers: msg.Headers,
+			Type: domainmsg.TypeTransactional, Headers: msg.Headers, Attachments: msg.Attachments,
 			Metadata:       map[string]any{"source": "smtp", "smtp_session": s.id, "smtp_auth": s.who.method()},
 			IdempotencyKey: idempotencyKey(app.ID, msg.MessageID, to, raw)}
 		if msg.MessageID != "" {

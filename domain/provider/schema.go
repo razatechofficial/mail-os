@@ -150,6 +150,7 @@ var groupLabels = []Group{
 	{"authentication", "Authentication"},
 	{"security", "TLS and certificates"},
 	{"advanced", "Advanced"},
+	{"events", "Delivery events"},
 }
 
 func intp(v int) *int { return &v }
@@ -210,6 +211,18 @@ func senderFields(mailbox bool) []Field {
 			Validation: &Validation{MaxLength: MaxNameLen}},
 	}
 }
+
+// webhookSecret is the credential that authenticates the kind's delivery
+// event webhooks (POST /webhooks/providers/{tenant}/{provider}). Without
+// it MailOS refuses the provider's events.
+func webhookSecret(label, help string) Field {
+	return Field{Key: "webhook_secret", Label: label, Type: FieldPassword, Secret: true, Group: "events",
+		Help: help, Validation: &Validation{MaxLength: 4096}}
+}
+
+// basicAuthHelp is the help of a webhook password sent as basic auth.
+const basicAuthHelp = "Enables delivery, bounce and complaint events. Add the provider's event webhook with MailOS's event URL " +
+	"and this password as basic authentication (https://mailos:<password>@…); MailOS refuses events without it."
 
 func apiKey(label, help, placeholder string) Field {
 	return Field{Key: "api_key", Label: label, Type: FieldPassword, Required: true, Secret: true, Group: "authentication",
@@ -408,6 +421,9 @@ func sesSchema() TypeSchema {
 				Validation: &Validation{MaxLength: 256}},
 			{Key: "configuration_set", Label: "Configuration set", Type: FieldText, Group: "advanced",
 				Help: "Publishes delivery, bounce and complaint events.", Validation: &Validation{Format: FormatIdentifier, MaxLength: 64}},
+			webhookSecret("Event endpoint password", "Subscribe MailOS's event URL (HTTPS, basic authentication https://mailos:<password>@…) "+
+				"to the SNS topic of the configuration set's event destination. MailOS checks the SNS signature and this password, "+
+				"and confirms the subscription itself."),
 		}, senderFields(false)...),
 	}
 }
@@ -420,6 +436,8 @@ func sendGridSchema() TypeSchema {
 			{Key: "region", Label: "Data residency", Type: FieldSelect, Required: true, Default: RegionGlobal, Group: "connection",
 				Help: "EU for an EU subuser (api.eu.sendgrid.com).", Options: []Option{{RegionGlobal, "Global"}, {RegionEU, "EU"}}},
 			apiKey("API key", "An API key with Mail Send access.", "SG.…"),
+			webhookSecret("Event webhook verification key", "The Signed Event Webhook's public verification key (Mail Settings, "+
+				"Event Webhook, Signature Verification). MailOS checks every event batch's signature with it."),
 		}, senderFields(false)...),
 	}
 }
@@ -434,6 +452,7 @@ func mailgunSchema() TypeSchema {
 			{Key: "region", Label: "Region", Type: FieldSelect, Required: true, Default: RegionUS, Group: "connection",
 				Help: "The region the domain was created in.", Options: []Option{{RegionUS, "US (api.mailgun.net)"}, {RegionEU, "EU (api.eu.mailgun.net)"}}},
 			apiKey("API key", "The account's private API key or the domain's sending key.", "key-…"),
+			webhookSecret("HTTP webhook signing key", "From Mailgun's Webhooks page. MailOS checks each event's signature with it."),
 		}, senderFields(false)...),
 	}
 }
@@ -447,6 +466,7 @@ func postmarkSchema() TypeSchema {
 				Validation: &Validation{MaxLength: 256}},
 			{Key: "message_stream", Label: "Message stream", Type: FieldText, Default: postmarkDefaultStream, Group: "advanced",
 				Help: "A transactional stream; outbound is the default.", Validation: &Validation{Format: FormatIdentifier, MaxLength: 64}},
+			webhookSecret("Webhook password", basicAuthHelp+" Postmark signs nothing, so this password is the only proof."),
 		}, senderFields(false)...),
 	}
 }
@@ -459,6 +479,7 @@ func sparkPostSchema() TypeSchema {
 			{Key: "region", Label: "Region", Type: FieldSelect, Required: true, Default: RegionUS, Group: "connection",
 				Options: []Option{{RegionUS, "US (api.sparkpost.com)"}, {RegionEU, "EU (api.eu.sparkpost.com)"}}},
 			apiKey("API key", "An API key with Transmissions: Read/Write (and Account: Read for connection tests).", ""),
+			webhookSecret("Webhook password", basicAuthHelp),
 		}, senderFields(false)...),
 	}
 }
@@ -469,6 +490,7 @@ func brevoSchema() TypeSchema {
 		Description: "Brevo (formerly Sendinblue) transactional email API.",
 		Fields: append([]Field{
 			apiKey("API key", "A v3 API key. If Brevo restricts API keys to authorised IPs, add MailOS's egress addresses.", "xkeysib-…"),
+			webhookSecret("Webhook password", basicAuthHelp+" A bearer token (Authorization: Bearer) is accepted as well."),
 		}, senderFields(false)...),
 	}
 }
@@ -481,6 +503,7 @@ func mailjetSchema() TypeSchema {
 			apiKey("API key", "The public API key.", ""),
 			{Key: "api_secret", Label: "Secret key", Type: FieldPassword, Required: true, Secret: true, Group: "authentication",
 				Validation: &Validation{MaxLength: 256}},
+			webhookSecret("Webhook password", basicAuthHelp),
 		}, senderFields(false)...),
 	}
 }
@@ -503,6 +526,7 @@ func resendSchema() TypeSchema {
 		Description: "Resend email API.",
 		Fields: append([]Field{
 			apiKey("API key", "A key with sending access. A full-access key also lets connection tests list domains.", "re_…"),
+			webhookSecret("Webhook signing secret", "The webhook's signing secret (whsec_…). MailOS checks each event's Svix signature with it."),
 		}, senderFields(false)...),
 	}
 }
