@@ -26,8 +26,14 @@ func (c *Container) buildEvents(_ context.Context) error {
 	if dispatcher == nil {
 		dispatcher = inbound.Unconfigured{}
 	}
-	c.Inbound = inbound.NewService(c.Apps, c.Tenants, postgres.NewInboundEventRepository(c.DB), c.DB, dispatcher, c.Audit)
-	c.Routes = append(c.Routes, handler.NewEventHandler(c.Inbound))
+	records := postgres.NewInboundEventRepository(c.DB)
+	c.Inbound = inbound.NewService(c.Apps, c.Tenants, records, c.DB, dispatcher, c.Audit)
+	events := handler.NewEventHandler(c.Inbound)
+	if c.Messages != nil {
+		// A sending service reads its own deliveries' status.
+		events.WithStatus(inbound.NewStatusService(c.Apps, c.Messages, records))
+	}
+	c.Routes = append(c.Routes, events)
 	c.GRPCEvents = grpchandler.NewEventHandler(c.Inbound)
 
 	if !cfg.FeatureFlags.PubSubIngest {
