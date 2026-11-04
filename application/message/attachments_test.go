@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/razatechofficial/mail-os/application/campaign"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
 )
@@ -111,5 +112,53 @@ func TestTemplatedSendCarriesAttachments(t *testing.T) {
 	m, _ := f.repo.Get(context.Background(), tenant, r.MessageID)
 	if len(m.Attachments) != 1 || m.Attachments[0].ContentType != "text/plain; charset=utf-8" && m.Attachments[0].ContentType != "text/plain" {
 		t.Fatalf("%+v", m.Attachments)
+	}
+}
+
+// A campaign's files are checked and scanned once when it is saved, then
+// each recipient's message carries them to the provider unscanned again.
+func TestCampaignAttachmentsAreCheckedOnceAndDelivered(t *testing.T) {
+	f := newFixture(t)
+	sc := withAttachments(f)
+	files := []domainmsg.Attachment{{Filename: "brochure.pdf", Data: []byte("%PDF-1.7")}}
+	if err := f.svc.CheckAttachments(context.Background(), "campaign", "c1", files); err != nil {
+		t.Fatal(err)
+	}
+	if files[0].ContentType != "application/pdf" || len(sc.scanned) != 1 {
+		t.Fatalf("checked %+v, scanned %v", files, sc.scanned)
+	}
+	for _, to := range []string{"bob@example.com", "eve@example.com"} {
+		id, err := f.svc.SendCampaignMessage(context.Background(), campaign.CampaignMessage{TenantID: tenant, CampaignID: "c1",
+			TemplateID: "tpl-1", To: to, FromEmail: "news@bank.example", Attachments: files,
+			Data: map[string]any{"contact": map[string]any{"email": to}, "campaign": map[string]any{"name": "Autumn"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.svc.Deliver(context.Background(), tenant, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(sc.scanned) != 1 {
+		t.Fatalf("rescanned per recipient: %v", sc.scanned)
+	}
+	if len(f.sender.sent) != 2 {
+		t.Fatalf("sent %d", len(f.sender.sent))
+	}
+	for _, out := range f.sender.sent {
+		if len(out.Attachments) != 1 || out.Attachments[0].Filename != "brochure.pdf" || string(out.Attachments[0].Data) != "%PDF-1.7" {
+			t.Fatalf("outgoing %+v", out.Attachments)
+		}
+	}
+
+	err := f.svc.CheckAttachments(context.Background(), "campaign", "c2", []domainmsg.Attachment{{Filename: "x.txt", Data: []byte("EICAR")}})
+	if d := apperrors.DetailsOf(err); len(d) != 1 || d[0].Field != "attachments[0].content" || d[0].Code != "rejected" {
+		t.Fatalf("infected campaign file: %v", err)
+	}
+	if !f.audit.has("campaign.attachment_rejected") {
+		t.Fatal("campaign rejection not audited")
+	}
+	big := []domainmsg.Attachment{{Filename: "big.pdf", Data: make([]byte, 2<<10)}}
+	if d := apperrors.DetailsOf(f.svc.CheckAttachments(context.Background(), "campaign", "c3", big)); len(d) == 0 || d[0].Code != "too_large" {
+		t.Fatalf("over the limit: %v", d)
 	}
 }
