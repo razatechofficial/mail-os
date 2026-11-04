@@ -71,6 +71,15 @@ type acsRequest struct {
 	ReplyTo                        []acsAddress      `json:"replyTo,omitempty"`
 	Headers                        map[string]string `json:"headers,omitempty"`
 	UserEngagementTrackingDisabled bool              `json:"userEngagementTrackingDisabled"`
+	// Attachments; an inline one carries its contentId.
+	Attachments []acsFile `json:"attachments,omitempty"`
+}
+
+type acsFile struct {
+	Name            string `json:"name"`
+	ContentType     string `json:"contentType"`
+	ContentInBase64 string `json:"contentInBase64"`
+	ContentID       string `json:"contentId,omitempty"`
 }
 
 // sign sets the HMAC-SHA256 authorization: the string to sign is the
@@ -105,6 +114,13 @@ func (a *ACS) Send(ctx context.Context, out message.Outgoing) (Result, error) {
 	}
 	body.Headers = out.Headers
 	body.UserEngagementTrackingDisabled = true
+	for _, a := range out.Attachments {
+		f := acsFile{Name: a.Filename, ContentType: a.ContentType, ContentInBase64: b64(a.Data)}
+		if a.Inline {
+			f.ContentID = a.ContentID
+		}
+		body.Attachments = append(body.Attachments, f)
+	}
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return Result{}, message.NewSendError(string(provider.KindACS), message.ReasonInvalid, 0, "the message cannot be encoded")
