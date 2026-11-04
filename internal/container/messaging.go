@@ -14,7 +14,9 @@ import (
 	"github.com/razatechofficial/mail-os/application/providerevents"
 	appsendingdomain "github.com/razatechofficial/mail-os/application/sendingdomain"
 	appsuppression "github.com/razatechofficial/mail-os/application/suppression"
+	appunsubscribe "github.com/razatechofficial/mail-os/application/unsubscribe"
 	appwebhook "github.com/razatechofficial/mail-os/application/webhook"
+	"github.com/razatechofficial/mail-os/config"
 	domainkm "github.com/razatechofficial/mail-os/domain/keymanager"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
 	"github.com/razatechofficial/mail-os/infrastructure/dnscheck"
@@ -76,6 +78,19 @@ func renderContent(c appmessage.Content, data map[string]any) (appmessage.Conten
 	return appmessage.Content{Subject: out.Subject, HTML: out.HTML, Text: out.Text}, err
 }
 
+// buildUnsubscribe makes the one-click unsubscribe links (RFC 8058).
+func buildUnsubscribe(cfg config.Unsubscribe, sup *appsuppression.Service) (*appunsubscribe.Service, error) {
+	key, err := cfg.Key()
+	if err != nil {
+		return nil, err
+	}
+	signer, err := appunsubscribe.NewSigner(key)
+	if err != nil {
+		return nil, err
+	}
+	return appunsubscribe.NewService(signer, sup, appunsubscribe.Config{BaseURL: cfg.BaseURL, TTL: cfg.TokenTTL, Mailto: cfg.Mailto})
+}
+
 // buildMessaging runs before buildEvents and buildMarketing: it sets
 // EventDispatcher and CampaignSender for them. It wires providers, sending domains, suppressions, webhooks,
 // stats and messages: their routes, worker tasks, the gRPC MailService,
@@ -130,6 +145,14 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 		Events: postgres.NewMessageEventRepository(c.DB), Feedback: suppressions}
 	if c.Templates != nil {
 		deps.Templates, deps.Versions, deps.Branding = c.Templates, c.Templates, c.Templates
+	}
+	if cfg.Unsubscribe.Enabled() {
+		unsub, err := buildUnsubscribe(cfg.Unsubscribe, suppressions)
+		if err != nil {
+			return err
+		}
+		deps.Unsubscribe = unsub
+		c.PublicRoutes = append(c.PublicRoutes, handler.NewUnsubscribeHandler(unsub, c.Redis, cfg.Unsubscribe.RatePerMinute))
 	}
 	c.Messages = appmessage.NewService(deps, appmessage.Config{MaxAttempts: cfg.Worker.MaxRetry + 1,
 		RetentionDays: cfg.Retention.MessageDays, PurgeBatch: cfg.Retention.PurgeBatch, DefaultFrom: cfg.SMTP.FromAddr,
