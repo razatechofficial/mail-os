@@ -8,7 +8,7 @@ import (
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
 )
 
-var limits = AttachmentLimits{MaxBytes: 10, MaxTotalBytes: 15, MaxCount: 3}
+var limits = AttachmentLimits{MaxBytes: 10, MaxTotalBytes: 15, MaxCount: 4}
 
 func fields(err error) map[string]string {
 	out := map[string]string{}
@@ -23,6 +23,7 @@ func TestNormalizeAttachments(t *testing.T) {
 		{Filename: " report.pdf ", Data: []byte("x")},
 		{Filename: "logo.png", ContentType: "Image/PNG; name=logo.png", ContentID: "<logo>", Inline: true, Data: []byte("x")},
 		{Filename: "blob", Data: []byte("x")},
+		{Filename: "notes.txt", ContentType: "text/plain; charset=UTF-8; name=notes.txt", Data: []byte("x")},
 	}
 	NormalizeAttachments(list)
 	if list[0].Filename != "report.pdf" || list[0].ContentType != "application/pdf" {
@@ -33,6 +34,9 @@ func TestNormalizeAttachments(t *testing.T) {
 	}
 	if list[2].ContentType != "application/octet-stream" {
 		t.Fatalf("blob: %+v", list[2])
+	}
+	if list[3].ContentType != "text/plain; charset=UTF-8" {
+		t.Fatalf("text: %+v", list[3])
 	}
 	if err := ValidateAttachments(list, limits); err != nil {
 		t.Fatalf("valid list refused: %v", err)
@@ -81,7 +85,7 @@ func TestValidateAttachmentsRefusals(t *testing.T) {
 }
 
 func make4() []Attachment {
-	out := make([]Attachment, 4)
+	out := make([]Attachment, 5)
 	for i := range out {
 		out[i] = Attachment{Filename: "a.txt", ContentType: "text/plain", Data: []byte("x")}
 	}

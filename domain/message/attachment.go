@@ -82,13 +82,15 @@ func NormalizeAttachments(list []Attachment) {
 		if ct == "" {
 			ct = mime.TypeByExtension(path.Ext(a.Filename))
 		}
-		if media, _, err := mime.ParseMediaType(ct); err == nil {
-			ct = media
+		if media, params, err := mime.ParseMediaType(ct); err == nil {
+			// The file name travels in Content-Disposition; a charset stays.
+			delete(params, "name")
+			ct = mime.FormatMediaType(media, params)
 		}
 		if ct == "" {
 			ct = "application/octet-stream"
 		}
-		a.ContentType = strings.ToLower(ct)
+		a.ContentType = ct
 	}
 }
 
@@ -124,11 +126,11 @@ func ValidateAttachments(list []Attachment, l AttachmentLimits) error {
 		case slices.Contains(blockedExtensions, extensionOf(a.Filename)) || matchExt(extensionOf(a.Filename), l.BlockedExtensions):
 			add(f+".filename", "blocked_type", "files of type ."+extensionOf(a.Filename)+" cannot be sent")
 		}
-		if _, _, err := mime.ParseMediaType(a.ContentType); err != nil || !strings.Contains(a.ContentType, "/") {
+		if media, _, err := mime.ParseMediaType(a.ContentType); err != nil || !strings.Contains(media, "/") {
 			add(f+".content_type", "invalid", "content_type must be a media type such as application/pdf")
-		} else if matchType(a.ContentType, blockedTypes) || matchType(a.ContentType, l.BlockedTypes) ||
-			(len(l.AllowedTypes) > 0 && !matchType(a.ContentType, l.AllowedTypes)) {
-			add(f+".content_type", "blocked_type", "files of type "+a.ContentType+" cannot be sent")
+		} else if matchType(media, blockedTypes) || matchType(media, l.BlockedTypes) ||
+			(len(l.AllowedTypes) > 0 && !matchType(media, l.AllowedTypes)) {
+			add(f+".content_type", "blocked_type", "files of type "+media+" cannot be sent")
 		}
 		if size == 0 {
 			add(f+".content", "required", "content is empty")
