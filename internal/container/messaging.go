@@ -177,7 +177,7 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 	// authenticated by the provider's webhook secret; SNS certificates and
 	// subscription confirmations are fetched over HTTPS from SNS only.
 	sns := &providerhooks.HTTPSFetcher{}
-	c.Public = append(c.Public, handler.NewProviderEventHandler(providerevents.NewService(providers,
+	c.PublicRoutes = append(c.PublicRoutes, handler.NewProviderEventHandler(providerevents.NewService(providers,
 		&providerhooks.Verifier{Certs: sns}, sns, c.Messages, c.Audit)))
 
 	idempotent := postgres.NewIdempotencyRepository(c.DB)

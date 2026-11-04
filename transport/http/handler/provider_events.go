@@ -39,7 +39,7 @@ func NewProviderEventHandler(svc *providerevents.Service) *ProviderEventHandler 
 }
 
 // MountPublic registers the unauthenticated route.
-func (h *ProviderEventHandler) MountPublic(r *gin.Engine) {
+func (h *ProviderEventHandler) MountPublic(r gin.IRouter) {
 	r.POST(ProviderEventsPath, h.Receive)
 }
 
