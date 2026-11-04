@@ -89,3 +89,36 @@ func TestBlocksByScope(t *testing.T) {
 		t.Fatal("the application's entry is still there")
 	}
 }
+
+type memAudit struct{ actions []string }
+
+func (a *memAudit) Append(_ context.Context, _, _, action string, _ map[string]any) error {
+	a.actions = append(a.actions, action)
+	return nil
+}
+
+// A hard bounce recorded by the send path is tenant-wide; an administrator
+// lifts it like any entry, and the removal is audited.
+func TestRecordedBounceIsRemovable(t *testing.T) {
+	audit := &memAudit{}
+	svc := NewService(&memRepo{}, audit)
+	ctx := context.Background()
+	if err := svc.RecordBounce(ctx, "t", "Gone@Example.com", "invalid_recipient"); err != nil {
+		t.Fatal(err)
+	}
+	if sup, _ := svc.Blocks(ctx, "t", "app-1", "gone@example.com", message.TypeTransactional); sup == nil || sup.Type != domain.TypeBounce {
+		t.Fatalf("bounce not recorded tenant-wide: %+v", sup)
+	}
+	if err := svc.Remove(ctx, "t", "", "GONE@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if sup, _ := svc.Blocks(ctx, "t", "app-1", "gone@example.com", message.TypeTransactional); sup != nil {
+		t.Fatalf("bounce still blocks: %+v", sup)
+	}
+	if len(audit.actions) != 1 || audit.actions[0] != "suppression.removed" {
+		t.Fatalf("audit = %v", audit.actions)
+	}
+	if err := svc.Remove(ctx, "t", "", "gone@example.com"); err != nil || len(audit.actions) != 1 {
+		t.Fatalf("removing an unlisted address = %v, audit %v", err, audit.actions)
+	}
+}
