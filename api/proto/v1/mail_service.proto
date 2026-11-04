@@ -28,6 +28,7 @@ message SendEmailRequest {
   repeated string tags = 10;
   int32 priority = 11;
   string idempotency_key = 12;
+  repeated Attachment attachments = 13;
 }
 
 message SendEmailResponse {
