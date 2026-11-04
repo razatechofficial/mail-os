@@ -27,6 +27,9 @@ message CreateCampaignRequest {
   string contact_list_id = 6;
   string type = 7;
   string scheduled_at = 8;
+  // attachments go to every recipient; they are checked and scanned when
+  // the campaign is saved.
+  repeated Attachment attachments = 9;
 }
 
 message GetCampaignRequest {
@@ -39,6 +42,10 @@ message UpdateCampaignRequest {
   string subject = 3;
   string from_name = 4;
   string from_email = 5;
+  // attachments, when set, replace the campaign's files.
+  repeated Attachment attachments = 6;
+  // clear_attachments removes every file (attachments must be empty).
+  bool clear_attachments = 7;
 }
 
 message DeleteCampaignRequest {
@@ -87,4 +94,5 @@ message Campaign {
   int32 failed_count = 11;
   string created_at = 12;
   string updated_at = 13;
+  repeated AttachmentInfo attachments = 14;
 }

@@ -31,6 +31,9 @@ type CreateCampaignRequest struct {
 	ContactListId string                 `protobuf:"bytes,6,opt,name=contact_list_id,json=contactListId,proto3" json:"contact_list_id,omitempty"`
 	Type          string                 `protobuf:"bytes,7,opt,name=type,proto3" json:"type,omitempty"`
 	ScheduledAt   string                 `protobuf:"bytes,8,opt,name=scheduled_at,json=scheduledAt,proto3" json:"scheduled_at,omitempty"`
+	// attachments go to every recipient; they are checked and scanned when
+	// the campaign is saved.
+	Attachments   []*Attachment `protobuf:"bytes,9,rep,name=attachments,proto3" json:"attachments,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -121,6 +124,13 @@ func (x *CreateCampaignRequest) GetScheduledAt() string {
 	return ""
 }
 
+func (x *CreateCampaignRequest) GetAttachments() []*Attachment {
+	if x != nil {
+		return x.Attachments
+	}
+	return nil
+}
+
 type GetCampaignRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -166,14 +176,18 @@ func (x *GetCampaignRequest) GetId() string {
 }
 
 type UpdateCampaignRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Subject       string                 `protobuf:"bytes,3,opt,name=subject,proto3" json:"subject,omitempty"`
-	FromName      string                 `protobuf:"bytes,4,opt,name=from_name,json=fromName,proto3" json:"from_name,omitempty"`
-	FromEmail     string                 `protobuf:"bytes,5,opt,name=from_email,json=fromEmail,proto3" json:"from_email,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name      string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Subject   string                 `protobuf:"bytes,3,opt,name=subject,proto3" json:"subject,omitempty"`
+	FromName  string                 `protobuf:"bytes,4,opt,name=from_name,json=fromName,proto3" json:"from_name,omitempty"`
+	FromEmail string                 `protobuf:"bytes,5,opt,name=from_email,json=fromEmail,proto3" json:"from_email,omitempty"`
+	// attachments, when set, replace the campaign's files.
+	Attachments []*Attachment `protobuf:"bytes,6,rep,name=attachments,proto3" json:"attachments,omitempty"`
+	// clear_attachments removes every file (attachments must be empty).
+	ClearAttachments bool `protobuf:"varint,7,opt,name=clear_attachments,json=clearAttachments,proto3" json:"clear_attachments,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *UpdateCampaignRequest) Reset() {
@@ -239,6 +253,20 @@ func (x *UpdateCampaignRequest) GetFromEmail() string {
 		return x.FromEmail
 	}
 	return ""
+}
+
+func (x *UpdateCampaignRequest) GetAttachments() []*Attachment {
+	if x != nil {
+		return x.Attachments
+	}
+	return nil
+}
+
+func (x *UpdateCampaignRequest) GetClearAttachments() bool {
+	if x != nil {
+		return x.ClearAttachments
+	}
+	return false
 }
 
 type DeleteCampaignRequest struct {
@@ -616,6 +644,7 @@ type Campaign struct {
 	FailedCount     int32                  `protobuf:"varint,11,opt,name=failed_count,json=failedCount,proto3" json:"failed_count,omitempty"`
 	CreatedAt       string                 `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt       string                 `protobuf:"bytes,13,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Attachments     []*AttachmentInfo      `protobuf:"bytes,14,rep,name=attachments,proto3" json:"attachments,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -741,11 +770,18 @@ func (x *Campaign) GetUpdatedAt() string {
 	return ""
 }
 
+func (x *Campaign) GetAttachments() []*AttachmentInfo {
+	if x != nil {
+		return x.Attachments
+	}
+	return nil
+}
+
 var File_campaign_service_proto protoreflect.FileDescriptor
 
 const file_campaign_service_proto_rawDesc = "" +
 	"\n" +
-	"\x16campaign_service.proto\x12\tmailos.v1\x1a\fcommon.proto\"\x81\x02\n" +
+	"\x16campaign_service.proto\x12\tmailos.v1\x1a\fcommon.proto\"\xba\x02\n" +
 	"\x15CreateCampaignRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\asubject\x18\x02 \x01(\tR\asubject\x12\x1b\n" +
@@ -756,16 +792,19 @@ const file_campaign_service_proto_rawDesc = "" +
 	"templateId\x12&\n" +
 	"\x0fcontact_list_id\x18\x06 \x01(\tR\rcontactListId\x12\x12\n" +
 	"\x04type\x18\a \x01(\tR\x04type\x12!\n" +
-	"\fscheduled_at\x18\b \x01(\tR\vscheduledAt\"$\n" +
+	"\fscheduled_at\x18\b \x01(\tR\vscheduledAt\x127\n" +
+	"\vattachments\x18\t \x03(\v2\x15.mailos.v1.AttachmentR\vattachments\"$\n" +
 	"\x12GetCampaignRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x91\x01\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xf7\x01\n" +
 	"\x15UpdateCampaignRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
 	"\asubject\x18\x03 \x01(\tR\asubject\x12\x1b\n" +
 	"\tfrom_name\x18\x04 \x01(\tR\bfromName\x12\x1d\n" +
 	"\n" +
-	"from_email\x18\x05 \x01(\tR\tfromEmail\"'\n" +
+	"from_email\x18\x05 \x01(\tR\tfromEmail\x127\n" +
+	"\vattachments\x18\x06 \x03(\v2\x15.mailos.v1.AttachmentR\vattachments\x12+\n" +
+	"\x11clear_attachments\x18\a \x01(\bR\x10clearAttachments\"'\n" +
 	"\x15DeleteCampaignRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x18\n" +
 	"\x16DeleteCampaignResponse\"e\n" +
@@ -784,7 +823,7 @@ const file_campaign_service_proto_rawDesc = "" +
 	"\x15ResumeCampaignRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"'\n" +
 	"\x15CancelCampaignRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xf2\x02\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xaf\x03\n" +
 	"\bCampaign\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
 	"\x06org_id\x18\x02 \x01(\tR\x05orgId\x12\x12\n" +
@@ -803,7 +842,8 @@ const file_campaign_service_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\f \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\r \x01(\tR\tupdatedAt2\xb3\x05\n" +
+	"updated_at\x18\r \x01(\tR\tupdatedAt\x12;\n" +
+	"\vattachments\x18\x0e \x03(\v2\x19.mailos.v1.AttachmentInfoR\vattachments2\xb3\x05\n" +
 	"\x0fCampaignService\x12G\n" +
 	"\x0eCreateCampaign\x12 .mailos.v1.CreateCampaignRequest\x1a\x13.mailos.v1.Campaign\x12A\n" +
 	"\vGetCampaign\x12\x1d.mailos.v1.GetCampaignRequest\x1a\x13.mailos.v1.Campaign\x12G\n" +
@@ -841,36 +881,41 @@ var file_campaign_service_proto_goTypes = []any{
 	(*ResumeCampaignRequest)(nil),  // 9: mailos.v1.ResumeCampaignRequest
 	(*CancelCampaignRequest)(nil),  // 10: mailos.v1.CancelCampaignRequest
 	(*Campaign)(nil),               // 11: mailos.v1.Campaign
-	(*Pagination)(nil),             // 12: mailos.v1.Pagination
-	(*PaginationMeta)(nil),         // 13: mailos.v1.PaginationMeta
+	(*Attachment)(nil),             // 12: mailos.v1.Attachment
+	(*Pagination)(nil),             // 13: mailos.v1.Pagination
+	(*PaginationMeta)(nil),         // 14: mailos.v1.PaginationMeta
+	(*AttachmentInfo)(nil),         // 15: mailos.v1.AttachmentInfo
 }
 var file_campaign_service_proto_depIdxs = []int32{
-	12, // 0: mailos.v1.ListCampaignsRequest.pagination:type_name -> mailos.v1.Pagination
-	11, // 1: mailos.v1.ListCampaignsResponse.campaigns:type_name -> mailos.v1.Campaign
-	13, // 2: mailos.v1.ListCampaignsResponse.meta:type_name -> mailos.v1.PaginationMeta
-	0,  // 3: mailos.v1.CampaignService.CreateCampaign:input_type -> mailos.v1.CreateCampaignRequest
-	1,  // 4: mailos.v1.CampaignService.GetCampaign:input_type -> mailos.v1.GetCampaignRequest
-	2,  // 5: mailos.v1.CampaignService.UpdateCampaign:input_type -> mailos.v1.UpdateCampaignRequest
-	3,  // 6: mailos.v1.CampaignService.DeleteCampaign:input_type -> mailos.v1.DeleteCampaignRequest
-	5,  // 7: mailos.v1.CampaignService.ListCampaigns:input_type -> mailos.v1.ListCampaignsRequest
-	7,  // 8: mailos.v1.CampaignService.LaunchCampaign:input_type -> mailos.v1.LaunchCampaignRequest
-	8,  // 9: mailos.v1.CampaignService.PauseCampaign:input_type -> mailos.v1.PauseCampaignRequest
-	9,  // 10: mailos.v1.CampaignService.ResumeCampaign:input_type -> mailos.v1.ResumeCampaignRequest
-	10, // 11: mailos.v1.CampaignService.CancelCampaign:input_type -> mailos.v1.CancelCampaignRequest
-	11, // 12: mailos.v1.CampaignService.CreateCampaign:output_type -> mailos.v1.Campaign
-	11, // 13: mailos.v1.CampaignService.GetCampaign:output_type -> mailos.v1.Campaign
-	11, // 14: mailos.v1.CampaignService.UpdateCampaign:output_type -> mailos.v1.Campaign
-	4,  // 15: mailos.v1.CampaignService.DeleteCampaign:output_type -> mailos.v1.DeleteCampaignResponse
-	6,  // 16: mailos.v1.CampaignService.ListCampaigns:output_type -> mailos.v1.ListCampaignsResponse
-	11, // 17: mailos.v1.CampaignService.LaunchCampaign:output_type -> mailos.v1.Campaign
-	11, // 18: mailos.v1.CampaignService.PauseCampaign:output_type -> mailos.v1.Campaign
-	11, // 19: mailos.v1.CampaignService.ResumeCampaign:output_type -> mailos.v1.Campaign
-	11, // 20: mailos.v1.CampaignService.CancelCampaign:output_type -> mailos.v1.Campaign
-	12, // [12:21] is the sub-list for method output_type
-	3,  // [3:12] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	12, // 0: mailos.v1.CreateCampaignRequest.attachments:type_name -> mailos.v1.Attachment
+	12, // 1: mailos.v1.UpdateCampaignRequest.attachments:type_name -> mailos.v1.Attachment
+	13, // 2: mailos.v1.ListCampaignsRequest.pagination:type_name -> mailos.v1.Pagination
+	11, // 3: mailos.v1.ListCampaignsResponse.campaigns:type_name -> mailos.v1.Campaign
+	14, // 4: mailos.v1.ListCampaignsResponse.meta:type_name -> mailos.v1.PaginationMeta
+	15, // 5: mailos.v1.Campaign.attachments:type_name -> mailos.v1.AttachmentInfo
+	0,  // 6: mailos.v1.CampaignService.CreateCampaign:input_type -> mailos.v1.CreateCampaignRequest
+	1,  // 7: mailos.v1.CampaignService.GetCampaign:input_type -> mailos.v1.GetCampaignRequest
+	2,  // 8: mailos.v1.CampaignService.UpdateCampaign:input_type -> mailos.v1.UpdateCampaignRequest
+	3,  // 9: mailos.v1.CampaignService.DeleteCampaign:input_type -> mailos.v1.DeleteCampaignRequest
+	5,  // 10: mailos.v1.CampaignService.ListCampaigns:input_type -> mailos.v1.ListCampaignsRequest
+	7,  // 11: mailos.v1.CampaignService.LaunchCampaign:input_type -> mailos.v1.LaunchCampaignRequest
+	8,  // 12: mailos.v1.CampaignService.PauseCampaign:input_type -> mailos.v1.PauseCampaignRequest
+	9,  // 13: mailos.v1.CampaignService.ResumeCampaign:input_type -> mailos.v1.ResumeCampaignRequest
+	10, // 14: mailos.v1.CampaignService.CancelCampaign:input_type -> mailos.v1.CancelCampaignRequest
+	11, // 15: mailos.v1.CampaignService.CreateCampaign:output_type -> mailos.v1.Campaign
+	11, // 16: mailos.v1.CampaignService.GetCampaign:output_type -> mailos.v1.Campaign
+	11, // 17: mailos.v1.CampaignService.UpdateCampaign:output_type -> mailos.v1.Campaign
+	4,  // 18: mailos.v1.CampaignService.DeleteCampaign:output_type -> mailos.v1.DeleteCampaignResponse
+	6,  // 19: mailos.v1.CampaignService.ListCampaigns:output_type -> mailos.v1.ListCampaignsResponse
+	11, // 20: mailos.v1.CampaignService.LaunchCampaign:output_type -> mailos.v1.Campaign
+	11, // 21: mailos.v1.CampaignService.PauseCampaign:output_type -> mailos.v1.Campaign
+	11, // 22: mailos.v1.CampaignService.ResumeCampaign:output_type -> mailos.v1.Campaign
+	11, // 23: mailos.v1.CampaignService.CancelCampaign:output_type -> mailos.v1.Campaign
+	15, // [15:24] is the sub-list for method output_type
+	6,  // [6:15] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_campaign_service_proto_init() }
