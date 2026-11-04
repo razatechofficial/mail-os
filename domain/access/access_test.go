@@ -23,6 +23,10 @@ func TestRolePermissionsFollowContractTable(t *testing.T) {
 		{user(RoleTemplatePublisher), PermTemplatesPublish, true},
 		{user(RoleTemplatePublisher), PermTemplatesEdit, false},
 		{user(RoleTemplateEditor), PermTemplatesTest, true},
+		// An editor's test send must come from a verified sending domain, so
+		// the editor may see the domains (read only).
+		{user(RoleTemplateEditor), PermDomainsRead, true},
+		{user(RoleTemplateEditor), PermDomainsManage, false},
 		{user(RoleTemplatePublisher), PermTemplatesTest, true},
 		{user(RoleAdmin), PermTemplatesTest, true},
 		{user(RoleOperator), PermTemplatesTest, false},
