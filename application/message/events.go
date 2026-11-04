@@ -54,8 +54,9 @@ var ErrStillSending = errors.New("the message is still being sent")
 // otherwise by the provider's id; any other provider's or tenant's message
 // is unknown. A delivered, hard-bounced or complained event moves the
 // message's status when the move is legal, counts it, and tells the
-// tenant's webhooks; a hard bounce or complaint of the recipient also
-// suppresses the address. Every event is kept for the message's history.
+// tenant's webhooks; a complaint of the recipient, or a hard bounce that
+// does not refuse the sender (domainmsg.RefusesSender), also suppresses
+// the address. Every event is kept for the message's history.
 func (s *Service) RecordProviderEvent(ctx context.Context, tenantID, providerID string, e domainmsg.ProviderEvent) (EventOutcome, error) {
 	if s.d.Events == nil {
 		return "", errors.New("delivery events are not available")
@@ -88,11 +89,17 @@ func (s *Service) RecordProviderEvent(ctx context.Context, tenantID, providerID 
 	if err != nil {
 		return "", err
 	}
-	switch e.Type {
-	case domainmsg.EventBounced, domainmsg.EventComplained:
-		if sameRecipient {
-			s.suppress(ctx, m, e)
-		}
+	switch {
+	case !sameRecipient:
+	case e.Type == domainmsg.EventComplained:
+		s.suppress(ctx, m, e)
+	case e.Type == domainmsg.EventBounced && domainmsg.RefusesSender(e.Reason):
+		// The receiving server refused the sender or its domain's policy,
+		// not the recipient: the same rule as an SMTP reply.
+		logger.FromContext(ctx).Warn("hard bounce refuses the sender; recipient not suppressed",
+			logger.String("message_id", m.ID), logger.String("provider_id", providerID))
+	case e.Type == domainmsg.EventBounced:
+		s.suppress(ctx, m, e)
 	}
 	if moved {
 		switch m.Status {

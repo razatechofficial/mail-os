@@ -140,6 +140,26 @@ func TestHardBounceAndComplaintSuppress(t *testing.T) {
 	}
 }
 
+// A provider's hard bounce that refuses the sender or its domain's policy
+// moves the message but never suppresses the recipient, as with an SMTP
+// reply.
+func TestSenderRefusalBounceDoesNotSuppress(t *testing.T) {
+	f, _, fb := eventsFixture(t)
+	sentMessage(t, f, "m1")
+	ctx := context.Background()
+	reason := "550 5.7.26 Unauthenticated email from bank.example is not accepted due to domain's DMARC policy."
+	if _, err := f.svc.RecordProviderEvent(ctx, tenant, "p1", domainmsg.ProviderEvent{Type: domainmsg.EventBounced, MessageID: "m1",
+		Recipient: "ana@example.com", Reason: reason}); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := f.repo.Get(ctx, tenant, "m1"); m.Status != domainmsg.StatusBounced || m.LastError != reason {
+		t.Fatalf("bounced %+v", m)
+	}
+	if len(fb.got) != 0 {
+		t.Fatalf("a sender refusal suppressed the recipient: %v", fb.got)
+	}
+}
+
 func TestSoftBounceRecordsOnly(t *testing.T) {
 	f, events, fb := eventsFixture(t)
 	sentMessage(t, f, "m1")
