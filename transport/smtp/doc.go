@@ -97,10 +97,11 @@
 // RFC 8058). Everything else is dropped: Bcc, Cc and To as addresses (the
 // envelope decides the recipients, and each recipient gets their own
 // message), Received, Sender, Return-Path, X- headers, and the client's
-// own DKIM-Signature and Message-ID. Content MailOS cannot send as written
-// (attachments, inline images, a forwarded message) is refused with
-// 554 5.6.1, never dropped silently; a message that cannot be read is
-// 554 5.6.0.
+// own DKIM-Signature and Message-ID. Attachments, inline images (by
+// Content-ID) and forwarded messages are kept as the message's files and
+// checked like the send API's (ATTACHMENTS_* limits, blocked executable
+// types, the virus-scan hook): a refused file is 554 5.6.0 naming it. Too
+// many MIME parts is 554 5.6.1; a message that cannot be read is 554 5.6.0.
 //
 // Retries. SMTP has one reply for a whole transaction. Each recipient's
 // message carries an idempotency key made of the application, the client's
@@ -122,7 +123,7 @@
 //	552 5.3.4  message too large
 //	553 5.1.3  invalid recipient address
 //	554 5.6.0  malformed message or invalid fields (subject, addresses)
-//	554 5.6.1  unsupported content (attachments)
+//	554 5.6.1  unsupported content (too many MIME parts)
 //	451 4.3.0  MailOS temporarily unable to queue
 //	250 2.0.0  queued, with the MailOS message ids
 //
@@ -145,7 +146,6 @@
 // implements the SASL mechanisms itself (sasl.go) so every failure is
 // 535 5.7.8 and OAUTHBEARER follows RFC 7628's error exchange.
 //
-// Not supported: attachments and inline images (the message pipeline
-// carries a text and an HTML body only), SMTPUTF8 addresses, DSN, and
+// Not supported: SMTPUTF8 addresses, DSN, and
 // per-recipient replies (LMTP-style) in one transaction.
 package smtp
