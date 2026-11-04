@@ -1639,6 +1639,68 @@
         "x-permission": "events:dispatch"
       }
     },
+    "/api/v1/events/deliveries/{delivery_id}": {
+      "get": {
+        "description": "For service clients only. Where the message an event became is, by the delivery_id POST /events returned. 200 {delivery_id, event_id, status, created_at, updated_at, last_error?, events: [{type, occurred_at}]}; status is queued, sending, sent, delivered, bounced, complained, failed, cancelled or suppressed, and events are the steps so far (queued, sent, then the provider's delivered, deferred, soft_bounced, bounced or complained). Only for the server application that sent the message, in its tenant; anything else is 404. Permission: `events:dispatch`.",
+        "operationId": "get_events_deliveries_delivery_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "delivery_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delivery status",
+        "tags": [
+          "events"
+        ],
+        "x-permission": "events:dispatch"
+      }
+    },
+    "/api/v1/events/{event_id}/delivery": {
+      "get": {
+        "description": "For service clients only. The same as GET /events/deliveries/{delivery_id}, by the sender's own event id (the envelope id, or the x-event-id gRPC metadata). 200 {delivery_id, event_id, status, created_at, updated_at, last_error?, events: [{type, occurred_at}]}; status is queued, sending, sent, delivered, bounced, complained, failed, cancelled or suppressed, and events are the steps so far (queued, sent, then the provider's delivered, deferred, soft_bounced, bounced or complained). Only for the server application that sent the message, in its tenant; anything else is 404. Permission: `events:dispatch`.",
+        "operationId": "get_events_event_id_delivery",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delivery status of an event",
+        "tags": [
+          "events"
+        ],
+        "x-permission": "events:dispatch"
+      }
+    },
     "/api/v1/keys/encryption": {
       "get": {
         "description": "Per purpose (provider, dkim, webhook): keys, state and how many values each seals. Never key material. Permission: `settings:manage`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
