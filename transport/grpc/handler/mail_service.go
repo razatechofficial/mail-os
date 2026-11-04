@@ -11,6 +11,7 @@ import (
 	v1 "github.com/razatechofficial/mail-os/api/proto/v1"
 	appmsg "github.com/razatechofficial/mail-os/application/message"
 	"github.com/razatechofficial/mail-os/domain/access"
+	domainmsg "github.com/razatechofficial/mail-os/domain/message"
 	"github.com/razatechofficial/mail-os/pkg/pagination"
 	grpctransport "github.com/razatechofficial/mail-os/transport/grpc"
 )
@@ -67,7 +68,23 @@ func sendInput(tenantID string, r *v1.SendEmailRequest) appmsg.SendInput {
 	}
 	return appmsg.SendInput{TenantID: tenantID, FromName: r.GetFromName(), FromEmail: r.GetFromEmail(), ToEmail: r.GetToEmail(),
 		ToName: r.GetToName(), Subject: r.GetSubject(), HTML: r.GetHtmlBody(), Text: r.GetTextBody(), TemplateSlug: r.GetTemplateSlug(),
-		TemplateData: data, Tags: r.GetTags(), Priority: int(r.GetPriority()), IdempotencyKey: r.GetIdempotencyKey()}
+		TemplateData: data, Tags: r.GetTags(), Priority: int(r.GetPriority()), IdempotencyKey: r.GetIdempotencyKey(),
+		Attachments: attachments(r.GetAttachments())}
+}
+
+// attachments maps the request's files onto the message's; the send
+// checks them against the limits and scans them as it does for the HTTP
+// API and the SMTP relay.
+func attachments(list []*v1.Attachment) []domainmsg.Attachment {
+	if len(list) == 0 {
+		return nil
+	}
+	out := make([]domainmsg.Attachment, len(list))
+	for i, a := range list {
+		out[i] = domainmsg.Attachment{Filename: a.GetFilename(), ContentType: a.GetContentType(), ContentID: a.GetContentId(),
+			Inline: a.GetInline(), Data: a.GetContent()}
+	}
+	return out
 }
 
 // SendEmail queues one message (messages:operate).
