@@ -15,19 +15,29 @@ import (
 
 // buildMarketing wires contacts, contact lists and campaigns: their routes,
 // the campaign fan-out task and the release schedule. Campaigns send
-// through c.CampaignSender, which the messaging builder sets.
+// through c.CampaignSender, and check their files with c.Messages, which
+// the messaging builder sets.
 func (c *Container) buildMarketing(_ context.Context) error {
 	bootstrap.Register("campaign_recipients message_id and claimed_at",
 		"SELECT campaign_id, contact_id, status, message_id, claimed_at FROM campaign_recipients LIMIT 0", true,
 		"campaign fan-out cannot record its recipients")
+	bootstrap.Register("campaign attachments (20261122090000)",
+		"SELECT campaign_id, position, content_id, inline, sha256, data FROM campaign_attachments LIMIT 0", true,
+		"campaigns with attachments cannot be stored or sent")
 
 	contacts := contact.NewService(postgres.NewContactRepository(c.DB), postgres.NewContactListRepository(c.DB), c.DB, c.Audit)
 	repo := postgres.NewCampaignRepository(c.DB)
-	campaigns := campaign.NewService(campaign.Deps{
+	deps := campaign.Deps{
 		Campaigns: repo, Targets: repo, Recipients: postgres.NewCampaignRecipientRepository(c.DB),
-		Queue: worker.CampaignQueue{Enqueuer: c.Enqueuer}, Sender: c.CampaignSender,
+		Queue: worker.CampaignQueue{Enqueuer: c.Enqueuer}, Sender: c.CampaignSender, Files: repo,
 		Tx: c.DB, Audit: c.Audit, ScopeTenant: audit.WithTenant,
-	}, campaign.Config{})
+	}
+	// Campaign files get the send limits and the virus scan of the
+	// messaging slice (built before this one).
+	if c.Messages != nil {
+		deps.Checker = c.Messages
+	}
+	campaigns := campaign.NewService(deps, campaign.Config{})
 
 	c.Routes = append(c.Routes,
 		handler.NewContactHandler(contacts),
