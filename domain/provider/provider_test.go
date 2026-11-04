@@ -231,7 +231,7 @@ func TestDecode(t *testing.T) {
 
 // credentialKeys are every key of Credentials.
 var credentialKeys = []string{"password", "access_key_id", "secret_access_key", "api_key", "api_secret", "server_token",
-	"client_secret", "certificate_key", "client_key", "service_account_json", "access_key"}
+	"client_secret", "certificate_key", "client_key", "service_account_json", "access_key", "webhook_secret"}
 
 func TestSchemaIsConsistent(t *testing.T) {
 	all := map[string]string{}
