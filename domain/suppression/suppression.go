@@ -56,12 +56,12 @@ type Suppression struct {
 	// ApplicationID scopes the entry to one application; empty is
 	// tenant-wide.
 	ApplicationID string
-	Email     string
-	Type      Type
-	Reason    string
-	Source    string
-	CreatedBy string
-	CreatedAt time.Time
+	Email         string
+	Type          Type
+	Reason        string
+	Source        string
+	CreatedBy     string
+	CreatedAt     time.Time
 }
 
 // NormalizeEmail lowercases an address, as suppressions match without case.

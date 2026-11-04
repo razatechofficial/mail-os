@@ -17,7 +17,9 @@ type MessageEventRepository struct {
 var _ app.DeliveryEvents = (*MessageEventRepository)(nil)
 
 // NewMessageEventRepository returns the repository.
-func NewMessageEventRepository(db *Pool) *MessageEventRepository { return &MessageEventRepository{db: db} }
+func NewMessageEventRepository(db *Pool) *MessageEventRepository {
+	return &MessageEventRepository{db: db}
+}
 
 // ByProviderMessageID finds the tenant's message the provider sent under
 // its own id.
