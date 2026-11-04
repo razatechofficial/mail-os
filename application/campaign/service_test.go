@@ -49,8 +49,14 @@ func (f *fake) Lock(ctx context.Context, t, id string) (domain.Campaign, error) 
 func (f *fake) List(context.Context, string, Filter) ([]domain.Campaign, int, error) {
 	return nil, 0, nil
 }
-func (f *fake) Create(_ context.Context, c domain.Campaign) error { f.campaigns[c.ID] = c; return nil }
+// Create and Update keep the campaign row only; files go through Files.
+func (f *fake) Create(_ context.Context, c domain.Campaign) error {
+	c.Attachments = nil
+	f.campaigns[c.ID] = c
+	return nil
+}
 func (f *fake) Update(_ context.Context, c domain.Campaign) error {
+	c.Attachments = nil
 	old := f.campaigns[c.ID]
 	c.SentCount, c.FailedCount, c.TotalRecipients = old.SentCount, old.FailedCount, old.TotalRecipients
 	f.campaigns[c.ID] = c
