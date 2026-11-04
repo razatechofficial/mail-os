@@ -19,6 +19,7 @@ import (
 	"github.com/razatechofficial/mail-os/config"
 	domainkm "github.com/razatechofficial/mail-os/domain/keymanager"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
+	"github.com/razatechofficial/mail-os/infrastructure/clamav"
 	"github.com/razatechofficial/mail-os/infrastructure/dnscheck"
 	"github.com/razatechofficial/mail-os/infrastructure/mailer"
 	"github.com/razatechofficial/mail-os/infrastructure/persistence/postgres"
@@ -149,6 +150,10 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 		Events: postgres.NewMessageEventRepository(c.DB), Feedback: suppressions}
 	if c.Templates != nil {
 		deps.Templates, deps.Versions, deps.Branding = c.Templates, c.Templates, c.Templates
+	}
+	if av := cfg.ClamAV; av.Enabled {
+		deps.Scanner = clamav.New(clamav.Config{Addr: av.Addr(), Timeout: av.Timeout, ChunkBytes: av.ChunkBytes, FailClosed: av.FailClosed})
+		logger.Info("attachment virus scan on", logger.String("clamd", av.Addr()), logger.Bool("fail_closed", av.FailClosed))
 	}
 	if cfg.Unsubscribe.Enabled() {
 		unsub, err := buildUnsubscribe(cfg.Unsubscribe, suppressions)
