@@ -17,6 +17,22 @@ func TestUnsubscribeAndAttachmentDefaults(t *testing.T) {
 	if a.MaxBytes != 5<<20 || a.MaxTotalBytes != 10<<20 || a.MaxCount != 10 {
 		t.Fatalf("attachment defaults: %+v", a)
 	}
+	if cfg.GRPC.RecvLimit() != 4<<20 {
+		t.Fatalf("gRPC receive limit %d", cfg.GRPC.RecvLimit())
+	}
+}
+
+func TestGRPCRecvLimit(t *testing.T) {
+	env := productionEnv()
+	env["GRPC_MAX_RECV_BYTES"] = "16777216"
+	cfg, err := load(t, env)
+	if err != nil || cfg.GRPC.RecvLimit() != 16<<20 {
+		t.Fatalf("limit %v %v", cfg, err)
+	}
+	env["GRPC_MAX_RECV_BYTES"] = "999999999"
+	if _, err := load(t, env); err == nil || !strings.Contains(err.Error(), "GRPC_MAX_RECV_BYTES") {
+		t.Fatalf("err = %v", err)
+	}
 }
 
 func TestUnsubscribeConfig(t *testing.T) {

@@ -102,10 +102,21 @@ type GRPC struct {
 	Host string    `yaml:"host" env:"GRPC_HOST" env-default:"0.0.0.0"`
 	Port int       `yaml:"port" env:"GRPC_PORT" env-default:"9090"`
 	TLS  ServerTLS `yaml:"tls" env-prefix:"GRPC_TLS_"`
+	// MaxRecvBytes caps a request message (0 = 4 MiB); a send carries its
+	// attachments in the message, so raise it with ATTACHMENTS_MAX_TOTAL_BYTES.
+	MaxRecvBytes int `yaml:"max_recv_bytes" env:"GRPC_MAX_RECV_BYTES" env-default:"0"`
 }
 
 // Addr is host:port.
 func (g GRPC) Addr() string { return fmt.Sprintf("%s:%d", g.Host, g.Port) }
+
+// RecvLimit is MaxRecvBytes with its default.
+func (g GRPC) RecvLimit() int {
+	if g.MaxRecvBytes <= 0 {
+		return 4 << 20
+	}
+	return g.MaxRecvBytes
+}
 
 // CORS lists the browser origins allowed to call the API directly. The
 // console calls through its BFF, so production normally lists none.
@@ -384,6 +395,9 @@ func (c *Config) Validate() error {
 	const maxBody = 16 << 20
 	if c.HTTP.MaxBodyBytes < 0 || c.HTTP.MaxBodyBytes > maxBody {
 		return fmt.Errorf("HTTP_MAX_BODY_BYTES must be 0 (default 2 MiB) to 16 MiB")
+	}
+	if c.GRPC.MaxRecvBytes < 0 || c.GRPC.MaxRecvBytes > 80<<20 {
+		return fmt.Errorf("GRPC_MAX_RECV_BYTES must be 0 (default 4 MiB) to 80 MiB")
 	}
 
 	if !plaintext {

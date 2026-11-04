@@ -30,7 +30,7 @@ func NewServer(cfg config.GRPC, auth *Auth, tracing bool) (*Server, error) {
 	opts := []grpclib.ServerOption{
 		grpclib.ChainUnaryInterceptor(RecoveryUnary(), LoggingUnary(), auth.Unary()),
 		grpclib.ChainStreamInterceptor(RecoveryStream(), auth.Stream()),
-		grpclib.MaxRecvMsgSize(4 << 20),
+		grpclib.MaxRecvMsgSize(cfg.RecvLimit()),
 	}
 	if tracing {
 		opts = append(opts, grpclib.StatsHandler(otelgrpc.NewServerHandler()))
