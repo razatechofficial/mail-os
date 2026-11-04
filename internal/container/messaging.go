@@ -11,6 +11,7 @@ import (
 	"github.com/razatechofficial/mail-os/application/analytics"
 	appmessage "github.com/razatechofficial/mail-os/application/message"
 	appprovider "github.com/razatechofficial/mail-os/application/provider"
+	"github.com/razatechofficial/mail-os/application/providerevents"
 	appsendingdomain "github.com/razatechofficial/mail-os/application/sendingdomain"
 	appsuppression "github.com/razatechofficial/mail-os/application/suppression"
 	appwebhook "github.com/razatechofficial/mail-os/application/webhook"
@@ -19,6 +20,7 @@ import (
 	"github.com/razatechofficial/mail-os/infrastructure/dnscheck"
 	"github.com/razatechofficial/mail-os/infrastructure/mailer"
 	"github.com/razatechofficial/mail-os/infrastructure/persistence/postgres"
+	"github.com/razatechofficial/mail-os/infrastructure/providerhooks"
 	"github.com/razatechofficial/mail-os/infrastructure/render"
 	"github.com/razatechofficial/mail-os/infrastructure/webhookclient"
 	"github.com/razatechofficial/mail-os/infrastructure/worker"
@@ -124,7 +126,8 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 		AllowPlaintext: plaintext, AllowPrivateNetworks: plaintext, AllowLoopback: plaintext}
 	router := mailer.NewRouter(providerSource{providers}, c.Platform, sendOpts)
 	deps := appmessage.Deps{Applications: c.Apps, Repo: postgres.NewMessageRepository(c.DB), Queue: queue, Suppressions: suppressions, Tenants: c.Tenants,
-		Render: renderContent, Sender: routerSender{router}, Signer: c.SendingDomains, Webhooks: webhooks, Stats: stats, Audit: c.Audit}
+		Render: renderContent, Sender: routerSender{router}, Signer: c.SendingDomains, Webhooks: webhooks, Stats: stats, Audit: c.Audit,
+		Events: postgres.NewMessageEventRepository(c.DB), Feedback: suppressions}
 	if c.Templates != nil {
 		deps.Templates, deps.Versions, deps.Branding = c.Templates, c.Templates, c.Templates
 	}
@@ -140,6 +143,13 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 	// message use case; both builders run after this one.
 	c.EventDispatcher = c.Messages
 	c.CampaignSender = c.Messages
+
+	// The sending APIs post delivery events to a public route, each
+	// authenticated by the provider's webhook secret; SNS certificates and
+	// subscription confirmations are fetched over HTTPS from SNS only.
+	sns := &providerhooks.HTTPSFetcher{}
+	c.Public = append(c.Public, handler.NewProviderEventHandler(providerevents.NewService(providers,
+		&providerhooks.Verifier{Certs: sns}, sns, c.Messages, c.Audit)))
 
 	idempotent := postgres.NewIdempotencyRepository(c.DB)
 	c.Routes = append(c.Routes,

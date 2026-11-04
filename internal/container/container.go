@@ -101,7 +101,9 @@ type Container struct {
 	// Routes are the REST route sets; GRPCServices register on the gRPC
 	// server; Tasks register worker handlers and schedules; Consumers run
 	// in the server process (FEATURE_PUBSUB_INGEST).
-	Routes       []transporthttp.Routes
+	Routes []transporthttp.Routes
+	// Public are the unauthenticated routes (provider event webhooks).
+	Public       []transporthttp.PublicRoutes
 	GRPCServices []func(*grpclib.Server)
 	Tasks        []func(*worker.Server) error
 	Consumers    []func(ctx context.Context) error
