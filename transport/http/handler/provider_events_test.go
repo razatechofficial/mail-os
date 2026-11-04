@@ -92,3 +92,13 @@ func TestProviderEventWebhook(t *testing.T) {
 		t.Fatalf("still sending: %d %v", w.Code, w.Header())
 	}
 }
+
+func TestProviderViewShowsEventsPath(t *testing.T) {
+	v := providerViewOf(provider.Provider{ID: pwProvider, OrgID: pwTenant, Kind: provider.KindSendGrid})
+	if v.EventsPath != "/webhooks/providers/"+pwTenant+"/"+pwProvider {
+		t.Fatalf("events path %q", v.EventsPath)
+	}
+	if v := providerViewOf(provider.Provider{ID: pwProvider, OrgID: pwTenant, Kind: provider.KindSMTP}); v.EventsPath != "" {
+		t.Fatalf("an SMTP relay has no events path: %q", v.EventsPath)
+	}
+}
