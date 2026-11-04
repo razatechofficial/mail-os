@@ -37,3 +37,15 @@ func TestMessageViewDescribesAttachmentsWithoutContent(t *testing.T) {
 		t.Fatalf("%d %s", w.Code, body)
 	}
 }
+
+func TestCampaignRefusesAttachmentNotBase64(t *testing.T) {
+	iam, r := marketingRouter(t, mktSender{})
+	operator := mktToken(iam, mktTenantA, access.RoleOperator)
+	bad := []map[string]any{{"filename": "brochure.pdf", "content": "%%% not base64"}}
+	for _, req := range []struct{ method, path string }{{"POST", "/api/v1/campaigns"}, {"PUT", "/api/v1/campaigns/c1"}} {
+		got := mktDo(r, req.method, req.path, operator, map[string]any{"name": "Autumn", "attachments": bad})
+		if got.status != http.StatusUnprocessableEntity || len(got.Error.Details) != 1 || got.Error.Details[0].Field != "attachments[0].content" {
+			t.Fatalf("%s: %d %+v", req.method, got.status, got.Error)
+		}
+	}
+}
