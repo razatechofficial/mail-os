@@ -11,6 +11,7 @@ import (
 
 	"github.com/razatechofficial/mail-os/application/applications"
 	apptemplate "github.com/razatechofficial/mail-os/application/template"
+	"github.com/razatechofficial/mail-os/application/unsubscribe"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
 	"github.com/razatechofficial/mail-os/domain/sendingdomain"
 	"github.com/razatechofficial/mail-os/domain/suppression"
@@ -141,8 +142,16 @@ type Auditor interface {
 	Append(ctx context.Context, resourceType, resourceID, action string, metadata map[string]any) error
 }
 
+// Unsubscribes issues the one-click unsubscribe link of broadcast mail
+// (application/unsubscribe.Service).
+type Unsubscribes interface {
+	URL(l unsubscribe.Link) (string, error)
+	Headers(u string) map[string]string
+}
+
 // Deps are the service's ports. Templates, Versions, Branding, Signer,
-// Webhooks, Stats, Events and Feedback may be nil; Applications is
+// Webhooks, Stats, Events, Feedback, Unsubscribe and Scanner may be nil;
+// Applications is
 // required.
 type Deps struct {
 	Applications Applications
@@ -163,6 +172,9 @@ type Deps struct {
 	// may be nil (then no provider events are taken).
 	Events   DeliveryEvents
 	Feedback Feedback
+	// Unsubscribe adds List-Unsubscribe to broadcast mail; nil leaves it
+	// to the sender.
+	Unsubscribe Unsubscribes
 }
 
 // Config tunes sending and retention.
