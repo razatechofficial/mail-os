@@ -1018,7 +1018,7 @@
         "x-permission": "campaigns:read"
       },
       "post": {
-        "description": "Permission: `campaigns:manage`. Another tenant's records are 404.",
+        "description": "attachments: [{filename, content_type (from the extension when omitted), content (base64), content_id and inline for an inline part}] sent to every recipient, within the send limits (ATTACHMENTS_*) and scanned when the campaign is saved; a refused file is 422 on that attachment. Responses describe the files (never their content). Permission: `campaigns:manage`. Another tenant's records are 404.",
         "operationId": "post_campaigns",
         "responses": {
           "default": {
@@ -1097,7 +1097,7 @@
         "x-permission": "campaigns:read"
       },
       "put": {
-        "description": "Permission: `campaigns:manage`. Another tenant's records are 404.",
+        "description": "attachments, when present, replace the campaign's files ([] removes them), with the same checks as on create. Permission: `campaigns:manage`. Another tenant's records are 404.",
         "operationId": "put_campaigns_id",
         "parameters": [
           {

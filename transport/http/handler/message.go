@@ -91,21 +91,42 @@ func (r sendRequest) input(tenantID string) (appmsg.SendInput, error) {
 		ReplyTo: r.ReplyTo, Subject: r.Subject, HTML: r.HTMLBody, Text: r.TextBody, TemplateSlug: r.TemplateSlug,
 		TemplateID: r.TemplateID, Locale: r.TemplateLocale, TemplateData: r.TemplateVars, Tags: r.Tags, Metadata: r.Metadata,
 		Priority: r.Priority, ScheduleAt: r.ScheduleAt, Type: domainmsg.Type(r.Type)}
+	files, err := decodeAttachments(r.Attachments)
+	if err != nil {
+		return appmsg.SendInput{}, err
+	}
+	in.Attachments = files
+	return in, nil
+}
+
+// decodeAttachments decodes the files' base64 content: a 422 on each file
+// that is not base64.
+func decodeAttachments(list []attachmentRequest) ([]domainmsg.Attachment, error) {
+	var out []domainmsg.Attachment
 	var errs []apperrors.FieldError
-	for i, a := range r.Attachments {
+	for i, a := range list {
 		data, err := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(a.Content), ""))
 		if err != nil {
 			errs = append(errs, apperrors.FieldError{Field: fmt.Sprintf("attachments[%d].content", i), Code: "invalid",
 				Message: "content must be base64"})
 			continue
 		}
-		in.Attachments = append(in.Attachments, domainmsg.Attachment{Filename: a.Filename, ContentType: a.ContentType,
+		out = append(out, domainmsg.Attachment{Filename: a.Filename, ContentType: a.ContentType,
 			ContentID: a.ContentID, Inline: a.Inline, Data: data})
 	}
 	if len(errs) > 0 {
-		return appmsg.SendInput{}, apperrors.Validation(errs...)
+		return nil, apperrors.Validation(errs...)
 	}
-	return in, nil
+	return out, nil
+}
+
+// attachmentViews describes files without their content.
+func attachmentViews(list []domainmsg.Attachment) []attachmentView {
+	var out []attachmentView
+	for _, a := range list {
+		out = append(out, attachmentView{Filename: a.Filename, ContentType: a.ContentType, Size: len(a.Data), ContentID: a.ContentID, Inline: a.Inline})
+	}
+	return out
 }
 
 // Send is POST /messages/send. An application's send follows its rules
@@ -261,11 +282,7 @@ func messageViewOf(v appmsg.View) messageView {
 	if tags == nil {
 		tags = []string{}
 	}
-	var files []attachmentView
-	for _, a := range m.Attachments {
-		files = append(files, attachmentView{Filename: a.Filename, ContentType: a.ContentType, Size: len(a.Data), ContentID: a.ContentID, Inline: a.Inline})
-	}
-	return messageView{Attachments: files, ID: m.ID, ApplicationID: m.ApplicationID, Sandbox: m.Sandbox, Stream: string(m.Stream), CampaignID: m.CampaignID, FromName: m.FromName, FromEmail: m.FromEmail, ToEmail: m.ToEmail,
+	return messageView{Attachments: attachmentViews(m.Attachments), ID: m.ID, ApplicationID: m.ApplicationID, Sandbox: m.Sandbox, Stream: string(m.Stream), CampaignID: m.CampaignID, FromName: m.FromName, FromEmail: m.FromEmail, ToEmail: m.ToEmail,
 		ToName: m.ToName, ReplyTo: m.ReplyTo, Subject: v.MaskedSubject, Type: string(m.Type), Status: string(m.Status),
 		Priority: int(m.Priority), Tags: tags, Metadata: m.Metadata, Topic: m.Topic, TemplateID: m.TemplateID,
 		TemplateVersionID: m.TemplateVersionID, Locale: m.Locale, TemplateData: v.MaskedTemplateData, EventID: m.EventID,

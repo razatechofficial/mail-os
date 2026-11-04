@@ -9,6 +9,7 @@ import (
 	"github.com/razatechofficial/mail-os/application/campaign"
 	"github.com/razatechofficial/mail-os/domain/access"
 	domain "github.com/razatechofficial/mail-os/domain/campaign"
+	domainmsg "github.com/razatechofficial/mail-os/domain/message"
 	"github.com/razatechofficial/mail-os/pkg/pagination"
 	"github.com/razatechofficial/mail-os/transport/http/middleware"
 	"github.com/razatechofficial/mail-os/transport/http/response"
@@ -52,15 +53,19 @@ type campaignView struct {
 	SentCount       int            `json:"sent_count"`
 	FailedCount     int            `json:"failed_count"`
 	Metadata        map[string]any `json:"metadata,omitempty"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	// Attachments describe the files (never their content); lists leave
+	// them out.
+	Attachments []attachmentView `json:"attachments,omitempty"`
+	CreatedAt   time.Time        `json:"created_at"`
+	UpdatedAt   time.Time        `json:"updated_at"`
 }
 
 func campaignOut(c domain.Campaign) campaignView {
 	return campaignView{ID: c.ID, Name: c.Name, Subject: c.Subject, FromName: c.FromName, FromEmail: c.FromEmail,
 		TemplateID: c.TemplateID, ContactListID: c.ContactListID, Type: string(c.Type), Status: string(c.Status),
 		ScheduledAt: c.ScheduledAt, StartedAt: c.StartedAt, CompletedAt: c.CompletedAt, TotalRecipients: c.TotalRecipients,
-		SentCount: c.SentCount, FailedCount: c.FailedCount, Metadata: c.Metadata, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt}
+		SentCount: c.SentCount, FailedCount: c.FailedCount, Metadata: c.Metadata, Attachments: attachmentViews(c.Attachments),
+		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt}
 }
 
 // List is GET /campaigns (?status= filters).
@@ -101,6 +106,8 @@ func (h *CampaignHandler) Create(c *gin.Context) {
 		Type          domain.Type    `json:"type"`
 		ScheduledAt   *time.Time     `json:"scheduled_at"`
 		Metadata      map[string]any `json:"metadata"`
+		// Attachments are files, content base64, sent to every recipient.
+		Attachments []attachmentRequest `json:"attachments"`
 	}
 	if !bind(c, &in) {
 		return
@@ -109,9 +116,14 @@ func (h *CampaignHandler) Create(c *gin.Context) {
 		at := in.ScheduledAt.UTC()
 		in.ScheduledAt = &at
 	}
+	files, err := decodeAttachments(in.Attachments)
+	if err != nil {
+		response.FromError(c, err)
+		return
+	}
 	x, err := h.svc.Create(c.Request.Context(), middleware.PrincipalFrom(c).TenantID, domain.Campaign{
 		Name: in.Name, Subject: in.Subject, FromName: in.FromName, FromEmail: in.FromEmail, TemplateID: in.TemplateID,
-		ContactListID: in.ContactListID, Type: in.Type, ScheduledAt: in.ScheduledAt, Metadata: in.Metadata})
+		ContactListID: in.ContactListID, Type: in.Type, ScheduledAt: in.ScheduledAt, Metadata: in.Metadata, Attachments: files})
 	if err != nil {
 		response.FromError(c, err)
 		return
@@ -132,13 +144,26 @@ func (h *CampaignHandler) Update(c *gin.Context) {
 		Type          *domain.Type    `json:"type"`
 		ScheduledAt   *time.Time      `json:"scheduled_at"`
 		Metadata      *map[string]any `json:"metadata"`
+		// Attachments, when present, replace the files ([] removes them).
+		Attachments *[]attachmentRequest `json:"attachments"`
 	}
 	if !bind(c, &in) {
 		return
 	}
-	x, err := h.svc.Update(c.Request.Context(), middleware.PrincipalFrom(c).TenantID, c.Param("id"), campaign.Update{
-		Name: in.Name, Subject: in.Subject, FromName: in.FromName, FromEmail: in.FromEmail, TemplateID: in.TemplateID,
-		ContactListID: in.ContactListID, Type: in.Type, ScheduledAt: in.ScheduledAt, Metadata: in.Metadata})
+	u := campaign.Update{Name: in.Name, Subject: in.Subject, FromName: in.FromName, FromEmail: in.FromEmail, TemplateID: in.TemplateID,
+		ContactListID: in.ContactListID, Type: in.Type, ScheduledAt: in.ScheduledAt, Metadata: in.Metadata}
+	if in.Attachments != nil {
+		files, err := decodeAttachments(*in.Attachments)
+		if err != nil {
+			response.FromError(c, err)
+			return
+		}
+		if files == nil {
+			files = []domainmsg.Attachment{}
+		}
+		u.Attachments = &files
+	}
+	x, err := h.svc.Update(c.Request.Context(), middleware.PrincipalFrom(c).TenantID, c.Param("id"), u)
 	if err != nil {
 		response.FromError(c, err)
 		return
