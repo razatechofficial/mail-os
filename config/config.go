@@ -40,7 +40,9 @@ type Config struct {
 	// Unsubscribe is one-click unsubscribe for broadcast mail (RFC 8058).
 	Unsubscribe Unsubscribe `yaml:"unsubscribe"`
 	// Attachments bounds the files a message may carry.
-	Attachments  Attachments  `yaml:"attachments"`
+	Attachments Attachments `yaml:"attachments"`
+	// ClamAV scans attachments with clamd (off by default).
+	ClamAV       ClamAV       `yaml:"clamav"`
 	Telemetry    Telemetry    `yaml:"telemetry"`
 	Metrics      Metrics      `yaml:"metrics"`
 	E2EHooks     E2EHooks     `yaml:"e2e_hooks"`
@@ -486,6 +488,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := c.Attachments.validate(); err != nil {
+		return err
+	}
+	if err := c.ClamAV.validate(); err != nil {
 		return err
 	}
 	if c.Telemetry.Enabled {

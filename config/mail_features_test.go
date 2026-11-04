@@ -98,3 +98,36 @@ func TestAttachmentConfigRefused(t *testing.T) {
 		t.Fatalf("type wildcard refused: %v", err)
 	}
 }
+
+func TestClamAVConfig(t *testing.T) {
+	cfg, err := load(t, productionEnv())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := cfg.ClamAV
+	if c.Enabled || !c.FailClosed || c.Addr() != "127.0.0.1:3310" || c.Timeout.Seconds() != 30 || c.ChunkBytes != 64<<10 {
+		t.Fatalf("defaults: %+v", c)
+	}
+	env := productionEnv()
+	env["CLAMAV_ENABLED"], env["CLAMAV_HOST"], env["CLAMAV_FAIL_CLOSED"] = "true", "clamd.mail.svc", "false"
+	if cfg, err = load(t, env); err != nil || cfg.ClamAV.Addr() != "clamd.mail.svc:3310" || cfg.ClamAV.FailClosed {
+		t.Fatalf("enabled: %+v %v", cfg, err)
+	}
+	for name, set := range map[string]map[string]string{
+		"no host":     {"CLAMAV_HOST": " "},
+		"bad port":    {"CLAMAV_PORT": "70000"},
+		"tiny chunks": {"CLAMAV_CHUNK_BYTES": "10"},
+		"no timeout":  {"CLAMAV_TIMEOUT": "1ms"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := productionEnv()
+			e["CLAMAV_ENABLED"] = "true"
+			for k, v := range set {
+				e[k] = v
+			}
+			if _, err := load(t, e); err == nil || !strings.Contains(err.Error(), "CLAMAV_") {
+				t.Fatalf("err = %v", err)
+			}
+		})
+	}
+}
