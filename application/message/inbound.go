@@ -3,6 +3,7 @@ package message
 import (
 	"context"
 	"maps"
+	"slices"
 
 	"github.com/razatechofficial/mail-os/application/campaign"
 	"github.com/razatechofficial/mail-os/application/inbound"
@@ -33,10 +34,13 @@ func (s *Service) Dispatch(ctx context.Context, d inbound.Delivery) (string, err
 }
 
 // SendCampaignMessage queues one campaign message as marketing mail on
-// the mailos.campaign topic (campaign.CampaignSender).
+// the mailos.campaign topic (campaign.CampaignSender). The campaign's
+// files were scanned when it was saved (CheckAttachments); each message
+// checks them against the limits again but does not rescan them.
 func (s *Service) SendCampaignMessage(ctx context.Context, cm campaign.CampaignMessage) (string, error) {
 	m, err := s.SendTemplated(ctx, TemplatedSend{TenantID: cm.TenantID, Topic: domaintemplate.TopicCampaign, TemplateID: cm.TemplateID,
 		To: cm.To, ToName: cm.ToName, FromName: cm.FromName, FromEmail: cm.FromEmail, Data: maps.Clone(cm.Data),
-		Type: domainmsg.TypeMarketing, CampaignID: cm.CampaignID, actor: &domainmsg.Actor{Type: domainmsg.ActorSystem}})
+		Type: domainmsg.TypeMarketing, CampaignID: cm.CampaignID, actor: &domainmsg.Actor{Type: domainmsg.ActorSystem},
+		Attachments: slices.Clone(cm.Attachments), scanned: true})
 	return m.ID, err
 }

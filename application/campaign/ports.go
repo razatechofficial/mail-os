@@ -16,6 +16,7 @@ import (
 	"time"
 
 	domain "github.com/razatechofficial/mail-os/domain/campaign"
+	domainmsg "github.com/razatechofficial/mail-os/domain/message"
 )
 
 // CampaignMessage is one campaign email for one contact. Data carries the
@@ -31,6 +32,8 @@ type CampaignMessage struct {
 	FromName   string
 	FromEmail  string
 	Data       map[string]any
+	// Attachments are the campaign's files, sent to every recipient.
+	Attachments []domainmsg.Attachment
 }
 
 // CampaignSender queues one campaign message (the messaging slice). An
@@ -38,6 +41,21 @@ type CampaignMessage struct {
 // the fan-out retried. Any other error fails that recipient only.
 type CampaignSender interface {
 	SendCampaignMessage(ctx context.Context, m CampaignMessage) (messageID string, err error)
+}
+
+// Checker normalizes a campaign's files and checks them against the send
+// limits and the virus scanner before they are stored (the messaging
+// slice, the same checks as every send).
+type Checker interface {
+	CheckAttachments(ctx context.Context, resourceType, resourceID string, files []domainmsg.Attachment) error
+}
+
+// Files stores a campaign's attachments (campaign_attachments).
+type Files interface {
+	// Attachments reads the campaign's files in order.
+	Attachments(ctx context.Context, tenant, campaignID string) ([]domainmsg.Attachment, error)
+	// SetAttachments replaces the campaign's files.
+	SetAttachments(ctx context.Context, tenant, campaignID string, files []domainmsg.Attachment) error
 }
 
 // Filter narrows and pages a listing.

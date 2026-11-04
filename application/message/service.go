@@ -123,7 +123,7 @@ func (s *Service) Send(ctx context.Context, in SendInput) (Result, error) {
 	if err := s.schedule(&m, in.ScheduleAt, now); err != nil {
 		return Result{}, err
 	}
-	m, err := s.queue(ctx, m, "")
+	m, err := s.queue(ctx, m, "", true)
 	return Result{MessageID: m.ID, Status: string(m.Status)}, err
 }
 
@@ -172,7 +172,9 @@ func (s *Service) authorize(ctx context.Context, m *domainmsg.Message, slug stri
 // queue validates m, applies the idempotency key, the sending
 // application's rules and the suppression list, stores it and hands it to
 // the queue. slug is the template's, for the application's message types.
-func (s *Service) queue(ctx context.Context, m domainmsg.Message, slug string) (domainmsg.Message, error) {
+// scan is false only for files the scanner already passed (a campaign's,
+// scanned when the campaign was saved).
+func (s *Service) queue(ctx context.Context, m domainmsg.Message, slug string, scan bool) (domainmsg.Message, error) {
 	if err := s.d.Tenants.Ensure(ctx, m.OrgID); err != nil {
 		return domainmsg.Message{}, err
 	}
@@ -180,7 +182,7 @@ func (s *Service) queue(ctx context.Context, m domainmsg.Message, slug string) (
 	if err := m.Validate(); err != nil {
 		return domainmsg.Message{}, err
 	}
-	if err := s.checkAttachments(ctx, &m); err != nil {
+	if err := s.checkAttachments(ctx, &m, scan); err != nil {
 		return domainmsg.Message{}, err
 	}
 	if m.IdempotencyKey != "" {
@@ -227,10 +229,10 @@ func (s *Service) queue(ctx context.Context, m domainmsg.Message, slug string) (
 }
 
 // checkAttachments normalizes m's files and checks them against the
-// limits, then has each scanned. A file the scanner rejects is a 422 on
-// that attachment, audited; a scanner that cannot answer refuses the send
-// as unavailable, never sends unscanned.
-func (s *Service) checkAttachments(ctx context.Context, m *domainmsg.Message) error {
+// limits, then (with scan) has each scanned. A file the scanner rejects is
+// a 422 on that attachment, audited; a scanner that cannot answer refuses
+// the send as unavailable, never sends unscanned.
+func (s *Service) checkAttachments(ctx context.Context, m *domainmsg.Message, scan bool) error {
 	if len(m.Attachments) == 0 {
 		return nil
 	}
@@ -238,20 +240,43 @@ func (s *Service) checkAttachments(ctx context.Context, m *domainmsg.Message) er
 	if err := domainmsg.ValidateAttachments(m.Attachments, s.cfg.Attachments); err != nil {
 		return err
 	}
+	if !scan {
+		return nil
+	}
+	return s.scan(ctx, "message", m.ID, m.Attachments, map[string]any{"to": logger.MaskEmail(m.ToEmail)})
+}
+
+// CheckAttachments normalizes files and checks them against the same
+// limits and scanner as a send, before they are stored with a resource
+// (campaign.Checker): a rejected file is audited as
+// <resourceType>.attachment_rejected on resourceID.
+func (s *Service) CheckAttachments(ctx context.Context, resourceType, resourceID string, files []domainmsg.Attachment) error {
+	if len(files) == 0 {
+		return nil
+	}
+	domainmsg.NormalizeAttachments(files)
+	if err := domainmsg.ValidateAttachments(files, s.cfg.Attachments); err != nil {
+		return err
+	}
+	return s.scan(ctx, resourceType, resourceID, files, nil)
+}
+
+// scan has each file scanned; meta is added to a rejection's audit event.
+func (s *Service) scan(ctx context.Context, resourceType, resourceID string, files []domainmsg.Attachment, meta map[string]any) error {
 	scanner := s.d.Scanner
 	if scanner == nil {
 		scanner = NoScan{}
 	}
-	for i, a := range m.Attachments {
+	for i, a := range files {
 		v, err := scanner.Scan(ctx, a.Filename, a.ContentType, a.Data)
 		if err != nil {
-			logger.FromContext(ctx).Warn("attachment scan failed", logger.String("message_id", m.ID), logger.Err(err))
+			logger.FromContext(ctx).Warn("attachment scan failed", logger.String(resourceType+"_id", resourceID), logger.Err(err))
 			return apperrors.Unavailable("the attachments could not be scanned; try again later")
 		}
 		if !v.Clean {
-			if err := s.d.Audit.Append(ctx, "message", m.ID, "message.attachment_rejected", map[string]any{
-				"to": logger.MaskEmail(m.ToEmail), "filename": a.Filename, "content_type": a.ContentType, "reason": v.Reason,
-			}); err != nil {
+			event := map[string]any{"filename": a.Filename, "content_type": a.ContentType, "reason": v.Reason}
+			maps.Copy(event, meta)
+			if err := s.d.Audit.Append(ctx, resourceType, resourceID, resourceType+".attachment_rejected", event); err != nil {
 				return err
 			}
 			return apperrors.Validation(apperrors.FieldError{Field: fmt.Sprintf("attachments[%d].content", i), Code: "rejected",
@@ -316,8 +341,10 @@ type TemplatedSend struct {
 	Type           domainmsg.Type
 	// CampaignID links a campaign's message to its campaign.
 	CampaignID string
-	// Attachments are an API send's files.
+	// Attachments are an API send's or a campaign's files.
 	Attachments []domainmsg.Attachment
+	// scanned marks files the scanner already passed (a campaign's).
+	scanned bool
 
 	actor      *domainmsg.Actor
 	replyTo    string
@@ -401,7 +428,7 @@ func (s *Service) SendTemplated(ctx context.Context, in TemplatedSend) (domainms
 	if err := s.schedule(&m, in.scheduleAt, now); err != nil {
 		return domainmsg.Message{}, err
 	}
-	return s.queue(ctx, m, tpl.Slug)
+	return s.queue(ctx, m, tpl.Slug, !in.scanned)
 }
 
 // TestMessage is a template test send, rendered by the templates slice.
@@ -536,7 +563,7 @@ func (s *Service) Resend(ctx context.Context, tenantID, messageID string) (domai
 		// Rendered again from the pinned version and the stored data.
 		m.HTMLBody, m.TextBody = "", ""
 	}
-	out, err := s.queue(ctx, m, "")
+	out, err := s.queue(ctx, m, "", true)
 	if err != nil {
 		return domainmsg.Message{}, err
 	}
