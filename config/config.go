@@ -37,11 +37,15 @@ type Config struct {
 	SMTP        SMTP        `yaml:"smtp"`
 	// SMTPSubmission is the SMTP listener legacy applications submit to.
 	SMTPSubmission SMTPSubmission `yaml:"smtp_submission"`
-	Telemetry      Telemetry      `yaml:"telemetry"`
-	Metrics        Metrics        `yaml:"metrics"`
-	E2EHooks       E2EHooks       `yaml:"e2e_hooks"`
-	FeatureFlags   FeatureFlags   `yaml:"feature_flags"`
-	Shutdown       Shutdown       `yaml:"shutdown"`
+	// Unsubscribe is one-click unsubscribe for broadcast mail (RFC 8058).
+	Unsubscribe Unsubscribe `yaml:"unsubscribe"`
+	// Attachments bounds the files a message may carry.
+	Attachments  Attachments  `yaml:"attachments"`
+	Telemetry    Telemetry    `yaml:"telemetry"`
+	Metrics      Metrics      `yaml:"metrics"`
+	E2EHooks     E2EHooks     `yaml:"e2e_hooks"`
+	FeatureFlags FeatureFlags `yaml:"feature_flags"`
+	Shutdown     Shutdown     `yaml:"shutdown"`
 }
 
 // App identifies the deployment.
@@ -462,6 +466,12 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := c.SMTPSubmission.validate(); err != nil {
+		return err
+	}
+	if err := c.Unsubscribe.validate(plaintext); err != nil {
+		return err
+	}
+	if err := c.Attachments.validate(); err != nil {
 		return err
 	}
 	if c.Telemetry.Enabled {
