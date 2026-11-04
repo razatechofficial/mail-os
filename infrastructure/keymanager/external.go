@@ -10,11 +10,9 @@ import (
 )
 
 // RemoteKEKService is a key service that holds symmetric keys and encrypts
-// small values under them without ever releasing a key: AWS KMS (AWSKMS)
-// here. Google Cloud KMS (Encrypt/Decrypt with additionalAuthenticatedData),
-// Azure Key Vault or Managed HSM (A256GCM encrypt/decrypt, or wrapKey with
-// the aad bound separately) and Vault Transit (encrypt/decrypt with
-// associated_data) fit the same three calls; none of them is built yet.
+// small values under them without ever releasing a key: AWS KMS (AWSKMS),
+// Google Cloud KMS (GCPKMS), Azure Key Vault or Managed HSM
+// (AzureKeyVault) and HashiCorp Vault Transit (VaultTransit).
 type RemoteKEKService interface {
 	// Resolve checks keyID names an enabled symmetric encryption key and
 	// returns its canonical, stable name (for AWS, the key ARN: an alias
@@ -38,7 +36,7 @@ type ExternalKEK struct {
 var _ app.KEK = (*ExternalKEK)(nil)
 
 // NewExternalKEK resolves keyID on svc; provider names the service in the
-// KEK id (kms).
+// KEK id (kms, gcp_kms, azure_key_vault, vault_transit).
 func NewExternalKEK(ctx context.Context, provider string, svc RemoteKEKService, keyID string) (*ExternalKEK, error) {
 	if keyID == "" {
 		return nil, fmt.Errorf("%s: a key-encryption key id is required", provider)

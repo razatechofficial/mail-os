@@ -16,11 +16,18 @@ const (
 	ProviderPKCS11 = "pkcs11"
 	// ProviderKMS: a symmetric key in AWS KMS.
 	ProviderKMS = "kms"
+	// ProviderGCPKMS: a symmetric CryptoKey in Google Cloud KMS.
+	ProviderGCPKMS = "gcp_kms"
+	// ProviderAzureKeyVault: an RSA key in Azure Key Vault or Managed HSM.
+	ProviderAzureKeyVault = "azure_key_vault"
+	// ProviderVaultTransit: a HashiCorp Vault Transit key.
+	ProviderVaultTransit = "vault_transit"
 )
 
 // KEKID names a key-encryption key, never revealing it:
 // "<provider>:<reference>", such as software:<fingerprint>,
-// pkcs11:<HSM key label> or kms:<key ARN>. It is stored beside every data
+// pkcs11:<HSM key label>, kms:<key ARN>, gcp_kms:<CryptoKey name>,
+// azure_key_vault:<key URL> or vault_transit:<mount>/<key>. It is stored beside every data
 // key the KEK wraps.
 func KEKID(provider, ref string) string { return provider + ":" + ref }
 
