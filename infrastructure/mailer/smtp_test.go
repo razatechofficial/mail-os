@@ -401,6 +401,9 @@ func TestSMTPClassifiesReplies(t *testing.T) {
 		want        message.Reason
 	}{
 		{"RCPT", "550 5.1.1 no such user", "", message.ReasonInvalidRecipient},
+		{"RCPT", "550 5.7.60 SMTP; Client does not have permissions to send as this sender", "", message.ReasonConfig},
+		{"RCPT", "554 5.7.1 <user@other.example>: Relay access denied", "", message.ReasonConfig},
+		{"RCPT", "550 Administrative prohibition", "", message.ReasonRejected},
 		{"RCPT", "452 4.2.2 mailbox full", "", message.ReasonUnavailable},
 		{"MAIL", "421 4.7.0 too many messages, slow down", "", message.ReasonRateLimited},
 		{"DATA", "554 5.7.1 spam detected", "", message.ReasonRejected},
