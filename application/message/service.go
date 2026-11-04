@@ -14,9 +14,9 @@ import (
 	"github.com/razatechofficial/mail-os/domain/access"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
 	domaintemplate "github.com/razatechofficial/mail-os/domain/template"
+	"github.com/razatechofficial/mail-os/infrastructure/render"
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
 	"github.com/razatechofficial/mail-os/pkg/id"
-	"github.com/razatechofficial/mail-os/infrastructure/render"
 	"github.com/razatechofficial/mail-os/pkg/logger"
 )
 
@@ -72,6 +72,9 @@ type SendInput struct {
 	// Headers are carried headers (domainmsg.CarriedHeaders) of a direct
 	// send: SMTP submissions pass List-Unsubscribe through.
 	Headers map[string]string
+	// Attachments are the message's files, checked against the limits and
+	// the scanner before it is queued.
+	Attachments []domainmsg.Attachment
 }
 
 // Result is a queued message's id and status.
@@ -97,7 +100,7 @@ func (s *Service) Send(ctx context.Context, in SendInput) (Result, error) {
 	if in.TemplateSlug != "" || in.TemplateID != "" {
 		m, err := s.SendTemplated(ctx, TemplatedSend{TenantID: in.TenantID, TemplateSlug: in.TemplateSlug, TemplateID: in.TemplateID,
 			Locale: in.Locale, To: in.ToEmail, ToName: in.ToName, FromName: in.FromName, FromEmail: in.FromEmail,
-			IdempotencyKey: in.IdempotencyKey, Data: in.TemplateData, Tags: in.Tags, Type: in.Type,
+			IdempotencyKey: in.IdempotencyKey, Data: in.TemplateData, Tags: in.Tags, Type: in.Type, Attachments: in.Attachments,
 			replyTo: in.ReplyTo, metadata: in.Metadata, priority: in.Priority, scheduleAt: in.ScheduleAt})
 		return Result{MessageID: m.ID, Status: string(m.Status)}, err
 	}
@@ -115,7 +118,7 @@ func (s *Service) Send(ctx context.Context, in SendInput) (Result, error) {
 		ID: id.New(), OrgID: in.TenantID, FromName: in.FromName, FromEmail: in.FromEmail, ToEmail: in.ToEmail,
 		ToName: in.ToName, ReplyTo: in.ReplyTo, Subject: in.Subject, HTMLBody: in.HTML, TextBody: in.Text,
 		Type: in.Type, Priority: domainmsg.Priority(in.Priority), Tags: in.Tags, Metadata: in.Metadata, Headers: in.Headers,
-		IdempotencyKey: in.IdempotencyKey, Actor: actorOf(ctx), CreatedAt: now, UpdatedAt: now,
+		Attachments: in.Attachments, IdempotencyKey: in.IdempotencyKey, Actor: actorOf(ctx), CreatedAt: now, UpdatedAt: now,
 	}
 	if err := s.schedule(&m, in.ScheduleAt, now); err != nil {
 		return Result{}, err
@@ -177,6 +180,9 @@ func (s *Service) queue(ctx context.Context, m domainmsg.Message, slug string) (
 	if err := m.Validate(); err != nil {
 		return domainmsg.Message{}, err
 	}
+	if err := s.checkAttachments(ctx, &m); err != nil {
+		return domainmsg.Message{}, err
+	}
 	if m.IdempotencyKey != "" {
 		if prior, err := s.d.Repo.ByIdempotencyKey(ctx, m.OrgID, m.IdempotencyKey); err != nil || prior != nil {
 			if prior != nil {
@@ -213,11 +219,46 @@ func (s *Service) queue(ctx context.Context, m domainmsg.Message, slug string) (
 	if err := s.d.Audit.Append(ctx, "message", m.ID, "message.queued", map[string]any{
 		"to": logger.MaskEmail(m.ToEmail), "status": string(m.Status), "type": string(m.Type),
 		"topic": m.Topic, "template_id": m.TemplateID, "template_version_id": m.TemplateVersionID,
-		"application_id": m.ApplicationID, "sandbox": m.Sandbox,
+		"application_id": m.ApplicationID, "sandbox": m.Sandbox, "attachments": len(m.Attachments),
 	}); err != nil {
 		return domainmsg.Message{}, err
 	}
 	return m, nil
+}
+
+// checkAttachments normalizes m's files and checks them against the
+// limits, then has each scanned. A file the scanner rejects is a 422 on
+// that attachment, audited; a scanner that cannot answer refuses the send
+// as unavailable, never sends unscanned.
+func (s *Service) checkAttachments(ctx context.Context, m *domainmsg.Message) error {
+	if len(m.Attachments) == 0 {
+		return nil
+	}
+	domainmsg.NormalizeAttachments(m.Attachments)
+	if err := domainmsg.ValidateAttachments(m.Attachments, s.cfg.Attachments); err != nil {
+		return err
+	}
+	scanner := s.d.Scanner
+	if scanner == nil {
+		scanner = NoScan{}
+	}
+	for i, a := range m.Attachments {
+		v, err := scanner.Scan(ctx, a.Filename, a.ContentType, a.Data)
+		if err != nil {
+			logger.FromContext(ctx).Warn("attachment scan failed", logger.String("message_id", m.ID), logger.Err(err))
+			return apperrors.Unavailable("the attachments could not be scanned; try again later")
+		}
+		if !v.Clean {
+			if err := s.d.Audit.Append(ctx, "message", m.ID, "message.attachment_rejected", map[string]any{
+				"to": logger.MaskEmail(m.ToEmail), "filename": a.Filename, "content_type": a.ContentType, "reason": v.Reason,
+			}); err != nil {
+				return err
+			}
+			return apperrors.Validation(apperrors.FieldError{Field: fmt.Sprintf("attachments[%d].content", i), Code: "rejected",
+				Message: "the file " + a.Filename + " was rejected by the virus scan"})
+		}
+	}
+	return nil
 }
 
 // BatchItem is one batch entry's outcome.
@@ -275,6 +316,8 @@ type TemplatedSend struct {
 	Type           domainmsg.Type
 	// CampaignID links a campaign's message to its campaign.
 	CampaignID string
+	// Attachments are an API send's files.
+	Attachments []domainmsg.Attachment
 
 	actor      *domainmsg.Actor
 	replyTo    string
@@ -337,7 +380,7 @@ func (s *Service) SendTemplated(ctx context.Context, in TemplatedSend) (domainms
 		ReplyTo: in.replyTo, Type: typ, Priority: domainmsg.Priority(in.priority), Tags: in.Tags, Metadata: in.metadata,
 		Topic: topic, TemplateID: tpl.ID, TemplateVersionID: ver.ID, Locale: string(ver.Locale), TemplateData: data,
 		SecretKeys: secretKeys, EventID: in.EventID, IdempotencyKey: in.IdempotencyKey, Actor: actorOf(ctx),
-		CampaignID: in.CampaignID, CreatedAt: now, UpdatedAt: now,
+		CampaignID: in.CampaignID, Attachments: in.Attachments, CreatedAt: now, UpdatedAt: now,
 	}
 	if in.actor != nil {
 		m.Actor = *in.actor

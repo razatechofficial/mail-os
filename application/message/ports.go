@@ -149,6 +149,28 @@ type Unsubscribes interface {
 	Headers(u string) map[string]string
 }
 
+// Verdict is a virus scan's outcome; Reason names what was found.
+type Verdict struct {
+	Clean  bool
+	Reason string
+}
+
+// Scanner checks an attachment before its message is queued: the
+// virus-scan hook point (a ClamAV daemon, a cloud scanning API). An error
+// means the file could not be scanned, and the send is refused as
+// temporarily unavailable rather than sent unscanned.
+type Scanner interface {
+	Scan(ctx context.Context, name, contentType string, data []byte) (Verdict, error)
+}
+
+// NoScan is the default Scanner: every file is clean.
+type NoScan struct{}
+
+// Scan implements Scanner.
+func (NoScan) Scan(context.Context, string, string, []byte) (Verdict, error) {
+	return Verdict{Clean: true}, nil
+}
+
 // Deps are the service's ports. Templates, Versions, Branding, Signer,
 // Webhooks, Stats, Events, Feedback, Unsubscribe and Scanner may be nil;
 // Applications is
@@ -175,6 +197,8 @@ type Deps struct {
 	// Unsubscribe adds List-Unsubscribe to broadcast mail; nil leaves it
 	// to the sender.
 	Unsubscribe Unsubscribes
+	// Scanner checks attachments; nil is NoScan.
+	Scanner Scanner
 }
 
 // Config tunes sending and retention.
@@ -191,6 +215,9 @@ type Config struct {
 	// StaleSending is how long a message may stay sending before the sweep
 	// queues it again (a worker died mid-send).
 	StaleSending time.Duration
+	// Attachments bound a message's files (ATTACHMENTS_*); the zero value
+	// refuses every attachment.
+	Attachments domainmsg.AttachmentLimits
 }
 
 func (c Config) withDefaults() Config {
