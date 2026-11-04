@@ -168,3 +168,27 @@ func TestDispatchEventOverGRPCRefusals(t *testing.T) {
 		t.Fatalf("audited %v %v, want three event.refused", log.actions, log.reasons)
 	}
 }
+
+// A sender's x-event-id UUID is the event id, so a retried dispatch is the
+// same event; anything else gets a new id.
+func TestDispatchEventOverGRPCUsesSenderEventID(t *testing.T) {
+	iam, client, disp, _ := newClient(t)
+	req := &v1.DispatchEventRequest{Type: "iam.auth.password_reset_requested", Source: "iam", Data: resetData}
+	const id = "0193a000-0000-7000-8000-0000000000ab"
+	ctx := metadata.AppendToOutgoingContext(withToken(iam.ServiceToken("iam", tenant)), MetadataEventID, id)
+	for range 2 {
+		if _, err := client.DispatchEvent(ctx, req); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(disp.sent) != 1 || disp.sent[0].EventID != id {
+		t.Fatalf("dispatched %+v, want one event %s", disp.sent, id)
+	}
+	bad := metadata.AppendToOutgoingContext(withToken(iam.ServiceToken("iam", tenant)), MetadataEventID, "not-a-uuid")
+	if _, err := client.DispatchEvent(bad, req); err != nil {
+		t.Fatal(err)
+	}
+	if len(disp.sent) != 2 || disp.sent[1].EventID == "not-a-uuid" || disp.sent[1].EventID == id {
+		t.Fatalf("dispatched %+v", disp.sent)
+	}
+}

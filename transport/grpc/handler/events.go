@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	v1 "github.com/razatechofficial/mail-os/api/proto/v1"
@@ -19,8 +20,10 @@ import (
 
 // EventHandler serves MailService.DispatchEvent: a service publishing an
 // event with its service token in the authorization metadata. The request
-// carries no event id or tenant: MailOS assigns the id, and the tenant is
-// the token's (or the client's configured one).
+// carries no event id or tenant: the id is the x-event-id metadata when it
+// holds a UUID (so a retried dispatch is the same event and the sender can
+// look its delivery up by its own id), otherwise MailOS assigns one; the
+// tenant is the token's (or the client's configured one).
 type EventHandler struct {
 	svc *inbound.Service
 }
@@ -40,7 +43,7 @@ func (h *EventHandler) DispatchEvent(ctx context.Context, req *v1.DispatchEventR
 		return nil, status.Error(codes.InvalidArgument, "data must be a JSON object")
 	}
 	ev := event.Event{
-		ID:        uuid.Must(uuid.NewV7()).String(),
+		ID:        eventID(ctx),
 		Type:      req.GetType(),
 		Source:    req.GetSource(),
 		Data:      json.RawMessage(data),
@@ -51,4 +54,20 @@ func (h *EventHandler) DispatchEvent(ctx context.Context, req *v1.DispatchEventR
 		return nil, grpctransport.Status(err)
 	}
 	return &v1.DispatchEventResponse{Accepted: res.Accepted, DeliveryId: res.DeliveryID}, nil
+}
+
+// MetadataEventID is the metadata key a sender names its event id with.
+const MetadataEventID = "x-event-id"
+
+// eventID is the sender's event id from the metadata when it is a UUID,
+// otherwise a new one.
+func eventID(ctx context.Context) string {
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if v := md.Get(MetadataEventID); len(v) == 1 {
+			if u, err := uuid.Parse(v[0]); err == nil {
+				return u.String()
+			}
+		}
+	}
+	return uuid.Must(uuid.NewV7()).String()
 }
