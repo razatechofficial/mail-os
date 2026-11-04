@@ -142,7 +142,8 @@ type Auditor interface {
 }
 
 // Deps are the service's ports. Templates, Versions, Branding, Signer,
-// Webhooks and Stats may be nil; Applications is required.
+// Webhooks, Stats, Events and Feedback may be nil; Applications is
+// required.
 type Deps struct {
 	Applications Applications
 	Repo         Repository
@@ -158,6 +159,10 @@ type Deps struct {
 	Webhooks     Notifier
 	Stats        Stats
 	Audit        Auditor
+	// Events and Feedback record the providers' delivery webhooks; both
+	// may be nil (then no provider events are taken).
+	Events   DeliveryEvents
+	Feedback Feedback
 }
 
 // Config tunes sending and retention.

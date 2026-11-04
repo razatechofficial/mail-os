@@ -382,6 +382,9 @@ type View struct {
 	domainmsg.Message
 	MaskedSubject      string
 	MaskedTemplateData map[string]any
+	// Events are the providers' delivery events, oldest first; only Get
+	// fills them.
+	Events []domainmsg.DeliveryEvent
 }
 
 func viewOf(m domainmsg.Message) View {
@@ -394,7 +397,11 @@ func (s *Service) Get(ctx context.Context, tenantID, id string) (View, error) {
 	if err != nil {
 		return View{}, err
 	}
-	return viewOf(m), nil
+	v := viewOf(m)
+	if v.Events, err = s.Events(ctx, tenantID, id); err != nil {
+		return View{}, err
+	}
+	return v, nil
 }
 
 // List returns a page of messages.
