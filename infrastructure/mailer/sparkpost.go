@@ -44,6 +44,12 @@ type spAddress struct {
 	Name  string `json:"name,omitempty"`
 }
 
+type spFile struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+	Data string `json:"data"`
+}
+
 type spRequest struct {
 	Options struct {
 		Transactional bool `json:"transactional"`
@@ -58,6 +64,10 @@ type spRequest struct {
 		Text    string            `json:"text,omitempty"`
 		ReplyTo string            `json:"reply_to,omitempty"`
 		Headers map[string]string `json:"headers,omitempty"`
+		// Attachments and InlineImages: an inline image's name is its
+		// Content-ID.
+		Attachments  []spFile `json:"attachments,omitempty"`
+		InlineImages []spFile `json:"inline_images,omitempty"`
 	} `json:"content"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
 	CampaignID string            `json:"campaign_id,omitempty"`
@@ -86,6 +96,13 @@ func (s *SparkPost) Send(ctx context.Context, out message.Outgoing) (Result, err
 		body.Content.ReplyTo = out.ReplyTo.String()
 	}
 	body.Content.Headers = out.Headers
+	for _, a := range out.Attachments {
+		if a.Inline && a.ContentID != "" && strings.HasPrefix(a.ContentType, "image/") {
+			body.Content.InlineImages = append(body.Content.InlineImages, spFile{Name: a.ContentID, Type: a.ContentType, Data: b64(a.Data)})
+		} else {
+			body.Content.Attachments = append(body.Content.Attachments, spFile{Name: a.Filename, Type: a.ContentType, Data: b64(a.Data)})
+		}
+	}
 	if out.MessageID != "" {
 		body.Metadata = map[string]string{"mailos_message_id": out.MessageID}
 	}
