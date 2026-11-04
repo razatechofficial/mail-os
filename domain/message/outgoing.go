@@ -42,6 +42,8 @@ type Outgoing struct {
 	// headers are refused: see ReservedHeader.
 	Headers map[string]string
 	Tags    []string
+	// Attachments are the files, attached or inline (by Content-ID).
+	Attachments []Attachment
 	// DKIM, when set, is the verified sending domain's key; the SMTP
 	// sender signs with it (HTTP APIs sign with the domain configured at
 	// the provider).

@@ -183,6 +183,9 @@ type Message struct {
 	// Headers are the extra headers the sender asked for, among
 	// CarriedHeaders only (List-Unsubscribe for broadcast mail).
 	Headers map[string]string
+	// Attachments are the message's files; they are erased with the body.
+	// Lists do not load them.
+	Attachments []Attachment
 
 	// Topic is the event topic that produced the message, if any.
 	Topic             string
@@ -442,6 +445,7 @@ func (m *Message) PurgeBody(now time.Time) {
 	m.HTMLBody = ""
 	m.TextBody = ""
 	m.TemplateData = nil
+	m.Attachments = nil
 	m.BodyPurgedAt = &now
 	m.UpdatedAt = now
 }
@@ -551,6 +555,9 @@ func (m *Message) Outgoing() (Outgoing, error) {
 		HTML:      m.HTMLBody,
 		Text:      m.TextBody,
 		Tags:      slices.Clone(m.Tags),
+	}
+	if len(m.Attachments) > 0 {
+		out.Attachments = slices.Clone(m.Attachments)
 	}
 	if len(m.Headers) > 0 {
 		out.Headers = make(map[string]string, len(m.Headers))
