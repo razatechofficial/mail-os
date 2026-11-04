@@ -5,6 +5,7 @@ import (
 	"time"
 
 	domain "github.com/razatechofficial/mail-os/domain/campaign"
+	domainmsg "github.com/razatechofficial/mail-os/domain/message"
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
 	"github.com/razatechofficial/mail-os/pkg/id"
 	"github.com/razatechofficial/mail-os/pkg/logger"
@@ -19,8 +20,12 @@ type Deps struct {
 	// Sender is nil until the messaging slice provides one; launching and
 	// resuming then answer 503 and scheduled campaigns wait.
 	Sender CampaignSender
-	Tx     Transactor
-	Audit  Auditor
+	// Checker checks attachments and Files stores them; while either is
+	// nil a campaign with attachments is refused (503).
+	Checker Checker
+	Files   Files
+	Tx      Transactor
+	Audit   Auditor
 	// ScopeTenant scopes the audit events a worker writes (no principal)
 	// to the campaign's tenant.
 	ScopeTenant func(ctx context.Context, tenant string) context.Context
@@ -67,9 +72,50 @@ func NewService(d Deps, cfg Config) *Service {
 	return &Service{d: d, cfg: cfg, now: func() time.Time { return time.Now().UTC() }}
 }
 
-// Get returns one of the tenant's campaigns.
+// ErrAttachmentsUnavailable answers a campaign with attachments while no
+// attachment store or checker is configured.
+var ErrAttachmentsUnavailable = apperrors.Unavailable("campaign attachments are not available")
+
+// Get returns one of the tenant's campaigns with its attachments.
 func (s *Service) Get(ctx context.Context, tenant, id string) (domain.Campaign, error) {
-	return s.d.Campaigns.Get(ctx, tenant, id)
+	c, err := s.d.Campaigns.Get(ctx, tenant, id)
+	if err != nil {
+		return c, err
+	}
+	return s.withFiles(ctx, c)
+}
+
+// withFiles loads the campaign's attachments.
+func (s *Service) withFiles(ctx context.Context, c domain.Campaign) (domain.Campaign, error) {
+	if s.d.Files == nil {
+		return c, nil
+	}
+	files, err := s.d.Files.Attachments(ctx, c.OrgID, c.ID)
+	if err != nil {
+		return domain.Campaign{}, err
+	}
+	c.Attachments = files
+	return c, nil
+}
+
+// checkFiles normalizes, limits and scans the campaign's attachments.
+func (s *Service) checkFiles(ctx context.Context, c domain.Campaign) error {
+	if len(c.Attachments) == 0 {
+		return nil
+	}
+	if s.d.Checker == nil || s.d.Files == nil {
+		return ErrAttachmentsUnavailable
+	}
+	return s.d.Checker.CheckAttachments(ctx, "campaign", c.ID, c.Attachments)
+}
+
+// fileNames lists the attachments for the audit trail.
+func fileNames(files []domainmsg.Attachment) []string {
+	out := make([]string, len(files))
+	for i, f := range files {
+		out[i] = f.Filename
+	}
+	return out
 }
 
 // List returns one page of the tenant's campaigns.
@@ -108,14 +154,25 @@ func (s *Service) Create(ctx context.Context, tenant string, c domain.Campaign) 
 	if err := s.checkTargets(ctx, c); err != nil {
 		return domain.Campaign{}, err
 	}
+	c.ID = id.New()
+	if err := s.checkFiles(ctx, c); err != nil {
+		return domain.Campaign{}, err
+	}
 	now := s.now()
-	c.ID, c.Status, c.CreatedAt, c.UpdatedAt = id.New(), domain.StatusDraft, now, now
+	c.Status, c.CreatedAt, c.UpdatedAt = domain.StatusDraft, now, now
 	c.StartedAt, c.CompletedAt, c.TotalRecipients, c.SentCount, c.FailedCount = nil, nil, 0, 0, 0
 	err := s.d.Tx.InTx(ctx, func(ctx context.Context) error {
 		if err := s.d.Campaigns.Create(ctx, c); err != nil {
 			return err
 		}
-		return s.d.Audit.Change(ctx, "campaign", c.ID, "campaign.created", nil, c, nil)
+		var extra map[string]any
+		if len(c.Attachments) > 0 {
+			if err := s.d.Files.SetAttachments(ctx, c.OrgID, c.ID, c.Attachments); err != nil {
+				return err
+			}
+			extra = map[string]any{"attachments": fileNames(c.Attachments)}
+		}
+		return s.d.Audit.Change(ctx, "campaign", c.ID, "campaign.created", nil, c, extra)
 	})
 	if err != nil {
 		return domain.Campaign{}, err
@@ -134,10 +191,22 @@ type Update struct {
 	Type          *domain.Type
 	ScheduledAt   *time.Time
 	Metadata      *map[string]any
+	// Attachments, when not nil, replace the campaign's files (empty
+	// removes them).
+	Attachments *[]domainmsg.Attachment
 }
 
 // Update changes a draft or scheduled campaign and audits before and after.
 func (s *Service) Update(ctx context.Context, tenant, campaignID string, u Update) (domain.Campaign, error) {
+	// The files are checked and scanned before the campaign is locked.
+	if u.Attachments != nil {
+		if s.d.Files == nil {
+			return domain.Campaign{}, ErrAttachmentsUnavailable
+		}
+		if err := s.checkFiles(ctx, domain.Campaign{ID: campaignID, Attachments: *u.Attachments}); err != nil {
+			return domain.Campaign{}, err
+		}
+	}
 	var out domain.Campaign
 	err := s.d.Tx.InTx(ctx, func(ctx context.Context) error {
 		before, err := s.d.Campaigns.Lock(ctx, tenant, campaignID)
@@ -146,6 +215,11 @@ func (s *Service) Update(ctx context.Context, tenant, campaignID string, u Updat
 		}
 		if err := before.Editable(); err != nil {
 			return err
+		}
+		if u.Attachments == nil {
+			if before, err = s.withFiles(ctx, before); err != nil {
+				return err
+			}
 		}
 		c := before
 		set := func(dst *string, v *string) {
@@ -175,12 +249,20 @@ func (s *Service) Update(ctx context.Context, tenant, campaignID string, u Updat
 		if err := s.checkTargets(ctx, c); err != nil {
 			return err
 		}
+		var extra map[string]any
+		if u.Attachments != nil {
+			c.Attachments = *u.Attachments
+			if err := s.d.Files.SetAttachments(ctx, c.OrgID, c.ID, c.Attachments); err != nil {
+				return err
+			}
+			extra = map[string]any{"attachments": fileNames(c.Attachments)}
+		}
 		c.UpdatedAt = s.now()
 		if err := s.d.Campaigns.Update(ctx, c); err != nil {
 			return err
 		}
 		out = c
-		return s.d.Audit.Change(ctx, "campaign", c.ID, "campaign.updated", before, c, nil)
+		return s.d.Audit.Change(ctx, "campaign", c.ID, "campaign.updated", before, c, extra)
 	})
 	return out, err
 }
@@ -210,6 +292,9 @@ func (s *Service) transition(ctx context.Context, tenant, campaignID, action str
 	err := s.d.Tx.InTx(ctx, func(ctx context.Context) error {
 		c, err := s.d.Campaigns.Lock(ctx, tenant, campaignID)
 		if err != nil {
+			return err
+		}
+		if c, err = s.withFiles(ctx, c); err != nil {
 			return err
 		}
 		before := c.Status

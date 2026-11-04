@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/razatechofficial/mail-os/domain/message"
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
 )
 
@@ -89,6 +90,10 @@ type Campaign struct {
 	Metadata        map[string]any `json:"metadata"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
+	// Attachments are the files sent to every recipient, checked against
+	// the send limits and scanned when the campaign is saved. Their content
+	// stays out of the audit trail.
+	Attachments []message.Attachment `json:"-"`
 }
 
 // Check normalizes and validates the campaign's content (422 with every

@@ -38,6 +38,11 @@ func (s *Service) Fanout(ctx context.Context, tenant, campaignID string) error {
 	if err := s.d.Campaigns.SetTotal(ctx, c.ID, recorded+pending); err != nil {
 		return err
 	}
+	// The files cannot change once the campaign sends: read them once.
+	if c, err = s.withFiles(ctx, c); err != nil {
+		return err
+	}
+	files := c.Attachments
 	for page := 0; page < s.cfg.PagesPerTask; page++ {
 		if page > 0 {
 			if c, err = s.d.Campaigns.Get(ctx, tenant, campaignID); apperrors.IsNotFound(err) {
@@ -48,6 +53,7 @@ func (s *Service) Fanout(ctx context.Context, tenant, campaignID string) error {
 			if c.Status != domain.StatusSending {
 				return nil
 			}
+			c.Attachments = files
 		}
 		batch, err := s.d.Recipients.Pending(ctx, tenant, c.ID, c.ContactListID, s.cfg.PageSize)
 		if err != nil {
@@ -110,7 +116,7 @@ func message(c domain.Campaign, r Recipient) CampaignMessage {
 	return CampaignMessage{
 		TenantID: c.OrgID, CampaignID: c.ID, TemplateID: c.TemplateID,
 		To: r.Email, ToName: strings.TrimSpace(r.FirstName + " " + r.LastName),
-		FromName: c.FromName, FromEmail: c.FromEmail,
+		FromName: c.FromName, FromEmail: c.FromEmail, Attachments: c.Attachments,
 		Data: map[string]any{
 			"contact":  map[string]any{"email": r.Email, "first_name": r.FirstName, "last_name": r.LastName},
 			"campaign": map[string]any{"id": c.ID, "name": c.Name, "subject": c.Subject},
