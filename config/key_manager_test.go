@@ -28,6 +28,67 @@ func kmsEnv() map[string]string {
 	return env
 }
 
+func gcpEnv() map[string]string {
+	env := productionEnv()
+	env["KEY_MANAGER_MASTER_KEY"] = ""
+	env["KEY_MANAGER_PROVIDER"] = "gcp_kms"
+	env["KEY_MANAGER_GCP_KMS_KEK_KEY"] = "projects/p/locations/global/keyRings/mailos/cryptoKeys/kek"
+	return env
+}
+
+func azureEnv() map[string]string {
+	env := productionEnv()
+	env["KEY_MANAGER_MASTER_KEY"] = ""
+	env["KEY_MANAGER_PROVIDER"] = "azure_key_vault"
+	env["KEY_MANAGER_AZURE_VAULT_URL"] = "https://mailos.vault.azure.net"
+	env["KEY_MANAGER_AZURE_KEK_KEY"] = "mailos-kek"
+	env["KEY_MANAGER_AZURE_TENANT_ID"] = "t"
+	env["KEY_MANAGER_AZURE_CLIENT_ID"] = "c"
+	env["KEY_MANAGER_AZURE_CLIENT_SECRET_FILE"] = "/vault/secrets/azure"
+	return env
+}
+
+func vaultEnv() map[string]string {
+	env := productionEnv()
+	env["KEY_MANAGER_MASTER_KEY"] = ""
+	env["KEY_MANAGER_PROVIDER"] = "vault_transit"
+	env["KEY_MANAGER_VAULT_ADDR"] = "https://vault.internal:8200"
+	env["KEY_MANAGER_VAULT_KEK_KEY"] = "mailos-kek"
+	env["KEY_MANAGER_VAULT_TOKEN_FILE"] = "/vault/secrets/token"
+	return env
+}
+
+func TestKeyManagerRemoteProviders(t *testing.T) {
+	for name, env := range map[string]func() map[string]string{"gcp_kms": gcpEnv, "azure_key_vault": azureEnv, "vault_transit": vaultEnv} {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := load(t, env())
+			if err != nil {
+				t.Fatalf("%s refused: %v", name, err)
+			}
+			if cfg.KeyManager.Provider != name || cfg.KeyManager.KEKKey(name, false) == "" || cfg.KeyManager.NewKEKProvider() != "" {
+				t.Fatalf("%+v", cfg.KeyManager)
+			}
+		})
+	}
+	t.Run("vault defaults", func(t *testing.T) {
+		cfg, _ := load(t, vaultEnv())
+		if cfg.KeyManager.Vault.Mount != "transit" || cfg.KeyManager.Vault.AppRoleMount != "approle" {
+			t.Fatalf("%+v", cfg.KeyManager.Vault)
+		}
+	})
+	t.Run("software into Vault", func(t *testing.T) {
+		env := productionEnv()
+		env["KEY_MANAGER_VAULT_ADDR"] = "https://vault.internal:8200"
+		env["KEY_MANAGER_VAULT_ROLE_ID"] = "r"
+		env["KEY_MANAGER_VAULT_SECRET_ID"] = "s"
+		env["KEY_MANAGER_VAULT_NEW_KEK_KEY"] = "mailos-kek"
+		cfg, err := load(t, env)
+		if err != nil || cfg.KeyManager.NewKEKProvider() != KeyProviderVaultTransit || cfg.KeyManager.KEKKey(KeyProviderVaultTransit, true) != "mailos-kek" {
+			t.Fatalf("%v", err)
+		}
+	})
+}
+
 func TestKeyManagerProviders(t *testing.T) {
 	t.Run("pkcs11", func(t *testing.T) {
 		cfg, err := load(t, hsmEnv())
