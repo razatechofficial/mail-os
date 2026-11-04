@@ -102,8 +102,9 @@ type Container struct {
 	// server; Tasks register worker handlers and schedules; Consumers run
 	// in the server process (FEATURE_PUBSUB_INGEST).
 	Routes []transporthttp.Routes
-	// Public are the unauthenticated routes (provider event webhooks).
-	Public       []transporthttp.PublicRoutes
+	// PublicRoutes are served without IAM authentication: provider event
+	// webhooks and the one-click unsubscribe link guard themselves.
+	PublicRoutes []transporthttp.PublicRoutes
 	GRPCServices []func(*grpclib.Server)
 	Tasks        []func(*worker.Server) error
 	Consumers    []func(ctx context.Context) error

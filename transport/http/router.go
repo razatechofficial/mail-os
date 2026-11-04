@@ -20,10 +20,11 @@ type Routes interface {
 	Mount(api *gin.RouterGroup, g middleware.Guard)
 }
 
-// PublicRoutes are routes outside the authenticated API, each request
-// authenticated by its own scheme (provider webhook signatures).
+// PublicRoutes are routes served without IAM authentication, outside
+// /api/v1: each guards itself (provider webhook signatures, signed
+// unsubscribe links).
 type PublicRoutes interface {
-	MountPublic(r *gin.Engine)
+	MountPublic(r gin.IRouter)
 }
 
 // Deps are what the router needs besides the feature routes.
@@ -35,7 +36,7 @@ type Deps struct {
 	Ready func(*gin.Context) error
 	// Hooks are the test-only e2e routes (nil unless MAILOS_E2E_HOOKS).
 	Hooks func(r *gin.Engine)
-	// Public are the unauthenticated routes (provider event webhooks).
+	// Public are the unauthenticated route sets.
 	Public []PublicRoutes
 }
 
