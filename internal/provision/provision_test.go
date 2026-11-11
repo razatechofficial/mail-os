@@ -272,3 +272,36 @@ func TestTestSend(t *testing.T) {
 		t.Fatalf("empty recipient: %v %s", err, out.String())
 	}
 }
+
+// Every default template renders from its topic's samples with nothing
+// left unfilled, and IAM's awkward cases read well: a platform approval
+// has no scope name, and a security notice names its kind in words.
+func TestDefaultContentRenders(t *testing.T) {
+	for _, topic := range iamTopics() {
+		htmlBody, textBody, _ := compile(contentFor(topic))
+		c := iamContent[topic.Key]
+		data := domaintemplate.SampleData(topic.Key)
+		out, err := render.Render(render.Content{Subject: c.Subject, HTML: htmlBody, Text: textBody}, data, render.Options{})
+		if err != nil {
+			t.Errorf("%s: %v", topic.Key, err)
+			continue
+		}
+		if strings.Contains(out.Subject+out.HTML+out.Text, "{{") || strings.TrimSpace(out.Subject) == "" {
+			t.Errorf("%s renders unfilled: %q", topic.Key, out.Subject)
+		}
+	}
+	approval := iamContent[domaintemplate.TopicApprovalRequested]
+	_, textBody, _ := compile(approval)
+	data := domaintemplate.WithDerived(domaintemplate.TopicApprovalRequested, map[string]any{"tenant_id": "platform", "scope_name": "",
+		"operation_label": "Cancel a tenant", "user": map[string]any{"name": "Owner"}})
+	out, _ := render.Render(render.Content{Text: textBody}, data, render.Options{})
+	if !strings.Contains(out.Text, "An administrator asked to Cancel a tenant in the platform.") {
+		t.Errorf("platform approval: %q", out.Text)
+	}
+	notice := iamContent[domaintemplate.TopicSecurityNotice]
+	data = domaintemplate.WithDerived(domaintemplate.TopicSecurityNotice, map[string]any{"kind": "temporary_access_pass_issued"})
+	out, _ = render.Render(render.Content{Subject: notice.Subject}, data, render.Options{})
+	if out.Subject != "Security notice: A temporary access pass was issued for your account" {
+		t.Errorf("notice subject: %q", out.Subject)
+	}
+}
