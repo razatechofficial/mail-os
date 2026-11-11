@@ -52,9 +52,13 @@ func (g *Gmail) Send(ctx context.Context, out message.Outgoing) (Result, error) 
 	raw, _ := buildMIME(out, time.Now())
 	if out.DKIM != nil {
 		// Gmail keeps a signature added before submission and adds its own.
-		if signed, err := signDKIM(raw, out.From.Email, *out.DKIM); err == nil {
-			raw = signed
+		// A key that cannot sign is refused, as on the SMTP relay: mail
+		// from a domain with DKIM must never leave unsigned.
+		signed, err := signDKIM(raw, out.From.Email, *out.DKIM)
+		if err != nil {
+			return Result{}, &message.SendError{Provider: string(provider.KindGmail), Reason: message.ReasonConfig, Err: err, Detail: "the DKIM key cannot be used"}
 		}
+		raw = signed
 	}
 	payload, _ := json.Marshal(map[string]string{"raw": base64.URLEncoding.EncodeToString(raw)})
 	tok, err := g.tokens.Token(ctx)

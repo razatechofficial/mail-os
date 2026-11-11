@@ -13,6 +13,7 @@ import (
 
 	"github.com/razatechofficial/mail-os/domain/message"
 	"github.com/razatechofficial/mail-os/domain/provider"
+	"github.com/razatechofficial/mail-os/domain/sendingdomain"
 )
 
 // withIdP points kind's sender and an identity platform at one server.
@@ -116,6 +117,16 @@ func TestGmailSendsRawAsTheUser(t *testing.T) {
 	res, err := snd.Send(context.Background(), out)
 	if err != nil || res.ProviderMessageID != "18c2f" || !strings.Contains(raw, "From: <noreply@bank.example>") {
 		t.Fatalf("%v %v %s", res, err, raw)
+	}
+	// A DKIM key that cannot sign refuses the send: never unsigned.
+	raw = ""
+	bad := sampleOutgoing()
+	bad.From = message.Address{Email: "noreply@bank.example"}
+	bad.DKIM = &sendingdomain.SigningKey{Domain: "bank.example", Selector: "mailos", PrivateKeyPEM: "not a key"}
+	if _, err := snd.Send(context.Background(), bad); err == nil || raw != "" {
+		t.Fatalf("unsigned send: %v %q", err, raw)
+	} else if se, ok := message.AsSendError(err); !ok || se.Reason != message.ReasonConfig {
+		t.Fatalf("error = %v", err)
 	}
 	if d := Test(context.Background(), provider.KindGmail, snd); !d.OK || len(d.Steps) != 1 || !strings.Contains(d.Steps[0].Label, "mailos@bank-proj") {
 		t.Fatalf("%+v", d)
