@@ -350,6 +350,10 @@
           "variables": {
             "items": {
               "properties": {
+                "derived": {
+                  "description": "Worded by MailOS from the event's other data; events do not carry it.",
+                  "type": "boolean"
+                },
                 "key": {
                   "type": "string"
                 },
