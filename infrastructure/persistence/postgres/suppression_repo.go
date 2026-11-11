@@ -32,11 +32,18 @@ func scanSuppression(row pgx.Row) (domain.Suppression, error) {
 }
 
 // Upsert adds s unless the address is listed, and returns the stored row.
+// A listed unsubscribe, which stops marketing only, is replaced by a
+// bounce, complaint or manual entry, which stop every message: otherwise
+// an earlier unsubscribe would keep transactional mail going to an address
+// that bounces or complains.
 func (r *SuppressionRepository) Upsert(ctx context.Context, s domain.Suppression) (domain.Suppression, error) {
 	q := QuerierFromContext(ctx, r.db)
 	_, err := q.Exec(ctx, `INSERT INTO suppressions (id, org_id, email, type, reason, source, created_by, created_at, application_id)
 		VALUES ($1, $2, $3, $4, NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''), $8, NULLIF($9, ''))
-		ON CONFLICT (org_id, email, (COALESCE(application_id, ''))) DO NOTHING`,
+		ON CONFLICT (org_id, email, (COALESCE(application_id, ''))) DO UPDATE
+		SET type = EXCLUDED.type, reason = EXCLUDED.reason, source = EXCLUDED.source,
+			created_by = EXCLUDED.created_by, created_at = EXCLUDED.created_at
+		WHERE suppressions.type = 'unsubscribe' AND EXCLUDED.type <> 'unsubscribe'`,
 		s.ID, s.OrgID, s.Email, string(s.Type), s.Reason, s.Source, s.CreatedBy, s.CreatedAt, s.ApplicationID)
 	if err != nil {
 		return domain.Suppression{}, err
