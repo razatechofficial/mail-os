@@ -38,6 +38,10 @@ type Variable struct {
 	// ones follow the publisher's omitempty fields and are checked only
 	// when present.
 	Required bool `json:"-"`
+	// Derived variables are worded by MailOS from the event's other data
+	// (derived.go); events do not carry them.
+	Derived bool       `json:"derived,omitempty"`
+	derive  deriveFunc `json:"-"`
 }
 
 // Topic is an event a template can serve, with the variables its data
@@ -156,6 +160,9 @@ var catalogue = []topicSpec{
 			opt("user_agent", "Device", KindText, "Firefox on Windows"),
 			req("occurred_at", "When", KindDatetime, "2026-10-31T09:30:00Z"),
 			opt("link", "Review link", KindURL, "https://iam.example.com/account/security"),
+			derived("kind_text", "Change, in words", noticeKind),
+			derived("detail_text", "What IAM recorded", noticeDetail),
+			derived("advice_text", "What to do", noticeAdvice),
 		}}, branded: true},
 	{Topic: Topic{Key: TopicApprovalRequested, Name: "Approval requested", Source: SourceIAM,
 		Description: "A change held for a second administrator to approve",
@@ -172,6 +179,8 @@ var catalogue = []topicSpec{
 			opt("requested_at", "Requested", KindDatetime, "2026-10-31T09:30:00Z"),
 			req("expires_at", "Expires", KindDatetime, "2026-11-01T09:30:00Z"),
 			req("approval_link", "Approval link", KindURL, "https://iam.example.com/approvals/sample"),
+			derived("scope_text", "Workspace, or the platform", approvalScope),
+			derived("requester_text", "Requested by, in words", or("requester_email", "An administrator")),
 		}}},
 	{Topic: Topic{Key: TopicInvite, Name: "Invitation", Source: SourceIAM,
 		Description: "An invitation to join an organization",
@@ -294,13 +303,19 @@ var catalogue = []topicSpec{
 		opt("justification", "Justification", KindText, "Branch cover"),
 		req("requested_at", "Requested", KindDatetime, "2026-11-10T09:00:00Z"),
 		opt("duration_days", "Duration (days)", KindNumber, "7"),
-		req("review_link", "Review link", KindURL, "https://iam.example.com/account/access-requests?request=sample")),
+		req("review_link", "Review link", KindURL, "https://iam.example.com/account/access-requests?request=sample"),
+		derived("requester_text", "Requested by, in words", or("requester_email", "A user")),
+		derived("duration_text", "Duration, in words", accessDuration),
+		derived("justification_text", "Justification, in words", or("justification", "none given"))),
 	accessRequestTopic(TopicAccessRequestDecided, "Access request decided",
 		"The requester's access request was approved or denied",
 		req("decision", "Decision", KindText, "approved"),
 		opt("note", "Approver's note", KindText, "Approved for the branch cover"),
 		opt("ticket_ref", "Service desk ticket", KindText, "RITM0010001"),
-		opt("access_expires_at", "Access ends", KindDatetime, "2026-11-17T09:00:00Z")),
+		opt("access_expires_at", "Access ends", KindDatetime, "2026-11-17T09:00:00Z"),
+		derived("outcome_text", "What happens now", accessOutcome),
+		derived("note_text", "Note, in words", or("note", "none")),
+		derived("ticket_text", "Ticket, in words", or("ticket_ref", "none"))),
 	accessRequestTopic(TopicAccessRequestExpired, "Access request expired",
 		"Time-bound access granted by a request ended",
 		req("expired_at", "Ended", KindDatetime, "2026-11-17T09:00:00Z")),
@@ -334,6 +349,10 @@ var catalogue = []topicSpec{
 			opt("justification", "Justification", KindText, "Incident INC-2041"),
 			opt("ticket_ref", "Ticket", KindText, "INC-2041"),
 			req("review_link", "Review link", KindURL, "https://iam.example.com/privileged-access/requests"),
+			derived("requester_text", "Requested by, in words", or("requester_email", "A user")),
+			derived("role_text", "Role, in words", privilegedRole),
+			derived("justification_text", "Justification, in words", or("justification", "none given")),
+			derived("ticket_text", "Ticket, in words", or("ticket_ref", "none")),
 		}}},
 	privilegedDecisionTopic(TopicPrivilegedAccessApproved, "Privileged access approved",
 		"The person's privileged role activation was approved and is active",
@@ -349,6 +368,8 @@ var catalogue = []topicSpec{
 			opt("ip", "IP address", KindText, "203.0.113.10"),
 			req("at", "When", KindDatetime, "2026-11-10T09:30:00Z"),
 			req("review_link", "Audit log link", KindURL, "https://iam.example.com/audit-logs"),
+			derived("account_text", "Emergency account, in words", or("account_email", "not recorded")),
+			derived("ip_text", "IP address, in words", or("ip", "not recorded")),
 		}}},
 	{Topic: Topic{Key: TopicGovernanceAlert, Name: "Platform governance alert", Source: SourceIAM,
 		Description: "A platform governance alert for every platform owner; IAM writes the title and detail of each kind",
@@ -374,6 +395,7 @@ var catalogue = []topicSpec{
 			req("category_label", "Category label", KindText, "Security incident"),
 			opt("purge_after", "Data kept until", KindDatetime, "2027-02-08T09:00:00Z"),
 			req("at", "When", KindDatetime, "2026-11-10T09:00:00Z"),
+			derived("status_text", "What the status means", statusText),
 		}}},
 	{Topic: Topic{Key: TopicCampaign, Name: "Campaign", Source: SourceMailOS,
 		Description: "A marketing campaign sent to a contact list",
@@ -410,6 +432,7 @@ func accessRequestTopic(key, name, description string, extra ...Variable) topicS
 		opt("role_key", "Role key", KindText, "teller"),
 		opt("role_name", "Role", KindText, "Teller"),
 		req("requests_link", "My requests link", KindURL, "https://iam.example.com/account/access-requests"),
+		derived("access_text", "Access, in words", accessText),
 	}
 	return topicSpec{Topic: Topic{Key: key, Name: name, Description: description, Source: SourceIAM, Variables: append(vars, extra...)}}
 }
@@ -423,6 +446,7 @@ func privilegedDecisionTopic(key, name, description string, extra ...Variable) t
 		req("activation_id", "Activation ID", KindText, "0190f5e2-7c1a-7b3e-9f00-00000000000a"),
 		opt("note", "Approver's note", KindText, "Approved for INC-2041"),
 		req("link", "Privileged access link", KindURL, "https://iam.example.com/privileged-access"),
+		derived("note_text", "Note, in words", or("note", "none")),
 	}
 	return topicSpec{Topic: Topic{Key: key, Name: name, Description: description, Source: SourceIAM, Variables: append(vars, extra...)}}
 }
@@ -454,6 +478,19 @@ func init() {
 		t.Variables = append(vars, commonVariables...)
 		topicIndex[t.Key] = len(topics)
 		topics = append(topics, t)
+	}
+	// A derived variable's sample is worded from the topic's samples.
+	for _, t := range topics {
+		var samples map[string]any
+		for i, v := range t.Variables {
+			if v.derive == nil {
+				continue
+			}
+			if samples == nil {
+				samples = SampleData(t.Key)
+			}
+			t.Variables[i].Sample = text(samples, v.Key)
+		}
 	}
 }
 
@@ -514,10 +551,14 @@ func SecretKeys(topic string) []string {
 
 // SampleData is event data built from the topic's samples, nested by key
 // ({"user":{"name":…}}), for previews. Numbers are float64, as decoded JSON
-// is. "" or an unknown topic gets the common variables.
+// is, and derived variables are worded from the other samples. "" or an
+// unknown topic gets the common variables.
 func SampleData(topic string) map[string]any {
 	data := map[string]any{}
 	for _, v := range variablesOf(topic) {
+		if v.derive != nil {
+			continue
+		}
 		var val any = v.Sample
 		if v.Kind == KindNumber {
 			if f, err := strconv.ParseFloat(v.Sample, 64); err == nil {
@@ -526,7 +567,7 @@ func SampleData(topic string) map[string]any {
 		}
 		setPath(data, v.Key, val)
 	}
-	return data
+	return WithDerived(topic, data)
 }
 
 func setPath(data map[string]any, key string, val any) {

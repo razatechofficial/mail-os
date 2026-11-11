@@ -15,6 +15,7 @@ import (
 // is rendered: every required variable is present and not empty, and every
 // declared variable that is present has a value of its kind. Keys the
 // topic does not declare are ignored; events carry more than templates use.
+// Derived variables are MailOS's own (WithDerived) and are not checked.
 // Field paths are "data.<key>". An unknown topic is one "topic" error.
 //
 // Errors never quote the value: it may be a one-time code.
@@ -25,6 +26,9 @@ func ValidateData(topic string, data map[string]any) []apperrors.FieldError {
 	}
 	var errs []apperrors.FieldError
 	for _, v := range t.Variables {
+		if v.Derived {
+			continue
+		}
 		field := "data." + v.Key
 		val, present := Lookup(data, v.Key)
 		if !present || empty(val) {
