@@ -90,6 +90,22 @@ const (
 	TopicTenantSignupReviewRequested   = "iam.tenant_signup.review_requested"
 )
 
+// Governance topics IAM publishes (application/accessrequest, pim,
+// accessreview, apps, platformgov and the tenant status notifier).
+const (
+	TopicPatternExceptionExpired   = "iam.application.pattern_exception_expired"
+	TopicAccessRequestSubmitted    = "iam.access_request.submitted"
+	TopicAccessRequestDecided      = "iam.access_request.decided"
+	TopicAccessRequestExpired      = "iam.access_request.expired"
+	TopicAccessReviewCompleted     = "iam.access_review.completed"
+	TopicPrivilegedAccessRequested = "iam.privileged_access.requested"
+	TopicPrivilegedAccessApproved  = "iam.privileged_access.approved"
+	TopicPrivilegedAccessDenied    = "iam.privileged_access.denied"
+	TopicBreakGlassUsed            = "iam.security.break_glass_used"
+	TopicGovernanceAlert           = "iam.platform.governance_alert"
+	TopicTenantStatusChanged       = "iam.tenant.status_changed"
+)
+
 // TopicCampaign is MailOS's own topic: a campaign sent to contacts.
 const TopicCampaign = "mailos.campaign"
 
@@ -144,10 +160,16 @@ var catalogue = []topicSpec{
 	{Topic: Topic{Key: TopicApprovalRequested, Name: "Approval requested", Source: SourceIAM,
 		Description: "A change held for a second administrator to approve",
 		Variables: []Variable{recipientEmail,
+			opt("user_id", "User ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000001"),
+			opt("tenant_id", "Tenant ID or platform", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000003"),
 			opt("scope_name", "Scope", KindText, "Averox"),
+			opt("request_id", "Request ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000006"),
+			opt("operation", "Operation key", KindText, "policy.update"),
 			req("operation_label", "Operation", KindText, "Change access policy"),
 			req("summary", "Summary", KindText, "PUT access policy Default"),
+			opt("requester_id", "Requester ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000007"),
 			opt("requester_email", "Requested by", KindEmail, "bilal@example.com"),
+			opt("requested_at", "Requested", KindDatetime, "2026-10-31T09:30:00Z"),
 			req("expires_at", "Expires", KindDatetime, "2026-11-01T09:30:00Z"),
 			req("approval_link", "Approval link", KindURL, "https://iam.example.com/approvals/sample"),
 		}}},
@@ -219,7 +241,7 @@ var catalogue = []topicSpec{
 		req("reason", "Reason", KindText, "expired")),
 	domainTopic(TopicDomainVerificationLapsed, "Domain verification lapsed", "Re-verification failed and the domain is an expiring claim again",
 		req("domain_id", "Domain ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000004"),
-		req("reason", "Reason", KindText, "dns_record_missing"),
+		opt("reason", "Reason", KindText, "dns_record_missing"),
 		req("expires_at", "Expires", KindDatetime, "2026-11-07T09:30:00Z")),
 	domainTopic(TopicDomainTransferRequested, "Domain transfer requested", "A platform operator opened a transfer of a domain to this tenant",
 		req("reason", "Reason", KindText, "Merger of the two workspaces"),
@@ -255,6 +277,104 @@ var catalogue = []topicSpec{
 		opt("domain", "Email domain", KindText, "averox-labs.example"),
 		opt("expires_at", "Request expires", KindDatetime, "2026-11-07T09:30:00Z"),
 		req("link", "Review link", KindURL, "https://iam.example.com/platform/workspace-requests?request=sample")),
+	{Topic: Topic{Key: TopicPatternExceptionExpired, Name: "Pattern exception expired", Source: SourceIAM,
+		Description: "An application's sign-in pattern exception expired, so its MFA-only connections are refused",
+		Variables: []Variable{recipientEmail,
+			req("user_id", "User ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000001"),
+			req("tenant_id", "Tenant ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000003"),
+			req("application_id", "Application ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000008"),
+			req("application_name", "Application", KindText, "T24 Transact"),
+			req("expires_at", "Expired", KindDatetime, "2026-11-10T09:00:00Z"),
+			req("application_link", "Application link", KindURL, "https://iam.example.com/applications/sample"),
+		}}},
+	accessRequestTopic(TopicAccessRequestSubmitted, "Access request submitted",
+		"Someone asked for access to an application that this person may approve",
+		req("requester_id", "Requester ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000007"),
+		opt("requester_email", "Requester email", KindEmail, "alice@example.com"),
+		opt("justification", "Justification", KindText, "Branch cover"),
+		req("requested_at", "Requested", KindDatetime, "2026-11-10T09:00:00Z"),
+		opt("duration_days", "Duration (days)", KindNumber, "7"),
+		req("review_link", "Review link", KindURL, "https://iam.example.com/account/access-requests?request=sample")),
+	accessRequestTopic(TopicAccessRequestDecided, "Access request decided",
+		"The requester's access request was approved or denied",
+		req("decision", "Decision", KindText, "approved"),
+		opt("note", "Approver's note", KindText, "Approved for the branch cover"),
+		opt("ticket_ref", "Service desk ticket", KindText, "RITM0010001"),
+		opt("access_expires_at", "Access ends", KindDatetime, "2026-11-17T09:00:00Z")),
+	accessRequestTopic(TopicAccessRequestExpired, "Access request expired",
+		"Time-bound access granted by a request ended",
+		req("expired_at", "Ended", KindDatetime, "2026-11-17T09:00:00Z")),
+	{Topic: Topic{Key: TopicAccessReviewCompleted, Name: "Access review completed", Source: SourceIAM,
+		Description: "An access review the person started is complete",
+		Variables: []Variable{recipientEmail,
+			req("user_id", "User ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000001"),
+			opt("name", "Reviewer name", KindText, "Amna Khan"),
+			req("tenant_id", "Tenant ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000003"),
+			opt("tenant_name", "Tenant", KindText, "Averox"),
+			req("review_id", "Review ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000009"),
+			req("review_name", "Review", KindText, "Quarterly access review"),
+			req("total", "Decisions", KindNumber, "40"),
+			req("kept", "Kept", KindNumber, "35"),
+			req("removed", "Removed", KindNumber, "4"),
+			req("not_decided", "Not decided", KindNumber, "1"),
+			req("failed", "Removals that failed", KindNumber, "0"),
+			req("manual", "Removals to make by hand", KindNumber, "0"),
+			req("review_link", "Review link", KindURL, "https://iam.example.com/access-reviews/sample"),
+		}}},
+	{Topic: Topic{Key: TopicPrivilegedAccessRequested, Name: "Privileged access requested", Source: SourceIAM,
+		Description: "A user asked to activate a privileged role this person may approve",
+		Variables: []Variable{recipientEmail,
+			req("tenant_id", "Tenant ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000003"),
+			req("activation_id", "Activation ID", KindText, "0190f5e2-7c1a-7b3e-9f00-00000000000a"),
+			req("requester_id", "Requester ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000007"),
+			opt("requester_email", "Requester email", KindEmail, "bilal@example.com"),
+			opt("role_kind", "Role kind", KindText, "tenant"),
+			opt("role_name", "Role", KindText, "Tenant administrator"),
+			req("duration_minutes", "Duration (minutes)", KindNumber, "60"),
+			opt("justification", "Justification", KindText, "Incident INC-2041"),
+			opt("ticket_ref", "Ticket", KindText, "INC-2041"),
+			req("review_link", "Review link", KindURL, "https://iam.example.com/privileged-access/requests"),
+		}}},
+	privilegedDecisionTopic(TopicPrivilegedAccessApproved, "Privileged access approved",
+		"The person's privileged role activation was approved and is active",
+		req("expires_at", "Active until", KindDatetime, "2026-11-10T10:00:00Z")),
+	privilegedDecisionTopic(TopicPrivilegedAccessDenied, "Privileged access denied",
+		"The person's privileged role activation was denied"),
+	{Topic: Topic{Key: TopicBreakGlassUsed, Name: "Emergency account signed in", Source: SourceIAM,
+		Description: "A workspace's emergency (break-glass) account signed in",
+		Variables: []Variable{recipientEmail,
+			req("tenant_id", "Tenant ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000003"),
+			req("account_id", "Emergency account ID", KindText, "0190f5e2-7c1a-7b3e-9f00-00000000000b"),
+			opt("account_email", "Emergency account", KindEmail, "breakglass@example.com"),
+			opt("ip", "IP address", KindText, "203.0.113.10"),
+			req("at", "When", KindDatetime, "2026-11-10T09:30:00Z"),
+			req("review_link", "Audit log link", KindURL, "https://iam.example.com/audit-logs"),
+		}}},
+	{Topic: Topic{Key: TopicGovernanceAlert, Name: "Platform governance alert", Source: SourceIAM,
+		Description: "A platform governance alert for every platform owner; IAM writes the title and detail of each kind",
+		Variables: []Variable{recipientEmail,
+			req("user_id", "User ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000001"),
+			req("kind", "Alert kind", KindText, "admin_passkey_enrolment"),
+			req("title", "Title", KindText, "A platform administrator is adding a passkey or security key"),
+			req("detail", "Detail", KindText, "owner1@example.com signed in from 203.0.113.10 and is enrolling a passkey."),
+			req("severity", "Severity", KindText, "high"),
+			req("link", "Console link", KindURL, "https://iam.example.com/platform/administrators"),
+			req("at", "When", KindDatetime, "2026-11-10T09:30:00Z"),
+			opt("brand_scope", "Brand scope", KindText, "platform"),
+		}}},
+	{Topic: Topic{Key: TopicTenantStatusChanged, Name: "Workspace status changed", Source: SourceIAM,
+		Description: "A platform operator suspended, reactivated or cancelled the owner's workspace",
+		Variables: []Variable{recipientEmail,
+			req("user_id", "User ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000001"),
+			req("tenant_id", "Tenant ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000003"),
+			opt("tenant_uuid", "Tenant UUID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000003"),
+			req("tenant_name", "Workspace", KindText, "Averox"),
+			req("action", "Action", KindText, "suspended"),
+			req("category", "Category", KindText, "security_incident"),
+			req("category_label", "Category label", KindText, "Security incident"),
+			opt("purge_after", "Data kept until", KindDatetime, "2027-02-08T09:00:00Z"),
+			req("at", "When", KindDatetime, "2026-11-10T09:00:00Z"),
+		}}},
 	{Topic: Topic{Key: TopicCampaign, Name: "Campaign", Source: SourceMailOS,
 		Description: "A marketing campaign sent to a contact list",
 		Variables: []Variable{
@@ -274,6 +394,35 @@ func domainTopic(key, name, description string, extra ...Variable) topicSpec {
 		req("domain", "Domain", KindText, "example.com"),
 		req("occurred_at", "When", KindDatetime, "2026-10-31T09:30:00Z"),
 		req("link", "Domains page", KindURL, "https://iam.example.com/settings/domains"),
+	}
+	return topicSpec{Topic: Topic{Key: key, Name: name, Description: description, Source: SourceIAM, Variables: append(vars, extra...)}}
+}
+
+// accessRequestTopic is an access request topic: the fields every access
+// request message carries, then the topic's own.
+func accessRequestTopic(key, name, description string, extra ...Variable) topicSpec {
+	vars := []Variable{recipientEmail,
+		req("user_id", "User ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000001"),
+		req("tenant_id", "Tenant ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000003"),
+		req("request_id", "Request ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000006"),
+		req("application_id", "Application ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000008"),
+		req("application_name", "Application", KindText, "T24 Transact"),
+		opt("role_key", "Role key", KindText, "teller"),
+		opt("role_name", "Role", KindText, "Teller"),
+		req("requests_link", "My requests link", KindURL, "https://iam.example.com/account/access-requests"),
+	}
+	return topicSpec{Topic: Topic{Key: key, Name: name, Description: description, Source: SourceIAM, Variables: append(vars, extra...)}}
+}
+
+// privilegedDecisionTopic is a decision on a privileged role activation,
+// sent to the person who asked.
+func privilegedDecisionTopic(key, name, description string, extra ...Variable) topicSpec {
+	vars := []Variable{recipientEmail,
+		req("user_id", "User ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000001"),
+		req("tenant_id", "Tenant ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000003"),
+		req("activation_id", "Activation ID", KindText, "0190f5e2-7c1a-7b3e-9f00-00000000000a"),
+		opt("note", "Approver's note", KindText, "Approved for INC-2041"),
+		req("link", "Privileged access link", KindURL, "https://iam.example.com/privileged-access"),
 	}
 	return topicSpec{Topic: Topic{Key: key, Name: name, Description: description, Source: SourceIAM, Variables: append(vars, extra...)}}
 }

@@ -16,7 +16,10 @@ func TestTopicsCatalogue(t *testing.T) {
 		TopicLifecycleEmail, TopicDomainVerified, TopicDomainClaimExpiring, TopicDomainClaimReleased,
 		TopicDomainVerificationLapsed, TopicDomainTransferRequested, TopicDomainTransferred, TopicDomainRevoked,
 		TopicTenantSignupEmailVerification, TopicTenantSignupApproved, TopicTenantSignupRejected,
-		TopicTenantSignupReviewRequested, TopicCampaign}
+		TopicTenantSignupReviewRequested, TopicPatternExceptionExpired, TopicAccessRequestSubmitted,
+		TopicAccessRequestDecided, TopicAccessRequestExpired, TopicAccessReviewCompleted,
+		TopicPrivilegedAccessRequested, TopicPrivilegedAccessApproved, TopicPrivilegedAccessDenied,
+		TopicBreakGlassUsed, TopicGovernanceAlert, TopicTenantStatusChanged, TopicCampaign}
 	var keys []string
 	for _, tp := range ts {
 		keys = append(keys, tp.Key)
@@ -193,7 +196,7 @@ func TestDomainTopics(t *testing.T) {
 		TopicDomainVerified:           {"domain_id": "d1"},
 		TopicDomainClaimExpiring:      {"domain_id": "d1", "expires_at": "2026-11-01T09:30:00Z"},
 		TopicDomainClaimReleased:      {"domain_id": "d1", "reason": "verified_elsewhere"},
-		TopicDomainVerificationLapsed: {"domain_id": "d1", "reason": "parent_lapsed", "expires_at": "2026-11-07T09:30:00Z"},
+		TopicDomainVerificationLapsed: {"domain_id": "d1", "reason": "", "expires_at": "2026-11-07T09:30:00Z"},
 		TopicDomainTransferRequested:  {"reason": "merger", "dns_name": "_iam.example.com", "dns_value": "abc", "expires_at": "2026-11-07T09:30:00Z"},
 		TopicDomainTransferred:        {"domain_id": "d1", "reason": "merger", "direction": "from"},
 		TopicDomainRevoked:            {"domain_id": "d1", "reason": "dispute"},
@@ -260,4 +263,72 @@ func TestTenantSignupTopics(t *testing.T) {
 	if errs := ValidateData(TopicTenantSignupEmailVerification, bad); len(errs) != 1 || errs[0].Field != "data.expires_at" {
 		t.Errorf("bad expiry: %v", errs)
 	}
+}
+
+func withFields(base map[string]any, extra map[string]any) map[string]any {
+	out := map[string]any{}
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range extra {
+		out[k] = v
+	}
+	return out
+}
+
+// IAM's governance topics are accepted as IAM sends them
+// (docs/rfp/mailos-topics.md §3.2 to §3.7 in the IAM repository): empty
+// optional strings, numbers as json.Number, and every governance alert
+// kind, including the ones added after the catalogue.
+func TestGovernanceTopicsAcceptIAMPayloads(t *testing.T) {
+	access := map[string]any{"email": "manager@bank.example", "user_id": "u1", "tenant_id": "t1", "request_id": "r1",
+		"application_id": "a1", "application_name": "T24 Transact", "role_key": "", "role_name": "",
+		"requests_link": "https://iam.example.com/account/access-requests"}
+	cases := map[string]map[string]any{
+		TopicPatternExceptionExpired: {"email": "admin@bank.example", "user_id": "u1", "tenant_id": "t1", "application_id": "a1",
+			"application_name": "T24 Transact", "expires_at": "2026-11-10T09:00:00Z",
+			"application_link": "https://iam.example.com/applications/a1"},
+		TopicAccessRequestSubmitted: withFields(access, map[string]any{"requester_id": "u2", "requester_email": "",
+			"justification": "", "requested_at": "2026-11-10T09:00:00Z", "duration_days": json.Number("7"),
+			"review_link": "https://iam.example.com/account/access-requests?request=r1"}),
+		TopicAccessRequestDecided: withFields(access, map[string]any{"decision": "denied", "note": "", "ticket_ref": ""}),
+		TopicAccessRequestExpired: withFields(access, map[string]any{"expired_at": "2026-11-17T09:00:00Z"}),
+		TopicAccessReviewCompleted: {"email": "owner@bank.example", "user_id": "u1", "name": "", "tenant_id": "t1", "tenant_name": "",
+			"review_id": "rv1", "review_name": "Q4", "total": json.Number("3"), "kept": json.Number("3"), "removed": json.Number("0"),
+			"not_decided": json.Number("0"), "failed": json.Number("0"), "manual": json.Number("0"),
+			"review_link": "https://iam.example.com/access-reviews/rv1"},
+		TopicPrivilegedAccessRequested: {"email": "approver@bank.example", "tenant_id": "t1", "activation_id": "x1",
+			"requester_id": "u2", "requester_email": "", "role_kind": "tenant", "role_name": "", "duration_minutes": json.Number("60"),
+			"justification": "", "ticket_ref": "", "review_link": "https://iam.example.com/privileged-access/requests"},
+		TopicPrivilegedAccessApproved: {"email": "u@bank.example", "tenant_id": "t1", "activation_id": "x1", "user_id": "u2",
+			"note": "", "link": "https://iam.example.com/privileged-access", "expires_at": "2026-11-10T10:00:00Z"},
+		TopicPrivilegedAccessDenied: {"email": "u@bank.example", "tenant_id": "t1", "activation_id": "x1", "user_id": "u2",
+			"note": "", "link": "https://iam.example.com/privileged-access"},
+		TopicBreakGlassUsed: {"email": "owner@bank.example", "tenant_id": "t1", "account_id": "bg1", "account_email": "",
+			"ip": "", "at": "2026-11-10T09:30:00Z", "review_link": "https://iam.example.com/audit-logs"},
+		TopicTenantStatusChanged: {"email": "owner@acme.example", "user_id": "u1", "tenant_id": "t1", "tenant_uuid": "t1",
+			"tenant_name": "Acme", "action": "cancelled", "category": "customer_request", "category_label": "Customer request",
+			"purge_after": "2027-02-08T09:00:00Z", "at": "2026-11-10T09:00:00Z"},
+		TopicApprovalRequested: {"email": "owner@platform.example", "user_id": "u1", "tenant_id": "platform", "scope_name": "",
+			"request_id": "q1", "operation": "tenant.cancel", "operation_label": "Cancel a tenant", "summary": "Cancel Acme",
+			"requester_id": "u2", "requester_email": "", "requested_at": "2026-11-10T09:00:00Z",
+			"expires_at": "2026-11-11T09:00:00Z", "approval_link": "https://iam.example.com/platform/approvals"},
+	}
+	for topic, data := range cases {
+		if errs := ValidateData(topic, data); len(errs) != 0 {
+			t.Errorf("%s: %+v", topic, errs)
+		}
+	}
+	for _, kind := range []string{"sole_owner_action", "emergency_suspend", "break_glass_used", "owners_below_minimum",
+		"post_hoc_review_overdue", "post_hoc_review_disputed", "dormant_owner", "break_glass_test_due",
+		"access_review_due", "admin_mfa_waived", "admin_passkey_enrolment"} {
+		data := map[string]any{"email": "owner2@platform.example", "user_id": "u2", "kind": kind, "title": "Title",
+			"detail": "Detail", "severity": "high", "link": "https://iam.example.com/platform/administrators",
+			"at": "2026-11-10T09:30:00Z", "brand_scope": "platform", "user": map[string]any{"name": "Owner Two"}}
+		if errs := ValidateData(TopicGovernanceAlert, data); len(errs) != 0 {
+			t.Errorf("governance alert %s: %+v", kind, errs)
+		}
+	}
+	// A required field still counts.
+	assertCodes(t, ValidateData(TopicAccessRequestDecided, withFields(access, nil)), map[string]string{"data.decision": CodeRequired})
 }
