@@ -22,11 +22,32 @@ type TenantHandler struct {
 	tenants *tenant.Service
 	repo    tenant.Repository
 	keys    *appkm.Service
+	// operatorTenant is the only tenant whose administrators manage the
+	// encryption keys: data keys and KEKs belong to the deployment and
+	// seal every tenant's secrets. Empty refuses every key route.
+	operatorTenant string
 }
 
 // NewTenantHandler builds the handler.
 func NewTenantHandler(tenants *tenant.Service, repo tenant.Repository, keys *appkm.Service) *TenantHandler {
 	return &TenantHandler{tenants: tenants, repo: repo, keys: keys}
+}
+
+// WithOperatorTenant names the tenant whose administrators manage the
+// deployment's encryption keys (IAM_SERVICE_TENANT_ID).
+func (h *TenantHandler) WithOperatorTenant(tenantID string) *TenantHandler {
+	h.operatorTenant = tenantID
+	return h
+}
+
+// operatorOnly refuses the key routes to every tenant but the operator's.
+func (h *TenantHandler) operatorOnly(c *gin.Context) {
+	if h.operatorTenant == "" || middleware.PrincipalFrom(c).TenantID != h.operatorTenant {
+		response.FromError(c, apperrors.Forbidden("only the operator tenant's administrators manage the encryption keys"))
+		c.Abort()
+		return
+	}
+	c.Next()
 }
 
 // Mount registers the routes.
@@ -36,10 +57,10 @@ func (h *TenantHandler) Mount(api *gin.RouterGroup, g middleware.Guard) {
 	api.GET("/organizations/:id", g.Require(access.PermSettingsRead), h.GetOrganization)
 	api.GET("/tenant/settings", g.Require(access.PermSettingsRead), h.GetSettings)
 	api.PUT("/tenant/settings", g.Require(access.PermSettingsManage), h.UpdateSettings)
-	api.GET("/keys/encryption", g.Require(access.PermSettingsManage), h.EncryptionKeys)
-	api.POST("/keys/encryption/:purpose/rotate", g.Require(access.PermSettingsManage), h.RotateKey)
-	api.GET("/keys/kek", g.Require(access.PermSettingsManage), h.KEKStatus)
-	api.POST("/keys/kek/rotate", g.Require(access.PermSettingsManage), h.RotateKEK)
+	api.GET("/keys/encryption", g.Require(access.PermSettingsManage), h.operatorOnly, h.EncryptionKeys)
+	api.POST("/keys/encryption/:purpose/rotate", g.Require(access.PermSettingsManage), h.operatorOnly, h.RotateKey)
+	api.GET("/keys/kek", g.Require(access.PermSettingsManage), h.operatorOnly, h.KEKStatus)
+	api.POST("/keys/kek/rotate", g.Require(access.PermSettingsManage), h.operatorOnly, h.RotateKEK)
 }
 
 type meView struct {

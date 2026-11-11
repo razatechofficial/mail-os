@@ -222,7 +222,7 @@ func (c *Container) buildCore(ctx context.Context) error {
 	c.GRPCAuth = &grpctransport.Auth{Verifier: c.Verifier}
 
 	c.Routes = append(c.Routes,
-		handler.NewTenantHandler(c.Tenants, c.TenantRepo, c.Keys),
+		handler.NewTenantHandler(c.Tenants, c.TenantRepo, c.Keys).WithOperatorTenant(cfg.IAM.ServiceTenantID),
 		handler.NewAuditLogHandler(auditlog.NewService(c.AuditRepo, c.Audit)),
 	)
 	c.Tasks = append(c.Tasks, func(s *worker.Server) error {
