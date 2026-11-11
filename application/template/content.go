@@ -266,6 +266,7 @@ func (s *Service) Preview(ctx context.Context, tenantID, templateID string, in P
 	if data == nil {
 		data = domain.SampleData(t.Topic)
 	}
+	data = domain.WithDerived(t.Topic, data)
 	return render.Render(render.Content{Subject: in.Subject, HTML: in.HTMLBody, Text: in.TextBody}, data,
 		render.Options{Mask: domain.SecretKeys(t.Topic)})
 }
@@ -330,6 +331,7 @@ func (s *Service) TestSend(ctx context.Context, tenantID, templateID string, in 
 	if data == nil {
 		data = domain.SampleData(t.Topic)
 	}
+	data = domain.WithDerived(t.Topic, data)
 	out, err := render.Render(render.Content{Subject: d.Subject, HTML: d.HTMLBody, Text: d.TextBody}, data, render.Options{})
 	if err != nil {
 		return "", "", err

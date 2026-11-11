@@ -343,6 +343,24 @@ func TestPreviewMasksSecrets(t *testing.T) {
 	}
 }
 
+// A preview words the topic's derived variables from the data it is
+// given, or from the samples.
+func TestPreviewDerivesVariables(t *testing.T) {
+	f := newFixture(t, false)
+	ctx := context.Background()
+	tpl := f.create(t, tenantA, "approval", domain.TopicApprovalRequested)
+	in := app.PreviewInput{Subject: "Approve in {{scope_text}}", HTMLBody: "<p>{{requester_text}}</p>", TextBody: "{{scope_text}}"}
+	out, err := f.svc.Preview(ctx, tenantA, tpl.ID, in)
+	if err != nil || out.Subject != "Approve in Averox" || out.HTML != "<p>bilal@example.com</p>" {
+		t.Fatalf("sample preview: %+v %v", out, err)
+	}
+	in.Data = map[string]any{"tenant_id": "platform", "scope_name": ""}
+	out, err = f.svc.Preview(ctx, tenantA, tpl.ID, in)
+	if err != nil || out.Subject != "Approve in the platform" || out.HTML != "<p>An administrator</p>" {
+		t.Fatalf("platform preview: %+v %v", out, err)
+	}
+}
+
 func TestTestSend(t *testing.T) {
 	f := newFixture(t, false)
 	ctx := context.Background()
