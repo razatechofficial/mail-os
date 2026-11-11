@@ -175,7 +175,7 @@ func (s *Service) render(ctx context.Context, m *domainmsg.Message, unsub string
 	if err != nil {
 		return err
 	}
-	data := s.withBrand(ctx, m.OrgID, m.TemplateData)
+	data := s.renderData(ctx, m.OrgID, m.Topic, m.TemplateData)
 	if _, ok := data["unsubscribe_url"]; unsub != "" && !ok {
 		data = maps.Clone(data)
 		if data == nil {

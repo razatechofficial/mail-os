@@ -438,3 +438,35 @@ func TestApplicationSuppressionAndWebhookScope(t *testing.T) {
 func mfaData() map[string]any {
 	return map[string]any{"email": "ana@example.com", "code": "123456", "purpose": "sign_in", "expires_in_minutes": 10.0}
 }
+
+// A topic's derived variables render in the subject and the delivered
+// bodies, worded from the event: IAM's mfa_reset notice is not printed as
+// its key.
+func TestTemplatedSendRendersDerivedVariables(t *testing.T) {
+	f := newFixture(t)
+	f.svc.d.Templates = memTemplates{
+		tpl: domaintemplate.Template{ID: "tpl-2", Slug: "notice", Topic: domaintemplate.TopicSecurityNotice, Category: domaintemplate.CategoryTransactional},
+		ver: domaintemplate.Version{ID: "ver-7", TemplateID: "tpl-2", Locale: "en", Subject: "Security notice: {{kind_text}}",
+			HTMLBody: "<p>{{kind_text}}. {{advice_text}}</p>", TextBody: "{{kind_text}}"},
+	}
+	f.svc.d.Versions = f.svc.d.Templates.(memTemplates)
+	m, err := f.svc.Dispatch(context.Background(), inbound.Delivery{TenantID: tenant, Topic: domaintemplate.TopicSecurityNotice,
+		EventID: "evt-n", Source: "iam", Data: map[string]any{"email": "ana@example.com", "user_uuid": "u1", "kind": "mfa_reset",
+			"occurred_at": "2026-11-10T09:30:00Z"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := f.repo.Get(context.Background(), tenant, m)
+	if got.Subject != "Security notice: Your multi-factor authentication was reset" {
+		t.Fatalf("subject = %q", got.Subject)
+	}
+	if _, stored := got.TemplateData["kind_text"]; stored {
+		t.Fatal("derived wording stored with the event data")
+	}
+	if err := f.svc.Deliver(context.Background(), tenant, m); err != nil {
+		t.Fatal(err)
+	}
+	if out := f.sender.sent[0]; out.Text != "Your multi-factor authentication was reset" || !strings.Contains(out.HTML, "contact them immediately") {
+		t.Fatalf("outgoing %q / %q", out.Text, out.HTML)
+	}
+}

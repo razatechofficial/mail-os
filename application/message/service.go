@@ -421,7 +421,7 @@ func (s *Service) SendTemplated(ctx context.Context, in TemplatedSend) (domainms
 	}
 	// The subject is rendered now so lists show it; views mask its secrets.
 	if s.d.Render != nil {
-		if c, err := s.d.Render(Content{Subject: ver.Subject}, s.withBrand(ctx, in.TenantID, data)); err == nil {
+		if c, err := s.d.Render(Content{Subject: ver.Subject}, s.renderData(ctx, in.TenantID, topic, data)); err == nil {
 			m.Subject = c.Subject
 		}
 	}
@@ -571,6 +571,12 @@ func (s *Service) Resend(ctx context.Context, tenantID, messageID string) (domai
 		return domainmsg.Message{}, err
 	}
 	return out, nil
+}
+
+// renderData is the data a message renders with: the event's, the topic's
+// derived variables and the tenant's company name.
+func (s *Service) renderData(ctx context.Context, tenantID, topic string, data map[string]any) map[string]any {
+	return s.withBrand(ctx, tenantID, domaintemplate.WithDerived(topic, data))
 }
 
 // withBrand adds brand.company_name from the tenant's branding when the
