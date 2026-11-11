@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/razatechofficial/mail-os/domain/message"
 	"github.com/razatechofficial/mail-os/domain/provider"
 )
@@ -242,5 +244,50 @@ func TestRouterMarksProviderFailingOnConfigurationRefusal(t *testing.T) {
 	_, _ = r3.Send(context.Background(), out)
 	if len(rec.got) != 2 {
 		t.Fatal("a refused recipient marked the provider failing")
+	}
+}
+
+// sendsCounted reads mailos_sends_total for a provider kind and result.
+func sendsCounted(t *testing.T, kind, result string) float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range families {
+		if f.GetName() != "mailos_sends_total" {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			labels := map[string]string{}
+			for _, l := range m.GetLabel() {
+				labels[l.GetName()] = l.GetValue()
+			}
+			if labels["provider"] == kind && labels["result"] == result {
+				return m.GetCounter().GetValue()
+			}
+		}
+	}
+	return 0
+}
+
+// Each provider attempt is counted by kind and outcome, so a failing
+// provider shows on the dashboard even when failover delivers the mail.
+func TestRouterCountsSendAttempts(t *testing.T) {
+	kind := string(provider.KindPostmark)
+	sent, auth := sendsCounted(t, kind, "sent"), sendsCounted(t, kind, string(message.ReasonAuth))
+	senders := map[string]*fakeSender{
+		"high": {id: "high", err: message.NewSendError("postmark", message.ReasonAuth, 401, "bad token")},
+		"low":  {id: "low"},
+	}
+	r, _ := routerWith([]Configured{configured("low", 1, 100), configured("high", 10, 100)}, senders, nil)
+	if _, err := r.Send(context.Background(), sampleOutgoing()); err != nil {
+		t.Fatal(err)
+	}
+	if got := sendsCounted(t, kind, "sent"); got != sent+1 {
+		t.Errorf("sent = %v, want %v", got, sent+1)
+	}
+	if got := sendsCounted(t, kind, string(message.ReasonAuth)); got != auth+1 {
+		t.Errorf("auth failures = %v, want %v", got, auth+1)
 	}
 }

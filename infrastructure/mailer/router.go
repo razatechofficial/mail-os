@@ -11,6 +11,7 @@ import (
 	"github.com/razatechofficial/mail-os/domain/message"
 	"github.com/razatechofficial/mail-os/domain/provider"
 	"github.com/razatechofficial/mail-os/pkg/logger"
+	"github.com/razatechofficial/mail-os/pkg/metrics"
 )
 
 // New builds the sender for a tenant provider and its opened credentials.
@@ -160,6 +161,7 @@ func (r *Router) Send(ctx context.Context, out message.Outgoing) (Result, error)
 			return Result{}, message.NewSendError("", message.ReasonConfig, 0, "no mail provider is configured")
 		}
 		res, err := r.platform.Send(ctx, out)
+		observeSend("platform", err)
 		if err == nil {
 			res.Kind = provider.KindSMTP
 		}
@@ -171,7 +173,9 @@ func (r *Router) Send(ctx context.Context, out message.Outgoing) (Result, error)
 		s, err := r.sender(c)
 		if err == nil {
 			var res Result
-			if res, err = s.Send(ctx, out); err == nil {
+			res, err = s.Send(ctx, out)
+			observeSend(string(c.Provider.Kind), err)
+			if err == nil {
 				res.ProviderID, res.Kind = c.Provider.ID, c.Provider.Kind
 				r.recordOutcome(ctx, out.TenantID, c, nil)
 				return res, nil
@@ -199,6 +203,19 @@ func (r *Router) Send(ctx context.Context, out message.Outgoing) (Result, error)
 		return Result{}, transient
 	}
 	return Result{}, permanent
+}
+
+// observeSend counts one provider attempt (mailos_sends_total): "sent", or
+// the failure's reason, which never carries the recipient or the content.
+func observeSend(kind string, err error) {
+	switch se, ok := message.AsSendError(err); {
+	case err == nil:
+		metrics.Send(kind, "sent")
+	case ok && se.Reason != "":
+		metrics.Send(kind, string(se.Reason))
+	default:
+		metrics.Send(kind, "error")
+	}
 }
 
 // sender returns the cached sender for c, rebuilding it when the provider
