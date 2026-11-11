@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	htmltemplate "html/template"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -89,12 +90,23 @@ func renderHTML(src string, value func(string) string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	text := tpl.ReplacePlaceholders(clean, func(key string) string {
+	// html/template drops comments, so the Outlook ghost tables the
+	// sanitiser kept go through as actions that write them back.
+	var comments []string
+	held := commentRE.ReplaceAllStringFunc(clean, func(c string) string {
+		comments = append(comments, c)
+		return left + " comment " + strconv.Itoa(len(comments)-1) + " " + right
+	})
+	text := tpl.ReplacePlaceholders(held, func(key string) string {
 		// key matches the placeholder grammar, so quoting it is exact.
 		return left + " value " + strconv.Quote(key) + " " + right
 	})
+	comment := func(i int) htmltemplate.HTML {
+		// Only comments SanitizeHTML kept: Outlook ghost tables.
+		return htmltemplate.HTML(comments[i])
+	}
 	t, err := htmltemplate.New("email").Delims(left, right).
-		Funcs(htmltemplate.FuncMap{"value": value}).
+		Funcs(htmltemplate.FuncMap{"value": value, "comment": comment}).
 		Parse(text)
 	if err != nil {
 		return "", err
@@ -105,6 +117,10 @@ func renderHTML(src string, value func(string) string) (string, error) {
 	}
 	return buf.String(), nil
 }
+
+// commentRE finds the comments in sanitised HTML. Text and attribute
+// values are escaped there, so every "<!--" opens a comment node.
+var commentRE = regexp.MustCompile(`(?s)<!--.*?-->`)
 
 // delimiters returns action delimiters that occur nowhere in src: each
 // render's are random, so a template cannot contain them.
