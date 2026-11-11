@@ -19,7 +19,8 @@ import (
 //   - active content (script, iframe, object, forms, svg, math, …) is
 //     dropped with everything inside it;
 //   - any other element is unwrapped: its content stays, the tag goes;
-//   - comments go, including Outlook's conditional comments;
+//   - comments go, except Outlook ghost tables: conditional comments
+//     holding only table, tr and td tags with layout attributes (mso.go);
 //   - event handlers, srcdoc and formaction go with every attribute not on
 //     the list;
 //   - URL attributes keep only https:, mailto:, cid:, #fragment or a lone
@@ -135,7 +136,13 @@ func cleanChildren(n *html.Node) {
 			c.Data, c.Attr = "html", nil
 		case html.ElementNode:
 			cleanElement(n, c)
-		default: // comments, raw and error nodes
+		case html.CommentNode:
+			if data, ok := MSOComment(c.Data); ok {
+				c.Data = data
+			} else {
+				n.RemoveChild(c)
+			}
+		default: // raw and error nodes
 			n.RemoveChild(c)
 		}
 		c = next
