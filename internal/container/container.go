@@ -120,6 +120,7 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 	}
 	for _, build := range []func(context.Context) error{
 		c.buildCore,
+		c.buildAuditIntegrity,
 		c.buildTemplates,
 		c.buildMessaging,
 		c.buildEvents,
