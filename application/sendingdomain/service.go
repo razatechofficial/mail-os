@@ -166,6 +166,15 @@ func (s *Service) Verify(ctx context.Context, tenantID, id string) (domain.Domai
 			return domain.Domain{}, apperrors.Unavailable("the DNS lookup failed; try again shortly")
 		}
 	}
+	if !hasDMARC(txt[2]) {
+		// No record of its own: receivers apply the organisational
+		// domain's (RFC 7489 §6.6.3).
+		if org := d.OrgDMARCRecordName(); org != "" {
+			if txt[2], err = s.resolver.LookupTXT(ctx, org); err != nil {
+				return domain.Domain{}, apperrors.Unavailable("the DNS lookup failed; try again shortly")
+			}
+		}
+	}
 	check := d.Evaluate(txt[0], txt[1], txt[2])
 	d.ApplyCheck(check, s.now())
 	if err := s.repo.Update(ctx, d, nil); err != nil {
@@ -176,6 +185,16 @@ func (s *Service) Verify(ctx context.Context, tenantID, id string) (domain.Domai
 		return domain.Domain{}, err
 	}
 	return d, nil
+}
+
+// hasDMARC reports whether one of the TXT values is a DMARC record.
+func hasDMARC(txt []string) bool {
+	for _, v := range txt {
+		if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(v)), "V=DMARC1") {
+			return true
+		}
+	}
+	return false
 }
 
 // Delete removes a domain.

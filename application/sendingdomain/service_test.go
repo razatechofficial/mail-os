@@ -149,3 +149,36 @@ func TestLegacyKeySealed(t *testing.T) {
 		t.Fatal(n, err)
 	}
 }
+
+// checkAudit keeps the last check a verification audited.
+type checkAudit struct {
+	nopAudit
+	dmarc bool
+}
+
+func (a *checkAudit) Change(_ context.Context, _, _, _ string, _, _ any, extra map[string]any) error {
+	a.dmarc, _ = extra["dmarc"].(bool)
+	return nil
+}
+
+// A subdomain without its own DMARC record is covered by its
+// organisational domain's, as receivers apply it.
+func TestVerifyFindsTheOrganisationalDMARCRecord(t *testing.T) {
+	repo := &memRepo{rows: map[string]Stored{}}
+	records := dns{}
+	a := &checkAudit{}
+	svc := NewService(repo, fakeCipher{}, records, nil, a, Config{})
+	d, err := svc.Create(context.Background(), tenant, Input{Name: "mail.bank.co.uk"}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	records[d.DKIMRecordName()] = []string{d.DKIMRecordValue()}
+	records[d.Name] = []string{d.SPFRecord}
+	if v, _ := svc.Verify(context.Background(), tenant, d.ID); v.Status != domain.StatusVerified || a.dmarc {
+		t.Fatalf("no DMARC anywhere: %s %v", v.Status, a.dmarc)
+	}
+	records["_dmarc.bank.co.uk"] = []string{"v=DMARC1; p=reject"}
+	if _, err := svc.Verify(context.Background(), tenant, d.ID); err != nil || !a.dmarc {
+		t.Fatal("the organisational domain's DMARC record was not found", err)
+	}
+}

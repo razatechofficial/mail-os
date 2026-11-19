@@ -19,6 +19,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/publicsuffix"
+
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
 )
 
@@ -286,6 +288,18 @@ func (d *Domain) DKIMRecordValue() string { return "v=DKIM1; k=rsa; p=" + d.DKIM
 
 // DMARCRecordName is _dmarc.<domain>.
 func (d *Domain) DMARCRecordName() string { return "_dmarc." + d.Name }
+
+// OrgDMARCRecordName is the DMARC record of the domain's organisational
+// domain (RFC 7489 §6.6.3), which a receiver applies when the domain has
+// none of its own: _dmarc.bank.example for mail.bank.example. It is "" for
+// a domain that is its own organisational domain.
+func (d *Domain) OrgDMARCRecordName() string {
+	org, err := publicsuffix.EffectiveTLDPlusOne(d.Name)
+	if err != nil || org == d.Name {
+		return ""
+	}
+	return "_dmarc." + org
+}
 
 // Records lists the records to publish.
 func (d *Domain) Records() []Record {
