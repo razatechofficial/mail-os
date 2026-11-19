@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hibiken/asynq"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/razatechofficial/mail-os/config"
@@ -115,6 +117,9 @@ func RunWorker(cfg *config.Config) error {
 	}
 	defer c.Close()
 	srv := worker.NewServer(c.RedisOpt, cfg.Worker)
+	inspector := asynq.NewInspector(c.RedisOpt)
+	defer inspector.Close()
+	prometheus.MustRegister(worker.NewQueueCollector(inspector))
 	for _, register := range c.Tasks {
 		if err := register(srv); err != nil {
 			return err
