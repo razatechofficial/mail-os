@@ -6,6 +6,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
+	"github.com/razatechofficial/mail-os/application/auditintegrity"
 	"github.com/razatechofficial/mail-os/infrastructure/persistence/postgres"
 	"github.com/razatechofficial/mail-os/pkg/logger"
 )
@@ -16,6 +17,7 @@ const (
 	TypeAuditOutboxRelay = "audit:outbox_relay"
 	TypeAuditRetention   = "audit:retention"
 	TypeIdempotencyPurge = "idempotency:purge"
+	TypeAuditSeal        = "audit:seal"
 )
 
 // ExpiredPurger deletes expired Idempotency-Key responses.
@@ -88,6 +90,26 @@ func AuditRetention(store OutboxStore, days int) func(context.Context, *asynq.Ta
 		}
 		if total > 0 {
 			logger.Info("audit retention", logger.Int64("deleted", total), logger.Int("days", days))
+		}
+		return nil
+	}
+}
+
+// Sealer writes the next audit digest.
+type Sealer interface {
+	Seal(ctx context.Context) (*auditintegrity.Digest, error)
+}
+
+// AuditSeal seals the audit rows written since the last digest.
+func AuditSeal(s Sealer) func(context.Context, *asynq.Task) error {
+	return func(ctx context.Context, _ *asynq.Task) error {
+		d, err := s.Seal(ctx)
+		if err != nil {
+			return err
+		}
+		if d != nil {
+			logger.Info("audit digest sealed", logger.Int64("from_seq", d.FromSeq), logger.Int64("to_seq", d.ToSeq),
+				logger.Int("records", d.RecordCount), logger.String("key_id", d.KeyID))
 		}
 		return nil
 	}
