@@ -3,6 +3,8 @@ package postgres
 import (
 	"context"
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -43,26 +45,41 @@ func scanTemplate(row pgx.Row) (domain.Template, error) {
 	return t, err
 }
 
-// List returns one page of the tenant's templates, newest first.
-func (r *TemplateRepository) List(ctx context.Context, tenantID string, limit, offset int) ([]domain.Template, int, error) {
+// List returns one page of the tenant's templates, newest first, each with
+// its active version and whether its draft changed since, in the default
+// locale.
+func (r *TemplateRepository) List(ctx context.Context, tenantID string, lq app.ListQuery) ([]app.Listed, int, error) {
 	q := QuerierFromContext(ctx, r.db)
+	where, args := "t.org_id = $1 AND t.deleted_at IS NULL", []any{tenantID}
+	if s := strings.TrimSpace(lq.Search); s != "" {
+		args = append(args, "%"+likePattern(s)+"%")
+		where += ` AND (t.name ILIKE $2 ESCAPE '\' OR t.slug ILIKE $2 ESCAPE '\')`
+	}
 	var total int
-	if err := q.QueryRow(ctx, `SELECT count(*) FROM templates WHERE org_id = $1 AND deleted_at IS NULL`, tenantID).Scan(&total); err != nil {
+	if err := q.QueryRow(ctx, `SELECT count(*) FROM templates t WHERE `+where, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := q.Query(ctx, `SELECT `+templateColumns+` FROM templates
-		WHERE org_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`, tenantID, limit, offset)
+	args = append(args, lq.Limit, lq.Offset)
+	rows, err := q.Query(ctx, `SELECT t.id, t.org_id, t.name, t.slug, t.category, COALESCE(t.description, ''), t.topic,
+			t.default_locale, t.is_active, t.created_at, t.updated_at, COALESCE(v.version, 0),
+			COALESCE(d.updated_at > COALESCE(v.published_at, v.created_at), false)
+		FROM templates t
+		LEFT JOIN template_versions v ON v.template_id = t.id AND v.locale = t.default_locale AND v.is_active
+		LEFT JOIN template_drafts d ON d.template_id = t.id AND d.locale = t.default_locale
+		WHERE `+where+` ORDER BY t.created_at DESC, t.id DESC LIMIT $`+strconv.Itoa(len(args)-1)+` OFFSET $`+strconv.Itoa(len(args)), args...)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
-	var out []domain.Template
+	var out []app.Listed
 	for rows.Next() {
-		t, err := scanTemplate(rows)
-		if err != nil {
+		var l app.Listed
+		t := &l.Template
+		if err := rows.Scan(&t.ID, &t.OrgID, &t.Name, &t.Slug, &t.Category, &t.Description, &t.Topic, &t.DefaultLocale,
+			&t.IsActive, &t.CreatedAt, &t.UpdatedAt, &l.PublishedVersion, &l.DraftChanged); err != nil {
 			return nil, 0, err
 		}
-		out = append(out, t)
+		out = append(out, l)
 	}
 	return out, total, rows.Err()
 }

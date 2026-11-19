@@ -450,3 +450,36 @@ func TestBranding(t *testing.T) {
 		t.Fatalf("audit: %s", action)
 	}
 }
+
+// The list says whether each template is a draft, published, or changed
+// since publishing, and finds templates by part of the name or slug.
+func TestListShowsPublicationAndSearches(t *testing.T) {
+	f := newFixture(t, false)
+	ctx := context.Background()
+	tpl := f.create(t, tenantA, "otp-code", domain.TopicMFAEmailCode)
+	_ = f.create(t, tenantA, "welcome", "")
+	state := func() (app.Publication, int) {
+		list, _, err := f.svc.List(ctx, tenantA, app.ListQuery{Search: "OTP", Limit: 10})
+		if err != nil || len(list) != 1 || list[0].ID != tpl.ID {
+			t.Fatalf("search: %+v %v", list, err)
+		}
+		return list[0].Publication(), list[0].PublishedVersion
+	}
+	if p, v := state(); p != app.PublicationDraft || v != 0 {
+		t.Fatalf("new template: %s %d", p, v)
+	}
+	f.save(t, tpl, 0, "en", editor)
+	if _, err := f.svc.Publish(ctx, tenantA, tpl.ID, "en", 1, other); err != nil {
+		t.Fatal(err)
+	}
+	if p, v := state(); p != app.PublicationPublished || v != 1 {
+		t.Fatalf("after publishing: %s %d", p, v)
+	}
+	f.save(t, tpl, 1, "en", editor)
+	if p, v := state(); p != app.PublicationChanged || v != 1 {
+		t.Fatalf("after a new save: %s %d", p, v)
+	}
+	if all, total, _ := f.svc.List(ctx, tenantA, app.ListQuery{Limit: 10}); total != 2 || len(all) != 2 {
+		t.Fatalf("unfiltered: %d", total)
+	}
+}
