@@ -9,6 +9,7 @@ import (
 	analytics "github.com/razatechofficial/mail-os/application/analytics"
 	"github.com/razatechofficial/mail-os/application/unsubscribe"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
+	"github.com/razatechofficial/mail-os/domain/sendingdomain"
 	"github.com/razatechofficial/mail-os/domain/webhook"
 	"github.com/razatechofficial/mail-os/infrastructure/audit"
 	"github.com/razatechofficial/mail-os/pkg/logger"
@@ -98,17 +99,11 @@ func (s *Service) Deliver(ctx context.Context, tenantID, id string) error {
 			out.Headers[k] = v
 		}
 	}
-	if s.d.Signer != nil {
-		from := m.FromEmail
-		if from == "" {
-			from = s.cfg.DefaultFrom
-		}
-		if out.DKIM, err = s.d.Signer.SigningKey(ctx, tenantID, from); err != nil {
-			logger.FromContext(ctx).Warn("dkim key unavailable; sending unsigned", logger.String("message_id", m.ID), logger.Err(err))
-			out.DKIM = nil
-		}
+	var res SendResult
+	var sendErr error
+	if out.DKIM, sendErr = s.signingKey(ctx, tenantID, m); sendErr == nil {
+		res, sendErr = s.d.Sender.Send(ctx, out)
 	}
-	res, sendErr := s.d.Sender.Send(ctx, out)
 	now = s.now()
 	if sendErr == nil {
 		if err := m.MarkSent(res.ProviderID, res.ProviderMessageID, now); err != nil {
@@ -146,6 +141,28 @@ func (s *Service) Deliver(ctx context.Context, tenantID, id string) error {
 		return &RetryError{Err: sendErr, After: domainmsg.RetryAfterOf(sendErr)}
 	}
 	return nil
+}
+
+// signingKey is the DKIM key for the message's sender, or nil when the
+// sender is on no verified domain. A verified domain whose key cannot be
+// opened (key manager or KMS down) is a transient send failure: mail sent
+// unsigned from that domain would fail DMARC, so it waits and is retried
+// like a provider outage, and fails after the last attempt.
+func (s *Service) signingKey(ctx context.Context, tenantID string, m domainmsg.Message) (*sendingdomain.SigningKey, error) {
+	if s.d.Signer == nil {
+		return nil, nil
+	}
+	from := m.FromEmail
+	if from == "" {
+		from = s.cfg.DefaultFrom
+	}
+	key, err := s.d.Signer.SigningKey(ctx, tenantID, from)
+	if err != nil {
+		logger.FromContext(ctx).Warn("dkim key unavailable; the send waits for it", logger.String("message_id", m.ID), logger.Err(err))
+		return nil, &domainmsg.SendError{Provider: "dkim", Reason: domainmsg.ReasonUnavailable,
+			Detail: "the sending domain's DKIM key could not be opened", Err: err}
+	}
+	return key, nil
 }
 
 // unsubscribeURL is the message's one-click unsubscribe link (RFC 8058):

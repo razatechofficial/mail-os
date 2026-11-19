@@ -236,10 +236,13 @@ func (s *memSender) Send(_ context.Context, out domainmsg.Outgoing) (SendResult,
 	return SendResult{ProviderID: "p1", ProviderMessageID: "pm-" + out.MessageID}, nil
 }
 
-type memSigner struct{ key *sendingdomain.SigningKey }
+type memSigner struct {
+	key *sendingdomain.SigningKey
+	err error
+}
 
 func (s memSigner) SigningKey(context.Context, string, string) (*sendingdomain.SigningKey, error) {
-	return s.key, nil
+	return s.key, s.err
 }
 
 type memNotifier struct {

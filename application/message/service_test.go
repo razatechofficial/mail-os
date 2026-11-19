@@ -222,6 +222,30 @@ func TestDeliverRetriesTransientThenFails(t *testing.T) {
 	}
 }
 
+func TestDeliverWaitsForAnUnavailableDKIMKey(t *testing.T) {
+	f := newFixture(t)
+	f.svc.d.Signer = memSigner{err: errDown}
+	r, _ := f.svc.Send(userCtx(), direct())
+	for i := 1; i <= 2; i++ {
+		if _, ok := f.svc.Deliver(context.Background(), tenant, r.MessageID).(*RetryError); !ok {
+			t.Fatalf("attempt %d: not retried", i)
+		}
+		if m, _ := f.repo.Get(context.Background(), tenant, r.MessageID); m.Status != domainmsg.StatusQueued || m.Attempts != i {
+			t.Fatalf("attempt %d: %s %d", i, m.Status, m.Attempts)
+		}
+	}
+	if len(f.sender.sent) != 0 {
+		t.Fatal("sent unsigned while the DKIM key was unavailable")
+	}
+	if err := f.svc.Deliver(context.Background(), tenant, r.MessageID); err != nil {
+		t.Fatalf("last attempt: %v", err)
+	}
+	m, _ := f.repo.Get(context.Background(), tenant, r.MessageID)
+	if m.Status != domainmsg.StatusFailed || len(f.sender.sent) != 0 || !strings.Contains(m.LastError, "DKIM") {
+		t.Fatalf("after max attempts: %s %q", m.Status, m.LastError)
+	}
+}
+
 func TestDeliverPermanentBounceSuppresses(t *testing.T) {
 	f := newFixture(t)
 	r, _ := f.svc.Send(userCtx(), direct())
