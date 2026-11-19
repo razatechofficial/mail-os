@@ -24,6 +24,7 @@ import (
 	"github.com/razatechofficial/mail-os/internal/container"
 	"github.com/razatechofficial/mail-os/pkg/logger"
 	"github.com/razatechofficial/mail-os/pkg/metrics"
+	"github.com/razatechofficial/mail-os/pkg/telemetry"
 	grpctransport "github.com/razatechofficial/mail-os/transport/grpc"
 	transporthttp "github.com/razatechofficial/mail-os/transport/http"
 	"github.com/razatechofficial/mail-os/transport/http/e2ehooks"
@@ -47,6 +48,11 @@ func Router(c *container.Container) *gin.Engine {
 func RunServer(cfg *config.Config) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	flush, err := startTelemetry(ctx, cfg, "mailos-server")
+	if err != nil {
+		return err
+	}
+	defer flush()
 	c, err := container.New(ctx, cfg)
 	if err != nil {
 		return err
@@ -111,6 +117,11 @@ func RunServer(cfg *config.Config) error {
 func RunWorker(cfg *config.Config) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	flush, err := startTelemetry(ctx, cfg, "mailos-worker")
+	if err != nil {
+		return err
+	}
+	defer flush()
 	c, err := container.New(ctx, cfg)
 	if err != nil {
 		return err
@@ -132,6 +143,22 @@ func RunWorker(cfg *config.Config) error {
 	}
 	logger.Info("mailos worker started", logger.String("env", cfg.App.Env))
 	return g.Wait()
+}
+
+// startTelemetry exports the process's traces when TELEMETRY_ENABLED is
+// on, and returns the flush to run at exit.
+func startTelemetry(ctx context.Context, cfg *config.Config, service string) (func(), error) {
+	shutdown, err := telemetry.Setup(ctx, cfg.Telemetry, service, cfg.App.Version)
+	if err != nil {
+		return nil, err
+	}
+	return func() {
+		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdown(sctx); err != nil {
+			logger.Warn("telemetry flush", logger.Err(err))
+		}
+	}, nil
 }
 
 func serveMetrics(ctx context.Context, addr string) error {
