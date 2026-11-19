@@ -469,3 +469,22 @@ func TestSMTPUnreachableIsTransient(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+func TestPlatformRelayHELOName(t *testing.T) {
+	for _, c := range []struct {
+		cfg  config.SMTP
+		want string
+	}{
+		{config.SMTP{Enabled: true, Host: "relay.example", Port: 587, FromAddr: "noreply@Bank.Example"}, "bank.example"},
+		{config.SMTP{Enabled: true, Host: "relay.example", Port: 587, FromAddr: "noreply@bank.example", HELOName: "mailos.bank.example"}, "mailos.bank.example"},
+		{config.SMTP{Enabled: true, Host: "relay.example", Port: 587}, "localhost"},
+	} {
+		s, err := NewPlatformSMTP(c.cfg, false, Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := s.heloName(); got != c.want {
+			t.Fatalf("%+v: EHLO %q, want %q", c.cfg, got, c.want)
+		}
+	}
+}

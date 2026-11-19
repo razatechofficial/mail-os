@@ -116,9 +116,20 @@ func NewPlatformSMTP(cfg config.SMTP, allowPlaintext bool, opts Options) (*SMTP,
 	opts.AllowPlaintext = allowPlaintext
 	return newSMTP(SMTPConfig{
 		Host: cfg.Host, Port: cfg.Port, TLSMode: cfg.TLSMode,
-		Username: cfg.Username, Password: cfg.Password,
+		Username: cfg.Username, Password: cfg.Password, HELOName: platformHELO(cfg),
 		From: message.Address{Name: cfg.FromName, Email: cfg.FromAddr},
 	}, opts)
+}
+
+// platformHELO is SMTP_HELO_NAME, else the domain of SMTP_FROM_ADDR.
+func platformHELO(cfg config.SMTP) string {
+	if n := strings.TrimSpace(cfg.HELOName); n != "" {
+		return n
+	}
+	if _, domain, ok := strings.Cut(cfg.FromAddr, "@"); ok {
+		return strings.ToLower(strings.TrimSpace(domain))
+	}
+	return ""
 }
 
 func newSMTP(cfg SMTPConfig, opts Options) (*SMTP, error) {

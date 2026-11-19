@@ -304,6 +304,9 @@ type SMTP struct {
 	TLSMode  string `yaml:"tls_mode" env:"SMTP_TLS_MODE" env-default:"starttls"`
 	FromName string `yaml:"from_name" env:"SMTP_FROM_NAME" env-default:"MailOS"`
 	FromAddr string `yaml:"from_addr" env:"SMTP_FROM_ADDR" env-default:""`
+	// HELOName is the host name sent in EHLO. Empty uses the domain of
+	// FromAddr: relays and receivers distrust "localhost".
+	HELOName string `yaml:"helo_name" env:"SMTP_HELO_NAME" env-default:""`
 }
 
 // Telemetry exports traces over OTLP/gRPC.
