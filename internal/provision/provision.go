@@ -31,7 +31,7 @@ const Actor = "mailos-bootstrap"
 
 // Templates is the template use case (apptemplate.Service).
 type Templates interface {
-	List(ctx context.Context, tenantID string, limit, offset int) ([]domaintemplate.Template, int, error)
+	List(ctx context.Context, tenantID string, q apptemplate.ListQuery) ([]apptemplate.Listed, int, error)
 	Create(ctx context.Context, tenantID string, in apptemplate.CreateInput) (domaintemplate.Template, error)
 	ActiveVersion(ctx context.Context, tenantID, templateID, loc string) (domaintemplate.Version, error)
 	Draft(ctx context.Context, tenantID, templateID, loc string) (domaintemplate.Draft, error)
@@ -67,13 +67,13 @@ const pageSize = 100
 func existingByTopic(ctx context.Context, t Templates, tenantID string) (map[string]domaintemplate.Template, error) {
 	out := map[string]domaintemplate.Template{}
 	for offset := 0; ; offset += pageSize {
-		list, total, err := t.List(ctx, tenantID, pageSize, offset)
+		list, total, err := t.List(ctx, tenantID, apptemplate.ListQuery{Limit: pageSize, Offset: offset})
 		if err != nil {
 			return nil, err
 		}
 		for _, tpl := range list {
 			if tpl.Topic != "" {
-				out[tpl.Topic] = tpl
+				out[tpl.Topic] = tpl.Template
 			}
 		}
 		if len(list) == 0 || offset+len(list) >= total {

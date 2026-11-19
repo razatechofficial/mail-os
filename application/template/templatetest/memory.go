@@ -48,24 +48,37 @@ func (r *Repository) InTx(ctx context.Context, fn func(ctx context.Context) erro
 
 func notFound() error { return apperrors.NotFound("template not found") }
 
-// List returns the tenant's live templates by name.
-func (r *Repository) List(_ context.Context, tenantID string, limit, offset int) ([]domain.Template, int, error) {
+// List returns the tenant's live templates by name, matching Search on
+// name or slug, with their publication state in the default locale.
+func (r *Repository) List(_ context.Context, tenantID string, q app.ListQuery) ([]app.Listed, int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var out []domain.Template
+	search := strings.ToLower(strings.TrimSpace(q.Search))
+	var out []app.Listed
 	for id, t := range r.templates {
-		if t.OrgID == tenantID && !r.deleted[id] {
-			out = append(out, t)
+		if t.OrgID != tenantID || r.deleted[id] {
+			continue
 		}
+		if search != "" && !strings.Contains(strings.ToLower(t.Name), search) && !strings.Contains(strings.ToLower(t.Slug), search) {
+			continue
+		}
+		l := app.Listed{Template: t}
+		for _, v := range r.versions {
+			if v.TemplateID == id && v.Locale == t.DefaultLocale && v.IsActive {
+				l.PublishedVersion = v.Number
+				if d, ok := r.drafts[draftKey{id, t.DefaultLocale}]; ok && d.UpdatedAt.After(v.PublishedAt) {
+					l.DraftChanged = true
+				}
+			}
+		}
+		out = append(out, l)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	total := len(out)
-	if offset > len(out) {
-		offset = len(out)
-	}
+	offset := min(q.Offset, len(out))
 	out = out[offset:]
-	if limit > 0 && limit < len(out) {
-		out = out[:limit]
+	if q.Limit > 0 && q.Limit < len(out) {
+		out = out[:q.Limit]
 	}
 	return out, total, nil
 }

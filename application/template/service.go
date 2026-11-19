@@ -26,7 +26,7 @@ type Repository interface {
 	// InTx runs fn in one transaction; calls with its ctx join it.
 	InTx(ctx context.Context, fn func(ctx context.Context) error) error
 
-	List(ctx context.Context, tenantID string, limit, offset int) ([]domain.Template, int, error)
+	List(ctx context.Context, tenantID string, q ListQuery) ([]Listed, int, error)
 	Get(ctx context.Context, tenantID, templateID string) (domain.Template, error)
 	// GetForUpdate is Get, locking the row until the transaction ends, so
 	// publishes of one template number their versions one at a time.
@@ -167,8 +167,52 @@ func (s *Service) allowRawHTML(e Editor) bool { return s.rawHTML && e.Admin }
 // ── templates ─────────────────────────────────────────────────────────────
 
 // List returns one page of the tenant's templates.
-func (s *Service) List(ctx context.Context, tenantID string, limit, offset int) ([]domain.Template, int, error) {
-	return s.repo.List(ctx, tenantID, limit, offset)
+func (s *Service) List(ctx context.Context, tenantID string, q ListQuery) ([]Listed, int, error) {
+	return s.repo.List(ctx, tenantID, q)
+}
+
+// ListQuery narrows and pages the template list.
+type ListQuery struct {
+	// Search matches part of the name or slug, case-insensitively.
+	Search        string
+	Limit, Offset int
+}
+
+// Publication is a template's state in its default locale.
+type Publication string
+
+// Publication states.
+const (
+	// PublicationDraft has never been published: messages cannot use it.
+	PublicationDraft Publication = "draft"
+	// PublicationPublished sends the version its draft matches.
+	PublicationPublished Publication = "published"
+	// PublicationChanged sends the published version; the draft was
+	// saved since and is not published yet.
+	PublicationChanged Publication = "changed"
+)
+
+// Listed is a template in the list, with its publication state.
+type Listed struct {
+	domain.Template
+	// PublishedVersion is the active version in the default locale, 0 when
+	// none.
+	PublishedVersion int
+	// DraftChanged is set when the draft was saved after that version was
+	// published.
+	DraftChanged bool
+}
+
+// Publication is the template's state in its default locale.
+func (l Listed) Publication() Publication {
+	switch {
+	case l.PublishedVersion == 0:
+		return PublicationDraft
+	case l.DraftChanged:
+		return PublicationChanged
+	default:
+		return PublicationPublished
+	}
 }
 
 // Get returns one of the tenant's templates.
