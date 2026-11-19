@@ -13,6 +13,7 @@ import (
 	"github.com/razatechofficial/mail-os/domain/webhook"
 	"github.com/razatechofficial/mail-os/infrastructure/audit"
 	"github.com/razatechofficial/mail-os/pkg/logger"
+	"github.com/razatechofficial/mail-os/pkg/metrics"
 )
 
 // RetryError asks the queue to try the delivery again, after the
@@ -113,6 +114,7 @@ func (s *Service) Deliver(ctx context.Context, tenantID, id string) error {
 			return err
 		}
 		s.after(ctx, m, analytics.Sent, webhook.EventSent)
+		metrics.Delivered(now.Sub(acceptedAt(m)))
 		return nil
 	}
 	if errors.Is(sendErr, context.Canceled) && ctx.Err() != nil {
@@ -208,9 +210,19 @@ func (s *Service) render(ctx context.Context, m *domainmsg.Message, unsub string
 	return nil
 }
 
+// acceptedAt is when the message became due: its scheduled time, else
+// when it was accepted.
+func acceptedAt(m domainmsg.Message) time.Time {
+	if m.ScheduledAt != nil && m.ScheduledAt.After(m.CreatedAt) {
+		return *m.ScheduledAt
+	}
+	return m.CreatedAt
+}
+
 // after counts the outcome and tells the tenant's webhooks. Neither may
 // fail the delivery that already happened.
 func (s *Service) after(ctx context.Context, m domainmsg.Message, counter, event string) {
+	metrics.Message(counter)
 	if s.d.Stats != nil {
 		if err := s.d.Stats.Count(ctx, m.OrgID, counter, s.now()); err != nil {
 			logger.FromContext(ctx).Warn("stats", logger.Err(err))

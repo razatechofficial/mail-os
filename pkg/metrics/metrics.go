@@ -28,6 +28,13 @@ var (
 	sends = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "mailos", Name: "sends_total", Help: "Provider send attempts by provider kind and result.",
 	}, []string{"provider", "result"})
+	messages = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "mailos", Name: "messages_total", Help: "Message outcomes by status (sent, delivered, bounced, complained, failed).",
+	}, []string{"status"})
+	deliverySeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "mailos", Name: "delivery_seconds", Help: "Time from a message being accepted to the provider accepting it.",
+		Buckets: []float64{.25, .5, 1, 2.5, 5, 10, 30, 60, 120, 300, 900, 3600},
+	})
 	tasks = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "mailos", Name: "worker_tasks_total", Help: "Worker tasks by type and result.",
 	}, []string{"type", "result"})
@@ -62,6 +69,12 @@ func Event(transport, outcome string) { events.WithLabelValues(transport, outcom
 
 // Send records a provider send attempt.
 func Send(provider, result string) { sends.WithLabelValues(provider, result).Inc() }
+
+// Message records a message outcome.
+func Message(status string) { messages.WithLabelValues(status).Inc() }
+
+// Delivered records how long a sent message waited from acceptance.
+func Delivered(d time.Duration) { deliverySeconds.Observe(d.Seconds()) }
 
 // Task records a worker task result.
 func Task(typ, result string) { tasks.WithLabelValues(typ, result).Inc() }
