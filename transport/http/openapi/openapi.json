@@ -980,6 +980,28 @@
         "x-step-up": true
       }
     },
+    "/api/v1/analytics/audit-logs/integrity": {
+      "get": {
+        "description": "Verifies every signed audit digest: its chain link, hash and Ed25519 signature, and that the rows it sealed are unchanged, none removed and none inserted. Digests whose rows passed AUDIT_RETENTION_DAYS are checked as a chain only. The digests cover every tenant, so only the operator tenant (IAM_SERVICE_TENANT_ID) may call it; others get 403. Returns the report with `intact`, `problems`, and the signing and previous public keys for offline checks. Audited as audit.verified. Permission: `audit:export`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
+        "operationId": "get_analytics_audit_logs_integrity",
+        "responses": {
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Verify the audit log's integrity",
+        "tags": [
+          "analytics"
+        ],
+        "x-permission": "audit:export",
+        "x-step-up": true
+      }
+    },
     "/api/v1/analytics/stats": {
       "get": {
         "operationId": "get_analytics_stats",
