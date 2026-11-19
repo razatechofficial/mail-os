@@ -1,0 +1,92 @@
+# Prometheus alert rules for MailOS. Load with rule_files: in prometheus.yml
+# (or wrap in a PrometheusRule for the operator). Check with:
+#   promtool check rules deployments/prometheus/mailos-alerts.yml
+# Thresholds suit a bank's transactional mail (OTPs, resets); tune per site.
+groups:
+  - name: mailos-delivery
+    rules:
+      - alert: MailOSSendQueueBacklog
+        expr: max by (queue) (mailos_queue_latency_seconds{queue="critical"}) > 120
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Transactional mail is waiting more than 2 minutes to send"
+          description: "The oldest task in queue {{ $labels.queue }} is {{ $value | humanizeDuration }} old. OTPs and resets are late: check the worker and the relay or provider."
+      - alert: MailOSSendsFailing
+        expr: |
+          sum(rate(mailos_sends_total{result!="sent"}[10m]))
+            / clamp_min(sum(rate(mailos_sends_total[10m])), 1e-9) > 0.2
+          and sum(rate(mailos_sends_total[10m])) > 0
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: "More than 20% of provider send attempts fail"
+          description: "Check mailos_sends_total by provider and result (auth, config, unavailable, rate_limited)."
+      - alert: MailOSMessagesFailed
+        expr: sum(increase(mailos_messages_total{status="failed"}[15m])) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "Messages failed after their last attempt"
+          description: "{{ $value }} messages failed in 15 minutes. The console's Messages page lists them with the reason."
+      - alert: MailOSRetriesAccumulating
+        expr: sum(mailos_queue_tasks{state="retry"}) > 50
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "Sends are waiting to be retried"
+          description: "{{ $value }} tasks are in retry: a provider or DKIM key is unavailable."
+      - alert: MailOSDeliverySlow
+        expr: histogram_quantile(0.95, sum by (le) (rate(mailos_delivery_seconds_bucket[15m]))) > 60
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "95% of messages take more than a minute to send"
+  - name: mailos-reputation
+    rules:
+      - alert: MailOSBounceRateHigh
+        expr: |
+          sum(increase(mailos_messages_total{status="bounced"}[1h]))
+            / clamp_min(sum(increase(mailos_messages_total{status="sent"}[1h])), 1) > 0.05
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: "More than 5% of sent mail bounced in the last hour"
+      - alert: MailOSComplaintRateHigh
+        expr: |
+          sum(increase(mailos_messages_total{status="complained"}[24h]))
+            / clamp_min(sum(increase(mailos_messages_total{status="sent"}[24h])), 1) > 0.001
+        for: 1h
+        labels: {severity: warning}
+        annotations:
+          summary: "The complaint rate is over 0.1% (Gmail and Yahoo require under 0.3%)"
+  - name: mailos-ingest
+    rules:
+      - alert: MailOSEventsRefused
+        expr: sum by (transport, outcome) (increase(mailos_events_total{outcome=~"refused.*|invalid|conflict"}[15m])) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "MailOS refused {{ $value }} events ({{ $labels.outcome }}) over {{ $labels.transport }}"
+          description: "IAM mail is being refused. invalid is a payload the topic catalogue rejects; refused_* is the application's access."
+      - alert: MailOSEventsUnavailable
+        expr: sum(increase(mailos_events_total{outcome=~"unavailable|error"}[10m])) > 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "MailOS could not accept events (database or queue down)"
+  - name: mailos-service
+    rules:
+      - alert: MailOSHTTP5xx
+        expr: |
+          sum(rate(mailos_http_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(mailos_http_requests_total[5m])), 1e-9) > 0.05
+          and sum(rate(mailos_http_requests_total[5m])) > 0
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "More than 5% of MailOS API requests fail with 5xx"
+      - alert: MailOSWorkerTasksFailing
+        expr: sum by (type) (increase(mailos_worker_tasks_total{result="error"}[15m])) > 5
+        labels: {severity: warning}
+        annotations:
+          summary: "Worker task {{ $labels.type }} failed {{ $value }} times in 15 minutes"
+          description: "audit:seal failing means the audit log is not being sealed; message:retention means retention is not applied."
