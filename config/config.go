@@ -236,6 +236,14 @@ type Audit struct {
 	StreamTopic string `yaml:"stream_topic" env:"AUDIT_STREAM_TOPIC" env-default:"mailos.audit.events"`
 	// RetentionDays keeps audit rows (PCI DSS 10.5.1: at least a year).
 	RetentionDays int `yaml:"retention_days" env:"AUDIT_RETENTION_DAYS" env-default:"365"`
+	// DigestSigningKey is the base64 Ed25519 seed that signs the audit
+	// digests (tamper evidence, PCI DSS 10.3.2). Required in production.
+	DigestSigningKey string `yaml:"digest_signing_key" env:"AUDIT_DIGEST_SIGNING_KEY" env-default:""`
+	// DigestPreviousKeys are the base64 public keys of earlier signing keys,
+	// so the digests they signed still verify after a rotation.
+	DigestPreviousKeys []string `yaml:"digest_previous_keys" env:"AUDIT_DIGEST_PREVIOUS_KEYS" env-separator:","`
+	// DigestInterval is how often a digest seals the new rows.
+	DigestInterval time.Duration `yaml:"digest_interval" env:"AUDIT_DIGEST_INTERVAL" env-default:"5m"`
 }
 
 // KeyManager seals stored secrets with per-purpose data keys wrapped under
@@ -467,6 +475,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Audit.RetentionDays < 365 && c.App.IsProduction() {
 		return fmt.Errorf("AUDIT_RETENTION_DAYS must be at least 365 in production (PCI DSS 10.5.1)")
+	}
+	if strings.TrimSpace(c.Audit.DigestSigningKey) == "" && c.App.IsProduction() {
+		return fmt.Errorf("AUDIT_DIGEST_SIGNING_KEY is required in production (tamper-evident audit log, PCI DSS 10.3.2)")
+	}
+	if c.Audit.DigestInterval < time.Minute || c.Audit.DigestInterval > time.Hour {
+		return fmt.Errorf("AUDIT_DIGEST_INTERVAL must be between 1m and 1h")
 	}
 	if c.Worker.Concurrency < 1 || c.Worker.MaxRetry < 0 || c.Worker.SendTimeout < time.Second {
 		return fmt.Errorf("worker concurrency, max_retry and send_timeout must be valid")

@@ -10,21 +10,22 @@ const testMasterKey = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=" // 32 bytes
 // productionEnv is a complete, valid production configuration.
 func productionEnv() map[string]string {
 	return map[string]string{
-		"APP_ENV":                 "production",
-		"CONFIG_DIR":              "testdata/none",
-		"HTTP_TLS_CERT_FILE":      "/tls/tls.crt",
-		"HTTP_TLS_KEY_FILE":       "/tls/tls.key",
-		"GRPC_TLS_CERT_FILE":      "/tls/tls.crt",
-		"GRPC_TLS_KEY_FILE":       "/tls/tls.key",
-		"GRPC_TLS_CLIENT_AUTH":    "require",
-		"GRPC_TLS_CLIENT_CA_FILE": "/tls/ca.crt",
-		"POSTGRES_SSL_MODE":       "verify-full",
-		"POSTGRES_PASSWORD":       "from-vault",
-		"REDIS_TLS":               "true",
-		"IAM_ISSUER":              "https://iam.example.com",
-		"IAM_SERVICE_CLIENT_ID":   "mailos-iam",
-		"IAM_SERVICE_TENANT_ID":   "6f1c3c3e-6a38-4a8f-9a59-2b9d3b6a8a10",
-		"KEY_MANAGER_MASTER_KEY":  testMasterKey,
+		"APP_ENV":                  "production",
+		"CONFIG_DIR":               "testdata/none",
+		"HTTP_TLS_CERT_FILE":       "/tls/tls.crt",
+		"HTTP_TLS_KEY_FILE":        "/tls/tls.key",
+		"GRPC_TLS_CERT_FILE":       "/tls/tls.crt",
+		"GRPC_TLS_KEY_FILE":        "/tls/tls.key",
+		"GRPC_TLS_CLIENT_AUTH":     "require",
+		"GRPC_TLS_CLIENT_CA_FILE":  "/tls/ca.crt",
+		"POSTGRES_SSL_MODE":        "verify-full",
+		"POSTGRES_PASSWORD":        "from-vault",
+		"REDIS_TLS":                "true",
+		"IAM_ISSUER":               "https://iam.example.com",
+		"IAM_SERVICE_CLIENT_ID":    "mailos-iam",
+		"IAM_SERVICE_TENANT_ID":    "6f1c3c3e-6a38-4a8f-9a59-2b9d3b6a8a10",
+		"KEY_MANAGER_MASTER_KEY":   testMasterKey,
+		"AUDIT_DIGEST_SIGNING_KEY": testMasterKey,
 	}
 }
 
@@ -78,6 +79,7 @@ func TestLoadRefusesUnsafeProduction(t *testing.T) {
 		{"e2e hooks", map[string]string{"MAILOS_E2E_HOOKS": "true", "MAILOS_E2E_HOOKS_TOKEN": strings.Repeat("x", 40)}, "test-only"},
 		{"redis without TLS", map[string]string{"REDIS_TLS": "false"}, "REDIS_TLS"},
 		{"short audit retention", map[string]string{"AUDIT_RETENTION_DAYS": "90"}, "AUDIT_RETENTION_DAYS"},
+		{"unsigned audit log", map[string]string{"AUDIT_DIGEST_SIGNING_KEY": ""}, "AUDIT_DIGEST_SIGNING_KEY"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
