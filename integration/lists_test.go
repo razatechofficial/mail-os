@@ -17,11 +17,11 @@ import (
 // the name or slug; LIKE wildcards in the search are literal.
 func TestTemplateListPublicationAndSearchOnPostgres(t *testing.T) {
 	e := newTemplateEnv(t)
-	tpl, err := e.svc.Create(e.ctx, e.tenant, apptemplate.CreateInput{Name: "One-time code", Slug: "otp_code"})
+	tpl, err := e.svc.Create(e.ctx, e.tenant, apptemplate.CreateInput{Name: "One-time code OTP_1", Slug: "otp-code"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.Create(e.ctx, e.tenant, apptemplate.CreateInput{Name: "Welcome", Slug: "otpxcode"}); err != nil {
+	if _, err := e.svc.Create(e.ctx, e.tenant, apptemplate.CreateInput{Name: "Welcome OTPx1", Slug: "welcome"}); err != nil {
 		t.Fatal(err)
 	}
 	one := func(search string) apptemplate.Listed {
