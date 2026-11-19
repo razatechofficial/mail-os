@@ -279,10 +279,13 @@ func (r *MessageRepository) Stale(ctx context.Context, queuedBefore, sendingBefo
 		ORDER BY updated_at LIMIT $3`, queuedBefore, sendingBefore, limit)
 }
 
-// PurgeTenants lists tenants holding bodies of final messages.
+// PurgeTenants lists tenants holding bodies of final messages, inbound
+// event receipts or finished webhook deliveries.
 func (r *MessageRepository) PurgeTenants(ctx context.Context) ([]string, error) {
 	rows, err := QuerierFromContext(ctx, r.db).Query(ctx,
-		`SELECT DISTINCT org_id FROM messages WHERE body_purged_at IS NULL AND status IN `+finalStatuses)
+		`SELECT DISTINCT org_id FROM messages WHERE body_purged_at IS NULL AND status IN `+finalStatuses+`
+		UNION SELECT DISTINCT org_id FROM inbound_events
+		UNION SELECT DISTINCT w.org_id FROM webhook_deliveries d JOIN webhooks w ON w.id = d.webhook_id WHERE d.status <> 'pending'`)
 	if err != nil {
 		return nil, err
 	}
@@ -318,6 +321,29 @@ func (r *MessageRepository) SavePurged(ctx context.Context, m domain.Message) er
 		_, err := q.Exec(ctx, `DELETE FROM message_attachments WHERE message_id = $1 AND org_id = $2`, m.ID, m.OrgID)
 		return err
 	})
+}
+
+// PurgeRecords deletes a tenant's delivery records from before t: inbound
+// event receipts and finished webhook deliveries (their payload names the
+// recipient). Pending webhook deliveries are kept until they finish.
+func (r *MessageRepository) PurgeRecords(ctx context.Context, tenantID string, before time.Time) (int64, error) {
+	var n int64
+	err := r.db.InTx(ctx, func(ctx context.Context) error {
+		q := QuerierFromContext(ctx, r.db)
+		tag, err := q.Exec(ctx, `DELETE FROM inbound_events WHERE org_id = $1 AND received_at < $2`, tenantID, before)
+		if err != nil {
+			return err
+		}
+		n = tag.RowsAffected()
+		tag, err = q.Exec(ctx, `DELETE FROM webhook_deliveries d USING webhooks w
+			WHERE w.id = d.webhook_id AND w.org_id = $1 AND d.status <> 'pending' AND d.created_at < $2`, tenantID, before)
+		if err != nil {
+			return err
+		}
+		n += tag.RowsAffected()
+		return nil
+	})
+	return n, err
 }
 
 // SentSince counts each provider's messages sent since t.

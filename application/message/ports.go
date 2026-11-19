@@ -56,6 +56,9 @@ type Repository interface {
 	// still stored; SavePurged writes a purged message back.
 	PurgeCandidates(ctx context.Context, tenantID string, before time.Time, limit int) ([]domainmsg.Message, error)
 	SavePurged(ctx context.Context, m domainmsg.Message) error
+	// PurgeRecords deletes the tenant's inbound event receipts and finished
+	// webhook deliveries from before t, and returns how many.
+	PurgeRecords(ctx context.Context, tenantID string, before time.Time) (int64, error)
 }
 
 // Queue schedules a message's delivery: the critical queue for

@@ -90,7 +90,8 @@ func (r *memMessages) PurgeTenants(context.Context) ([]string, error) { return n
 func (r *memMessages) PurgeCandidates(context.Context, string, time.Time, int) ([]domainmsg.Message, error) {
 	return nil, nil
 }
-func (r *memMessages) SavePurged(context.Context, domainmsg.Message) error { return nil }
+func (r *memMessages) SavePurged(context.Context, domainmsg.Message) error            { return nil }
+func (r *memMessages) PurgeRecords(context.Context, string, time.Time) (int64, error) { return 0, nil }
 
 type nopQueue struct{}
 
