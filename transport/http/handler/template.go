@@ -86,6 +86,9 @@ type templateView struct {
 	IsActive      bool      `json:"is_active"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
+	// Listing only: the default locale's publication.
+	Publication      apptemplate.Publication `json:"publication,omitempty"`
+	PublishedVersion *int                    `json:"published_version,omitempty"`
 }
 
 func newTemplateView(t domain.Template) templateView {
@@ -94,17 +97,23 @@ func newTemplateView(t domain.Template) templateView {
 		CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt}
 }
 
-// List is GET /templates.
+// List is GET /templates?search: newest first, each with its publication
+// (draft, published, or changed since publishing) and published version.
 func (h *TemplateHandler) List(c *gin.Context) {
 	pg := page(c)
-	list, total, err := h.svc.List(c.Request.Context(), tenantOf(c), pg.Limit, pg.Offset)
+	list, total, err := h.svc.List(c.Request.Context(), tenantOf(c),
+		apptemplate.ListQuery{Search: c.Query("search"), Limit: pg.Limit, Offset: pg.Offset})
 	if err != nil {
 		response.FromError(c, err)
 		return
 	}
 	out := make([]templateView, len(list))
 	for i, t := range list {
-		out[i] = newTemplateView(t)
+		out[i] = newTemplateView(t.Template)
+		out[i].Publication = t.Publication()
+		if t.PublishedVersion > 0 {
+			out[i].PublishedVersion = &t.PublishedVersion
+		}
 	}
 	response.List(c, out, pagination.NewMeta(pg, total))
 }

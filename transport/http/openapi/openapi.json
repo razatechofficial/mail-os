@@ -1864,7 +1864,7 @@
           "messages"
         ],
         "x-permission": "messages:read",
-        "description": "Never bodies; subject and template data masked (secret variables such as OTP codes). Filters: status (including captured for sandbox applications), type, topic, to, from, until, application_id. Permission: `messages:read`."
+        "description": "Never bodies; subject and template data masked (secret variables such as OTP codes). Filters: status (including captured for sandbox applications), type, topic, to (the whole address), search (part of the recipient address; subjects are not searched because they may hold secret values), from, until, application_id. Sort with sort_by (created_at, updated_at, status, to_email) and sort_order (asc or desc); newest first by default. Permission: `messages:read`."
       }
     },
     "/api/v1/messages/batch": {
@@ -2686,7 +2686,7 @@
     },
     "/api/v1/templates": {
       "get": {
-        "description": "Permission: `templates:read`.",
+        "description": "Newest first. search matches part of the name or slug. Each item carries publication (draft: never published; published; changed: the draft was saved after the active version was published) and published_version, both for the default locale. Permission: `templates:read`.",
         "operationId": "get_templates",
         "responses": {
           "200": {
