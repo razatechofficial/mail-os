@@ -304,7 +304,7 @@ func messageEventsOf(v appmsg.View) []messageEventView {
 	return out
 }
 
-// List is GET /messages?status&type&topic&to&from&until&application_id.
+// List is GET /messages?status&type&topic&to&search&from&until&application_id&sort_by&sort_order.
 func (h *MessageHandler) List(c *gin.Context) {
 	from, err := timeQuery(c, "from")
 	if err != nil {
@@ -318,8 +318,8 @@ func (h *MessageHandler) List(c *gin.Context) {
 	}
 	pg := page(c)
 	list, total, err := h.svc.List(c.Request.Context(), appmsg.Filter{TenantID: middleware.PrincipalFrom(c).TenantID,
-		ApplicationID: c.Query("application_id"), Status: c.Query("status"), Type: c.Query("type"), Topic: c.Query("topic"), To: c.Query("to"), From: from, Until: until,
-		Limit: pg.Limit, Offset: pg.Offset})
+		ApplicationID: c.Query("application_id"), Status: c.Query("status"), Type: c.Query("type"), Topic: c.Query("topic"), To: c.Query("to"), Search: c.Query("search"), From: from, Until: until,
+		SortBy: pg.SortBy, SortOrder: pg.SortOrder, Limit: pg.Limit, Offset: pg.Offset})
 	if err != nil {
 		response.FromError(c, err)
 		return

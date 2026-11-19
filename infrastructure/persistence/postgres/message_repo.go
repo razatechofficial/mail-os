@@ -228,6 +228,9 @@ func (r *MessageRepository) List(ctx context.Context, f app.Filter) ([]domain.Me
 	if f.To != "" {
 		add("lower(to_email) = lower(?)", f.To)
 	}
+	if q := strings.TrimSpace(f.Search); q != "" {
+		add(`to_email ILIKE ? ESCAPE '\'`, "%"+likePattern(q)+"%")
+	}
 	if f.From != nil {
 		add("created_at >= ?", *f.From)
 	}
@@ -244,9 +247,32 @@ func (r *MessageRepository) List(ctx context.Context, f app.Filter) ([]domain.Me
 		limit = 20
 	}
 	args = append(args, limit, max(f.Offset, 0))
-	list, err := r.query(ctx, `SELECT `+messageCols+` FROM messages WHERE `+cond+` ORDER BY created_at DESC, id DESC LIMIT $`+
+	list, err := r.query(ctx, `SELECT `+messageCols+` FROM messages WHERE `+cond+messageOrder(f.SortBy, f.SortOrder)+` LIMIT $`+
 		strconv.Itoa(len(args)-1)+` OFFSET $`+strconv.Itoa(len(args)), args...)
 	return list, total, err
+}
+
+// messageSortColumns are the sort_by values a message listing accepts.
+var messageSortColumns = map[string]string{
+	"created_at": "created_at", "updated_at": "updated_at", "status": "status", "to_email": "lower(to_email)",
+}
+
+// messageOrder is the ORDER BY of a listing, newest first by default.
+func messageOrder(sortBy, sortOrder string) string {
+	col, ok := messageSortColumns[sortBy]
+	if !ok {
+		col = "created_at"
+	}
+	dir := "DESC"
+	if strings.EqualFold(sortOrder, "asc") {
+		dir = "ASC"
+	}
+	return " ORDER BY " + col + " " + dir + ", id " + dir
+}
+
+// likePattern escapes LIKE's wildcards in s, for ESCAPE '\'.
+func likePattern(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
 // Update saves the delivery fields when the status is still expect.

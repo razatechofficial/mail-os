@@ -27,10 +27,17 @@ type Filter struct {
 	Type          string
 	Topic         string
 	To            string
-	From          *time.Time
-	Until         *time.Time
-	Limit         int
-	Offset        int
+	// Search matches part of the recipient address, case-insensitively.
+	// Subjects are not searched: they may hold a secret variable's value.
+	Search string
+	From   *time.Time
+	Until  *time.Time
+	// SortBy is created_at, updated_at, status or to_email (default
+	// created_at); SortOrder is asc or desc (default desc).
+	SortBy    string
+	SortOrder string
+	Limit     int
+	Offset    int
 }
 
 // Repository stores messages.
