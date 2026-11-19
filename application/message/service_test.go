@@ -311,6 +311,25 @@ func TestPurgeHonoursTenantRetention(t *testing.T) {
 	}
 }
 
+func TestPurgeDeletesDeliveryRecordsAtTheTenantRetention(t *testing.T) {
+	f := newFixture(t)
+	days := 7
+	f.svc.d.Tenants = memTenants{days: &days}
+	now := time.Now().UTC()
+	f.svc.now = func() time.Time { return now }
+	f.repo.records = map[string]int64{"other-tenant": 4}
+	n, err := f.svc.Purge(context.Background())
+	if err != nil || len(n) != 0 {
+		t.Fatal(n, err)
+	}
+	if got := f.repo.recordsBefore["other-tenant"]; !got.Equal(now.Add(-7 * 24 * time.Hour)) {
+		t.Fatalf("records purged before %v", got)
+	}
+	if !f.audit.has("messages.purged") || f.audit.meta[len(f.audit.meta)-1]["records"] != int64(4) {
+		t.Fatal("record purge not audited", f.audit.meta)
+	}
+}
+
 func TestSweepRequeuesLostWork(t *testing.T) {
 	f := newFixture(t)
 	f.queue.err = errDown

@@ -72,7 +72,9 @@ func (s *Service) Sweep(ctx context.Context) (int, error) {
 
 // Purge erases the bodies and template data of finished messages past
 // each tenant's retention (MESSAGE_RETENTION_DAYS, or the tenant's
-// override), keeping the envelope, and audits messages.purged per tenant.
+// override), keeping the envelope, deletes the inbound event receipts and
+// finished webhook deliveries of the same age, and audits messages.purged
+// per tenant. The counts are the messages whose bodies were erased.
 func (s *Service) Purge(ctx context.Context) (map[string]int, error) {
 	tenants, err := s.d.Repo.PurgeTenants(ctx)
 	if err != nil {
@@ -103,12 +105,19 @@ func (s *Service) Purge(ctx context.Context) (map[string]int, error) {
 				break
 			}
 		}
-		if total == 0 {
+		records, err := s.d.Repo.PurgeRecords(ctx, t, before)
+		if err != nil {
+			return counts, err
+		}
+		if total == 0 && records == 0 {
 			continue
 		}
-		counts[t] = total
+		if total > 0 {
+			counts[t] = total
+		}
 		tctx := audit.WithTenant(ctx, t)
-		if err := s.d.Audit.Append(tctx, "message", t, "messages.purged", map[string]any{"count": total, "retention_days": days}); err != nil {
+		if err := s.d.Audit.Append(tctx, "message", t, "messages.purged", map[string]any{"count": total, "records": records,
+			"retention_days": days}); err != nil {
 			logger.FromContext(ctx).Error("audit messages.purged", logger.Err(err))
 		}
 	}

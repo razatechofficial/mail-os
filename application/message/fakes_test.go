@@ -21,6 +21,10 @@ import (
 type memRepo struct {
 	mu   sync.Mutex
 	msgs map[string]domainmsg.Message
+	// records are each tenant's inbound receipts and finished webhook
+	// deliveries; recordsBefore the cut-off PurgeRecords was given.
+	records       map[string]int64
+	recordsBefore map[string]time.Time
 }
 
 func newMemRepo() *memRepo { return &memRepo{msgs: map[string]domainmsg.Message{}} }
@@ -111,6 +115,11 @@ func (r *memRepo) PurgeTenants(context.Context) ([]string, error) {
 			out = append(out, m.OrgID)
 		}
 	}
+	for t := range r.records {
+		if !slices.Contains(out, t) {
+			out = append(out, t)
+		}
+	}
 	return out, nil
 }
 
@@ -118,6 +127,16 @@ func (r *memRepo) PurgeCandidates(_ context.Context, t string, before time.Time,
 	return r.filter(func(m domainmsg.Message) bool {
 		return m.OrgID == t && m.BodyPurgedAt == nil && m.Status.Final() && m.CreatedAt.Before(before)
 	}), nil
+}
+
+func (r *memRepo) PurgeRecords(_ context.Context, t string, before time.Time) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.recordsBefore == nil {
+		r.recordsBefore = map[string]time.Time{}
+	}
+	r.recordsBefore[t] = before
+	return r.records[t], nil
 }
 
 func (r *memRepo) SavePurged(_ context.Context, m domainmsg.Message) error {
