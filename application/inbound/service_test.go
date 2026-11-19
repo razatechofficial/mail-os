@@ -317,3 +317,22 @@ func TestDispatchAuditsASendRefusedByTheApplication(t *testing.T) {
 		t.Fatal("the refused event stayed recorded")
 	}
 }
+
+func TestOutcomeLabelsAreBounded(t *testing.T) {
+	for want, c := range map[string]struct {
+		res Result
+		err error
+	}{
+		"accepted":  {Result{Accepted: true}, nil},
+		"duplicate": {Result{Accepted: true, Duplicate: true}, nil},
+		"refused_" + domainapp.Reason(domainapp.ErrTypeNotAllowed): {err: domainapp.ErrTypeNotAllowed},
+		"invalid":     {err: apperrors.Invalid("data.email", "required", "x")},
+		"conflict":    {err: apperrors.Conflict("x")},
+		"unavailable": {err: apperrors.Unavailable("x")},
+		"error":       {err: errors.New("boom")},
+	} {
+		if got := outcome(c.res, c.err); got != want {
+			t.Errorf("outcome(%+v, %v) = %q, want %q", c.res, c.err, got, want)
+		}
+	}
+}

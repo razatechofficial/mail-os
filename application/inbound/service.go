@@ -27,6 +27,7 @@ import (
 	"github.com/razatechofficial/mail-os/domain/event"
 	"github.com/razatechofficial/mail-os/domain/template"
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
+	"github.com/razatechofficial/mail-os/pkg/metrics"
 )
 
 // Transports an event arrives on.
@@ -151,8 +152,43 @@ func NewService(apps Authorizer, tenants TenantEnsurer, store Store, tx Transact
 
 // Dispatch authorises, validates, records and dispatches one event. A
 // refusal is a 403 (its error wraps the access refusal), invalid data a 422
-// with the failing fields, an event id reused for other data a 409.
+// with the failing fields, an event id reused for other data a 409. Every
+// outcome is counted in mailos_events_total by transport.
 func (s *Service) Dispatch(ctx context.Context, in In) (Result, error) {
+	res, err := s.dispatch(ctx, in)
+	metrics.Event(string(in.Transport), outcome(res, err))
+	return res, err
+}
+
+// outcome is the mailos_events_total label: accepted, duplicate, the
+// refusal reason, or the error kind (invalid, conflict, unavailable, …).
+func outcome(res Result, err error) string {
+	switch {
+	case err == nil && res.Duplicate:
+		return "duplicate"
+	case err == nil:
+		return "accepted"
+	}
+	if reason := domainapp.Reason(err); reason != "" {
+		return "refused_" + reason
+	}
+	switch apperrors.KindOf(err) {
+	case apperrors.KindInvalidInput, apperrors.KindBadRequest:
+		return "invalid"
+	case apperrors.KindConflict, apperrors.KindAlreadyExists:
+		return "conflict"
+	case apperrors.KindForbidden, apperrors.KindUnauthorized:
+		return "refused"
+	case apperrors.KindRateLimited:
+		return "rate_limited"
+	case apperrors.KindUnavailable:
+		return "unavailable"
+	default:
+		return "error"
+	}
+}
+
+func (s *Service) dispatch(ctx context.Context, in In) (Result, error) {
 	ev := in.Event
 	p, ok := access.FromContext(ctx)
 	if !ok || !p.IsService() {
