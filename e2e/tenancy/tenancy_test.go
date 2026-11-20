@@ -170,5 +170,5 @@ func TestSuppressionDoesNotCrossTenants(t *testing.T) {
 func TestServiceTokenTenantCannotBeOverridden(t *testing.T) {
 	ev := map[string]any{"id": harness.NewID(), "type": "iam.auth.mfa_email_code_requested", "tenant_uuid": harness.NewID(),
 		"data": map[string]any{"email": harness.NewEmail("x"), "code": "123456", "purpose": "sign_in", "expires_in_minutes": 5}}
-	fx.Service(t, "mailos-iam").ExpectError(t, http.StatusForbidden, "FORBIDDEN", http.MethodPost, "/api/v1/events", ev)
+	fx.ServerApp(t, "iam.*").ExpectError(t, http.StatusForbidden, "FORBIDDEN", http.MethodPost, "/api/v1/events", ev)
 }

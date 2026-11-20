@@ -88,7 +88,7 @@ func TestPublishedVersionIsWhatEventsRender(t *testing.T) {
 	admin.Expect(t, http.StatusCreated, http.MethodPost, "/api/v1/templates/"+id+"/publish", map[string]any{"locale": "en", "revision": d["revision"]})
 	draft(t, admin, id, d["revision"], "Unpublished draft", "<p>Draft</p>")
 	box := fx.Env.NewMailbox("live")
-	fx.Service(t, "mailos-iam").Expect(t, http.StatusAccepted, http.MethodPost, "/api/v1/events", map[string]any{
+	fx.ServerApp(t, topic).Expect(t, http.StatusAccepted, http.MethodPost, "/api/v1/events", map[string]any{
 		"id": harness.NewID(), "type": topic, "source": "iam", "data": map[string]any{"email": box.Address, "link": "https://iam.example.com/m/1"}})
 	if mail := box.Wait(t, nil); mail.Subject != "Live subject" {
 		t.Fatalf("an event rendered %q, want the published version", mail.Subject)

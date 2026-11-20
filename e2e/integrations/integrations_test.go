@@ -190,20 +190,20 @@ func publish(t *testing.T, topic string) {
 func TestTopicAllowList(t *testing.T) {
 	publish(t, otpTopic)
 	publish(t, "iam.auth.magic_link_requested")
-	narrow := fx.Service(t, "e2e-narrow")
+	narrow := fx.ServerApp(t, otpTopic)
 	narrow.Expect(t, http.StatusAccepted, http.MethodPost, "/api/v1/events", otpEvent(harness.NewEmail("narrow")))
 	other := otpEvent(harness.NewEmail("narrow"))
 	other["type"] = "iam.auth.magic_link_requested"
 	other["data"] = map[string]any{"email": harness.NewEmail("narrow"), "link": "https://iam.example.com/m/x"}
 	narrow.ExpectError(t, http.StatusForbidden, "FORBIDDEN", http.MethodPost, "/api/v1/events", other)
 	harness.Eventually(t, "the refused topic in the audit log", 10*time.Second, func() bool {
-		return strings.Contains(fx.Admin(t).Expect(t, http.StatusOK, http.MethodGet, "/api/v1/analytics/audit-logs?limit=100", nil).String(), "topic_not_allowed")
+		return strings.Contains(fx.Admin(t).Expect(t, http.StatusOK, http.MethodGet, "/api/v1/analytics/audit-logs?limit=100", nil).String(), "message_type_not_allowed")
 	})
 }
 
 func TestEventEnvelopeRules(t *testing.T) {
 	publish(t, otpTopic)
-	svc := fx.Service(t, "mailos-iam")
+	svc := fx.ServerApp(t, "iam.*")
 	svc.ExpectError(t, http.StatusBadRequest, "", http.MethodPost, "/api/v1/events", []byte("{not json"))
 	noEmail := otpEvent("")
 	svc.ExpectError(t, http.StatusUnprocessableEntity, "", http.MethodPost, "/api/v1/events", noEmail)
@@ -228,6 +228,6 @@ func TestEventWithoutPublishedTemplateIsRefused(t *testing.T) {
 	box := fx.Env.NewMailbox("notemplate")
 	ev := map[string]any{"id": harness.NewID(), "type": "iam.auth.password_reset_requested", "source": "iam",
 		"data": map[string]any{"email": box.Address, "reset_link": "https://iam.example.com/r/x", "expires_in_minutes": 30}}
-	fx.Service(t, "mailos-iam").ExpectError(t, http.StatusNotFound, "NOT_FOUND", http.MethodPost, "/api/v1/events", ev)
+	fx.ServerApp(t, "iam.*").ExpectError(t, http.StatusNotFound, "NOT_FOUND", http.MethodPost, "/api/v1/events", ev)
 	box.Empty(t, 2*time.Second)
 }
