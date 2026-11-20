@@ -65,7 +65,7 @@ func routes() []route {
 		{http.MethodGet, p("/api/v1/templates/{id}/active-version"), all, false},
 		{http.MethodPost, p("/api/v1/templates/{id}/versions/1/restore"), []string{admin, editor}, false},
 		{http.MethodPost, p("/api/v1/templates/{id}/preview"), []string{admin, editor}, false},
-		{http.MethodPost, p("/api/v1/templates/{id}/test-send"), []string{admin, editor}, false},
+		{http.MethodPost, p("/api/v1/templates/{id}/test-send"), []string{admin, editor, publisher}, false},
 		{http.MethodGet, "/api/v1/template-branding", all, false},
 		{http.MethodPut, "/api/v1/template-branding", adm, false},
 
