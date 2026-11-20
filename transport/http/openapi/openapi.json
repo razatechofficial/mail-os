@@ -980,28 +980,6 @@
         "x-step-up": true
       }
     },
-    "/api/v1/analytics/audit-logs/integrity": {
-      "get": {
-        "description": "Verifies every signed audit digest: its chain link, hash and Ed25519 signature, and that the rows it sealed are unchanged, none removed and none inserted. Digests whose rows passed AUDIT_RETENTION_DAYS are checked as a chain only. The digests cover every tenant, so only the operator tenant (IAM_SERVICE_TENANT_ID) may call it; others get 403. Returns the report with `intact`, `problems`, and the signing and previous public keys for offline checks. Audited as audit.verified. Permission: `audit:export`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
-        "operationId": "get_analytics_audit_logs_integrity",
-        "responses": {
-          "default": {
-            "$ref": "#/components/responses/Error"
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Verify the audit log's integrity",
-        "tags": [
-          "analytics"
-        ],
-        "x-permission": "audit:export",
-        "x-step-up": true
-      }
-    },
     "/api/v1/analytics/stats": {
       "get": {
         "operationId": "get_analytics_stats",
@@ -1725,104 +1703,6 @@
           "events"
         ],
         "x-permission": "events:dispatch"
-      }
-    },
-    "/api/v1/keys/encryption": {
-      "get": {
-        "description": "Per purpose (provider, dkim, webhook): keys, state and how many values each seals. Never key material. Permission: `settings:manage`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
-        "operationId": "get_keys_encryption",
-        "responses": {
-          "default": {
-            "$ref": "#/components/responses/Error"
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Encryption keys",
-        "tags": [
-          "keys"
-        ],
-        "x-permission": "settings:manage",
-        "x-step-up": true
-      }
-    },
-    "/api/v1/keys/encryption/{purpose}/rotate": {
-      "post": {
-        "description": "Retires the active key; the schedule re-encrypts what it sealed and then destroys it. Permission: `settings:manage`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
-        "operationId": "post_keys_encryption_purpose_rotate",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "purpose",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "$ref": "#/components/responses/Error"
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Rotate an encryption key",
-        "tags": [
-          "keys"
-        ],
-        "x-permission": "settings:manage",
-        "x-step-up": true
-      }
-    },
-    "/api/v1/keys/kek": {
-      "get": {
-        "description": "The key-encryption keys by id (software:<fingerprint>, pkcs11:<HSM label>, kms:<key ARN>), never material: the current one, the new one when configured, the one wrapping new data keys, how many data keys each wraps, and the last KEK rotations. Permission: `settings:manage`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
-        "operationId": "get_keys_kek",
-        "responses": {
-          "default": {
-            "$ref": "#/components/responses/Error"
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Key-encryption keys",
-        "tags": [
-          "keys"
-        ],
-        "x-permission": "settings:manage",
-        "x-step-up": true
-      }
-    },
-    "/api/v1/keys/kek/rotate": {
-      "post": {
-        "description": "Starts a KEK rotation to the new key-encryption key configured on every replica (KEY_MANAGER_NEW_MASTER_KEY, KEY_MANAGER_PKCS11_NEW_KEK_LABEL, KEY_MANAGER_KMS_NEW_KEK_KEY_ID, KEY_MANAGER_GCP_KMS_NEW_KEK_KEY, KEY_MANAGER_AZURE_NEW_KEK_KEY or KEY_MANAGER_VAULT_NEW_KEK_KEY). New data keys are wrapped under it at once; the key schedule re-wraps the others without changing them. Body: {\"reason\": string}. 409 NO_NEW_KEK, KEK_ROTATION_RUNNING or KEK_ALREADY_CURRENT. Permission: `settings:manage`. Needs step-up (a sign-in with a second factor within 5 minutes); otherwise 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge.",
-        "operationId": "post_keys_kek_rotate",
-        "responses": {
-          "default": {
-            "$ref": "#/components/responses/Error"
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Rotate the key-encryption key",
-        "tags": [
-          "keys"
-        ],
-        "x-permission": "settings:manage",
-        "x-step-up": true
       }
     },
     "/api/v1/me": {
