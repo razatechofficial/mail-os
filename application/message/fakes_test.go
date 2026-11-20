@@ -111,7 +111,7 @@ func (r *memRepo) Stale(_ context.Context, q, s time.Time, _ int) ([]domainmsg.M
 
 func (r *memRepo) PurgeTenants(context.Context) ([]string, error) {
 	var out []string
-	for _, m := range r.filter(func(m domainmsg.Message) bool { return m.BodyPurgedAt == nil && m.Status.Final() }) {
+	for _, m := range r.filter(func(m domainmsg.Message) bool { return m.BodyPurgedAt == nil }) {
 		if !slices.Contains(out, m.OrgID) {
 			out = append(out, m.OrgID)
 		}
@@ -124,9 +124,10 @@ func (r *memRepo) PurgeTenants(context.Context) ([]string, error) {
 	return out, nil
 }
 
-func (r *memRepo) PurgeCandidates(_ context.Context, t string, before time.Time, _ int) ([]domainmsg.Message, error) {
+func (r *memRepo) PurgeCandidates(_ context.Context, t string, before, stuck time.Time, _ int) ([]domainmsg.Message, error) {
 	return r.filter(func(m domainmsg.Message) bool {
-		return m.OrgID == t && m.BodyPurgedAt == nil && m.Status.Final() && m.CreatedAt.Before(before)
+		return m.OrgID == t && m.BodyPurgedAt == nil &&
+			(m.Status.Final() && m.CreatedAt.Before(before) || !m.Status.Final() && m.CreatedAt.Before(stuck))
 	}), nil
 }
 

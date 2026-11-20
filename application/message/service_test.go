@@ -487,6 +487,27 @@ func TestPurgeHonoursTenantRetention(t *testing.T) {
 	}
 }
 
+// A message that never reached a final status is given up and erased
+// after twice the retention, not kept for ever.
+func TestPurgeAbandonsStuckMessages(t *testing.T) {
+	f := newFixture(t)
+	days := 7
+	f.svc.d.Tenants = memTenants{days: &days}
+	r, _ := f.svc.Send(userCtx(), direct())
+	f.svc.now = func() time.Time { return time.Now().Add(8 * 24 * time.Hour).UTC() }
+	if n, _ := f.svc.Purge(context.Background()); n[tenant] != 0 {
+		t.Fatal("stuck message purged within twice the retention")
+	}
+	f.svc.now = func() time.Time { return time.Now().Add(15 * 24 * time.Hour).UTC() }
+	if n, err := f.svc.Purge(context.Background()); err != nil || n[tenant] != 1 {
+		t.Fatal(n, err)
+	}
+	got, _ := f.repo.Get(context.Background(), tenant, r.MessageID)
+	if got.Status != domainmsg.StatusFailed || got.LastError != domainmsg.Abandoned || got.HTMLBody != "" || got.BodyPurgedAt == nil {
+		t.Fatalf("stuck %+v", got)
+	}
+}
+
 func TestPurgeDeletesDeliveryRecordsAtTheTenantRetention(t *testing.T) {
 	f := newFixture(t)
 	days := 7
