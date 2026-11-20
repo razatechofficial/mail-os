@@ -48,6 +48,28 @@ func New(p provider.Provider, c provider.Credentials, opts Options) (Sender, err
 	return nil, message.NewSendError(string(p.Kind), message.ReasonConfig, 0, "unknown provider kind")
 }
 
+// tracksOff are the provider kinds that honour Outgoing.NoTracking: the
+// APIs with a per-message switch for click and open tracking (each set in
+// its sender, checked against the provider's API reference), and the
+// transports that never rewrite links or add pixels (SMTP, Microsoft
+// Graph, Gmail). Brevo (only a per-recipient anonymisation and an
+// Enterprise-only pixel removal) and Resend (tracking set per domain) have
+// no per-message switch, so they never carry authentication mail.
+var tracksOff = map[provider.Kind]bool{
+	provider.KindSMTP: true, provider.KindMSGraph: true, provider.KindGmail: true, provider.KindACS: true,
+	provider.KindSES: true, provider.KindSendGrid: true, provider.KindMailgun: true, provider.KindPostmark: true,
+	provider.KindSparkPost: true, provider.KindMandrill: true, provider.KindMailjet: true,
+}
+
+// TracksOff reports whether a provider kind can send a message with click
+// and open tracking off.
+func TracksOff(kind provider.Kind) bool { return tracksOff[kind] }
+
+// ErrNoUntrackedProvider is a message that must go without tracking when
+// none of the tenant's providers can send it so.
+var ErrNoUntrackedProvider = message.NewSendError("", message.ReasonConfig, 0,
+	"no provider of the tenant can send authentication mail with click and open tracking off")
+
 // Configured is a tenant provider with its opened credentials.
 type Configured struct {
 	Provider    provider.Provider
@@ -70,7 +92,9 @@ type Builder func(p provider.Provider, c provider.Credentials) (Sender, error)
 // recipient, rejected content) stops at once: another provider would
 // refuse it too. A tenant without providers sends through the platform
 // relay; one whose providers all fail does not, as the relay may not be
-// authorised for the tenant's domain.
+// authorised for the tenant's domain. A message that must go without
+// tracking (Outgoing.NoTracking) skips providers that cannot send it so;
+// the platform relay is SMTP, which never tracks.
 type Router struct {
 	src      ProviderSource
 	build    Builder
@@ -170,6 +194,12 @@ func (r *Router) Send(ctx context.Context, out message.Outgoing) (Result, error)
 
 	var transient, permanent error
 	for _, c := range order(list) {
+		if out.NoTracking && !TracksOff(c.Provider.Kind) {
+			if permanent == nil {
+				permanent = ErrNoUntrackedProvider
+			}
+			continue
+		}
 		s, err := r.sender(c)
 		if err == nil {
 			var res Result

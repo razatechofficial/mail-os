@@ -44,6 +44,10 @@ type Outgoing struct {
 	Tags    []string
 	// Attachments are the files, attached or inline (by Content-ID).
 	Attachments []Attachment
+	// NoTracking turns the provider's click and open tracking off for this
+	// message: authentication-class mail, whose links carry bearer tokens
+	// (ADR 0001 §3.6). Only senders that can honour it may send it.
+	NoTracking bool
 	// DKIM, when set, is the verified sending domain's key; the SMTP
 	// sender signs with it (HTTP APIs sign with the domain configured at
 	// the provider).

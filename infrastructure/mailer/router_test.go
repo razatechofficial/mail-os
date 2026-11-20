@@ -291,3 +291,54 @@ func TestRouterCountsSendAttempts(t *testing.T) {
 		t.Errorf("auth failures = %v, want %v", got, auth+1)
 	}
 }
+
+// Authentication mail (NoTracking) goes only through providers that can
+// turn click and open tracking off for the message; the others are
+// skipped, and a tenant with none of them gets a configuration error.
+func TestRouterNoTracking(t *testing.T) {
+	brevo := configured("brevo", 10, 1)
+	brevo.Provider.Kind = provider.KindBrevo
+	resend := configured("resend", 10, 1)
+	resend.Provider.Kind = provider.KindResend
+	sendgrid := configured("sendgrid", 1, 1)
+	sendgrid.Provider.Kind = provider.KindSendGrid
+	senders := map[string]*fakeSender{"brevo": {id: "brevo"}, "resend": {id: "resend"}, "sendgrid": {id: "sendgrid"}}
+	r, _ := routerWith([]Configured{brevo, resend, sendgrid}, senders, nil)
+	out := message.Outgoing{TenantID: "t", NoTracking: true}
+	res, err := r.Send(context.Background(), out)
+	if err != nil || res.ProviderID != "sendgrid" || senders["brevo"].calls+senders["resend"].calls != 0 {
+		t.Fatalf("untracked send went to %q (%v), brevo %d resend %d", res.ProviderID, err, senders["brevo"].calls, senders["resend"].calls)
+	}
+	// Ordinary mail still prefers the higher priority.
+	if res, err := r.Send(context.Background(), message.Outgoing{TenantID: "t"}); err != nil || res.ProviderID == "sendgrid" {
+		t.Fatalf("tracked send %q %v", res.ProviderID, err)
+	}
+
+	only := map[string]*fakeSender{"brevo": {id: "brevo"}}
+	r, _ = routerWith([]Configured{brevo}, only, &fakeSender{id: "platform"})
+	_, err = r.Send(context.Background(), out)
+	if !errors.Is(err, ErrNoUntrackedProvider) || only["brevo"].calls != 0 {
+		t.Fatalf("brevo-only tenant: %v, calls %d", err, only["brevo"].calls)
+	}
+	if se, ok := message.AsSendError(err); !ok || !se.Permanent() {
+		t.Fatalf("not a permanent send error: %v", err)
+	}
+
+	// A tenant without providers uses the platform relay (SMTP never tracks).
+	platform := &fakeSender{id: "platform"}
+	r, _ = routerWith(nil, nil, platform)
+	if _, err := r.Send(context.Background(), out); err != nil || platform.calls != 1 {
+		t.Fatalf("platform relay %v %d", err, platform.calls)
+	}
+	for _, k := range []provider.Kind{provider.KindBrevo, provider.KindResend} {
+		if TracksOff(k) {
+			t.Errorf("%s claims to turn tracking off", k)
+		}
+	}
+	for _, k := range []provider.Kind{provider.KindSMTP, provider.KindACS, provider.KindSES, provider.KindSendGrid, provider.KindMailgun,
+		provider.KindPostmark, provider.KindSparkPost, provider.KindMandrill, provider.KindMailjet, provider.KindMSGraph, provider.KindGmail} {
+		if !TracksOff(k) {
+			t.Errorf("%s cannot send untracked", k)
+		}
+	}
+}
