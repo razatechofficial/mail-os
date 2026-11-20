@@ -8,6 +8,7 @@
 #   command: ["/app/mailos-worker"]
 #   command: ["/app/mailos-migrate-postgres", "up"]
 #   command: ["/app/mailos-bootstrap"]   (default templates, sending domain, test send)
+#   command: ["/app/mailos-redact-auth-mail"]   (once after the persistence-masking migrations)
 #
 # Read-only root filesystem friendly: nothing is written at runtime. Mount an
 # emptyDir at /tmp only if a future feature needs scratch space.
@@ -35,7 +36,7 @@ ARG TARGETARCH=amd64
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     set -eu; \
-    for b in server worker migrate-postgres bootstrap; do \
+    for b in server worker migrate-postgres bootstrap redact-auth-mail; do \
       CGO_ENABLED=0 GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" \
       go build -trimpath \
         -ldflags="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT}" \
@@ -54,6 +55,7 @@ COPY --from=builder /out/mailos-server /app/mailos-server
 COPY --from=builder /out/mailos-worker /app/mailos-worker
 COPY --from=builder /out/mailos-migrate-postgres /app/mailos-migrate-postgres
 COPY --from=builder /out/mailos-bootstrap /app/mailos-bootstrap
+COPY --from=builder /out/mailos-redact-auth-mail /app/mailos-redact-auth-mail
 # The migrator reads migrations/postgres relative to the working directory.
 COPY --from=builder /src/migrations /app/migrations
 COPY --from=builder /src/environments /app/environments
