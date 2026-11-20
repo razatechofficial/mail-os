@@ -33,7 +33,7 @@ const messageCols = `id, org_id, COALESCE(campaign_id, ''), COALESCE(provider_id
 	COALESCE(locale, ''), template_data, secret_keys, COALESCE(event_id, ''), COALESCE(actor_type, ''), COALESCE(actor_id, ''),
 	COALESCE(idempotency_key, ''), COALESCE(provider_msg_id, ''), attempts, COALESCE(last_error, ''), scheduled_at,
 	last_attempt_at, sent_at, delivered_at, bounced_at, failed_at, cancelled_at, opened_at, clicked_at, body_purged_at,
-	created_at, updated_at, COALESCE(application_id, ''), sandbox, stream, headers, COALESCE(sent_digest, '')`
+	created_at, updated_at, COALESCE(application_id, ''), sandbox, stream, headers, sent_digest`
 
 // finalStatuses are the statuses whose body the purge may erase.
 const finalStatuses = `('sent', 'delivered', 'bounced', 'complained', 'failed', 'cancelled', 'suppressed', 'captured')`
@@ -42,13 +42,13 @@ func scanMessage(row pgx.Row) (domain.Message, error) {
 	var m domain.Message
 	var typ, status, actorType, stream string
 	var priority int
-	var meta, data, headers []byte
+	var meta, data, headers, digest []byte
 	err := row.Scan(&m.ID, &m.OrgID, &m.CampaignID, &m.ProviderID, &m.FromName, &m.FromEmail, &m.ToEmail, &m.ToName, &m.ReplyTo,
 		&m.Subject, &m.HTMLBody, &m.TextBody, &typ, &status, &priority, &m.Tags, &meta, &m.Topic, &m.TemplateID,
 		&m.TemplateVersionID, &m.Locale, &data, &m.SecretKeys, &m.EventID, &actorType, &m.Actor.ID, &m.IdempotencyKey,
 		&m.ProviderMessageID, &m.Attempts, &m.LastError, &m.ScheduledAt, &m.LastAttemptAt, &m.SentAt, &m.DeliveredAt,
 		&m.BouncedAt, &m.FailedAt, &m.CancelledAt, &m.OpenedAt, &m.ClickedAt, &m.BodyPurgedAt, &m.CreatedAt, &m.UpdatedAt,
-		&m.ApplicationID, &m.Sandbox, &stream, &headers, &m.SentDigest)
+		&m.ApplicationID, &m.Sandbox, &stream, &headers, &digest)
 	if err != nil {
 		return m, err
 	}
@@ -63,6 +63,9 @@ func scanMessage(row pgx.Row) (domain.Message, error) {
 	if len(headers) > 0 && string(headers) != "null" {
 		_ = json.Unmarshal(headers, &m.Headers)
 	}
+	if len(digest) > 0 && string(digest) != "null" {
+		_ = json.Unmarshal(digest, &m.SentDigest)
+	}
 	return m, nil
 }
 
@@ -71,6 +74,14 @@ func jsonOrNil(v map[string]any) []byte {
 		return nil
 	}
 	raw, _ := json.Marshal(v)
+	return raw
+}
+
+func digestOrNil(d domain.SentDigest) []byte {
+	if d.IsZero() {
+		return nil
+	}
+	raw, _ := json.Marshal(d)
 	return raw
 }
 
@@ -281,11 +292,11 @@ func (r *MessageRepository) Update(ctx context.Context, m domain.Message, expect
 		UPDATE messages SET subject = $4, html_body = NULLIF($5, ''), text_body = NULLIF($6, ''), status = $7,
 			provider_id = NULLIF($8, ''), provider_msg_id = NULLIF($9, ''), attempts = $10, last_error = NULLIF($11, ''),
 			scheduled_at = $12, last_attempt_at = $13, sent_at = $14, delivered_at = $15, bounced_at = $16, failed_at = $17,
-			cancelled_at = $18, updated_at = $19, sent_digest = NULLIF($20, '')
+			cancelled_at = $18, updated_at = $19, sent_digest = $20
 		WHERE id = $1 AND org_id = $2 AND status = $3`,
 		m.ID, m.OrgID, string(expect), m.Subject, m.HTMLBody, m.TextBody, string(m.Status), m.ProviderID, m.ProviderMessageID,
 		m.Attempts, m.LastError, m.ScheduledAt, m.LastAttemptAt, m.SentAt, m.DeliveredAt, m.BouncedAt, m.FailedAt,
-		m.CancelledAt, m.UpdatedAt, m.SentDigest)
+		m.CancelledAt, m.UpdatedAt, digestOrNil(m.SentDigest))
 	if err != nil {
 		return false, err
 	}
