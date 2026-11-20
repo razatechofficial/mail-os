@@ -264,16 +264,22 @@ func messageService(e msgEnv, platform mailer.Sender) *appmessage.Service {
 	return appmessage.NewService(appmessage.Deps{Repo: postgres.NewMessageRepository(e.db), Queue: nopQueue{},
 		Suppressions: appsuppression.NewService(postgres.NewSuppressionRepository(e.db), e.audit), Tenants: e.tenants,
 		Templates: templates{}, Versions: templates{}, Branding: templates{}, Render: renderContent, Sender: routerSender{router},
-		Stats: analytics.NewService(postgres.NewStatsRepository(e.db)), Audit: e.audit},
-		appmessage.Config{MaxAttempts: 3, RetentionDays: 30, DefaultFrom: "noreply@platform.example"})
+		Stats: analytics.NewService(postgres.NewStatsRepository(e.db)), Audit: e.audit,
+		Secrets: postgres.NewMessageSecretRepository(e.db), SecretCipher: e.keys.Cipher(domainkm.PurposeMessageSecret)},
+		appmessage.Config{MaxAttempts: 3, RetentionDays: 30, DefaultFrom: "noreply@platform.example", DigestKey: digestKey})
 }
+
+// digestKey keys the evidence digests in these tests.
+var digestKey = []byte("integration-digest-key-0123456789")
 
 // platformFrom is the e2e sink's platform sender, as the container passes it.
 var platformFrom = domainmsg.Address{Name: "Platform", Email: "noreply@platform.example"}
 
 // A templated OTP goes through the e2e sink after a transient failure: the
-// retry is recorded, the body is rendered and stored, the view masks the
-// code, and the purge erases body and data past retention.
+// retry sends the live code from the sealed store, no column ever holds it,
+// the secrets go at the final status, the evidence digest verifies against
+// what was sent, and the purge erases body and data past retention but
+// keeps the digest and never touches the audit log.
 func TestSendRetryAndPurge(t *testing.T) {
 	e := newMsgEnv(t)
 	rdb := connectRedis(t)
@@ -292,9 +298,16 @@ func TestSendRetryAndPurge(t *testing.T) {
 	if err := svc.Deliver(ctx, e.tenant, m.ID); err == nil {
 		t.Fatal("transient failure not returned for retry")
 	}
+	row := func() string { return e.raw(t, `SELECT row_to_json(m)::text FROM messages m WHERE id = $1`, m.ID) }
+	if r := row(); strings.Contains(r, "731904") || !strings.Contains(r, "[redacted: code, 6 characters]") {
+		t.Fatalf("stored at acceptance: %s", r)
+	}
 	stored, _ := postgres.NewMessageRepository(e.db).Get(ctx, e.tenant, m.ID)
 	if stored.Status != domainmsg.StatusQueued || stored.Attempts != 1 || stored.LastError == "" {
 		t.Fatalf("after failure %+v", stored)
+	}
+	if v := e.raw(t, `SELECT sealed FROM message_secrets WHERE message_id = $1`, m.ID); !domainkm.IsCiphertext(v) || strings.Contains(v, "731904") {
+		t.Fatalf("retry store %q", v)
 	}
 	if err := svc.Deliver(ctx, e.tenant, m.ID); err != nil {
 		t.Fatal(err)
@@ -307,14 +320,31 @@ func TestSendRetryAndPurge(t *testing.T) {
 	if err != nil || len(got) != 1 || !strings.Contains(got[0].HTML, "<b>731904</b>") || !strings.Contains(got[0].HTML, "Integration Bank") {
 		t.Fatalf("sink %+v %v", got, err)
 	}
+	if r := row(); strings.Contains(r, "731904") {
+		t.Fatalf("stored after the send: %s", r)
+	}
+	if v := e.raw(t, `SELECT count(*)::text FROM message_secrets WHERE message_id = $1`, m.ID); v != "0" {
+		t.Fatal("secrets kept after the send")
+	}
+	stored, _ = postgres.NewMessageRepository(e.db).Get(ctx, e.tenant, m.ID)
+	if !domainmsg.VerifySentDigest(digestKey, stored.SentDigest, got[0].Subject, got[0].Text, got[0].HTML) {
+		t.Fatalf("sent digest %q does not verify", stored.SentDigest)
+	}
 	v, _ := svc.Get(ctx, e.tenant, m.ID)
-	if strings.Contains(v.MaskedSubject, "731904") || v.MaskedTemplateData["code"] != domainmsg.Mask {
-		t.Fatalf("view %q %v", v.MaskedSubject, v.MaskedTemplateData)
+	if !v.AuthClass || v.TemplateData["code"] != "[redacted: code, 6 characters]" {
+		t.Fatalf("view %q %v", v.Subject, v.TemplateData)
 	}
 	body, err := svc.Body(e.userCtx(), e.tenant, m.ID)
-	if err != nil || strings.Contains(body.HTML, "731904") || !strings.Contains(body.HTML, domainmsg.Mask) {
+	if err != nil || strings.Contains(body.HTML, "731904") || !strings.Contains(body.HTML, "[redacted: code, 6 characters]") {
 		t.Fatalf("body %+v %v", body, err)
 	}
+	if _, err := svc.Resend(e.userCtx(), e.tenant, m.ID); err != appmessage.ErrAuthResend {
+		t.Fatalf("resend %v", err)
+	}
+	// An audit row far older than the message retention.
+	mustExec(t, e, `INSERT INTO audit_events (event_id, tier, severity, actor_type, tenant_uuid, resource_type, resource_id, action, created_at)
+		VALUES ($1, 'activity', 6, 'system', $2, 'message', 'old', 'message.queued', now() - interval '200 days')`, uuid.NewString(), e.tenant)
+	auditBefore := e.raw(t, `SELECT count(*)::text FROM audit_events WHERE tenant_uuid = $1 AND created_at < now() - interval '100 days'`, e.tenant)
 
 	mustExec(t, e, `UPDATE messages SET created_at = now() - interval '31 days' WHERE id = $1`, m.ID)
 	counts, err := svc.Purge(ctx)
@@ -326,6 +356,13 @@ func TestSendRetryAndPurge(t *testing.T) {
 	}
 	if v := e.raw(t, `SELECT to_email FROM messages WHERE id = $1`, m.ID); v != to {
 		t.Fatal("envelope not kept")
+	}
+	if v := e.raw(t, `SELECT sent_digest FROM messages WHERE id = $1`, m.ID); v != stored.SentDigest {
+		t.Fatal("purge dropped the evidence digest")
+	}
+	// Message retention never deletes audit rows, however old.
+	if v := e.raw(t, `SELECT count(*)::text FROM audit_events WHERE tenant_uuid = $1 AND created_at < now() - interval '100 days'`, e.tenant); v != auditBefore {
+		t.Fatalf("message purge touched the audit log: %s of %s old rows left", v, auditBefore)
 	}
 	if _, err := svc.Body(e.userCtx(), e.tenant, m.ID); err != appmessage.ErrBodyGone {
 		t.Fatalf("purged body: %v", err)
@@ -394,4 +431,36 @@ func mustExec(t *testing.T, e msgEnv, sql string, args ...any) {
 func toJSON(v any) string {
 	raw, _ := json.Marshal(v)
 	return string(raw)
+}
+
+// A message stuck in a non-final status is failed as abandoned and erased
+// after twice the retention; a tenant cannot store a retention above 90
+// days, even past the application.
+func TestPurgeStuckAndRetentionBound(t *testing.T) {
+	e := newMsgEnv(t)
+	ctx := context.Background()
+	svc := messageService(e, nil)
+	r, err := svc.Send(e.userCtx(), appmessage.SendInput{TenantID: e.tenant, FromEmail: "noreply@bank.example",
+		ToEmail: "stuck-" + e.tenant[:8] + "@example.com", Subject: "Stuck", Text: "body"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, e, `UPDATE messages SET created_at = now() - interval '45 days' WHERE id = $1`, r.MessageID)
+	if _, err := svc.Purge(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if v := e.raw(t, `SELECT status FROM messages WHERE id = $1`, r.MessageID); v != "queued" {
+		t.Fatalf("stuck message purged inside twice the retention: %s", v)
+	}
+	mustExec(t, e, `UPDATE messages SET created_at = now() - interval '61 days' WHERE id = $1`, r.MessageID)
+	if _, err := svc.Purge(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if v := e.raw(t, `SELECT status || '|' || last_error || '|' || COALESCE(text_body, '') FROM messages WHERE id = $1`, r.MessageID); v != "failed|"+domainmsg.Abandoned+"|" {
+		t.Fatalf("stuck message after purge: %q", v)
+	}
+	if _, err := e.db.Exec(ctx, `INSERT INTO tenant_settings (org_id, message_retention_days) VALUES ($1, 91)
+		ON CONFLICT (org_id) DO UPDATE SET message_retention_days = 91`, e.tenant); err == nil {
+		t.Fatal("the database stored a retention of 91 days")
+	}
 }

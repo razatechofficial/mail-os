@@ -288,3 +288,46 @@ func TestTemplateMigrationsDownUp(t *testing.T) {
 		t.Fatalf("publish after re-up: %v", err)
 	}
 }
+
+// A stored template version never changes, even by a direct write to the
+// database: the messages that used it are reconstructed from it as
+// evidence of what was sent. Only its active flag moves, and deleting the
+// template keeps the version readable for that reconstruction.
+func TestTemplateVersionsImmutable(t *testing.T) {
+	e := newTemplateEnv(t)
+	db := connectPostgres(t)
+	tpl, err := e.svc.Create(e.ctx, e.tenant, apptemplate.CreateInput{Name: "Reset", Slug: "iam-reset", Topic: domain.TopicPasswordReset})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.save(t, tpl.ID, "en", 0, "Reset your password", "editor")
+	v1, err := e.svc.Publish(e.ctx, e.tenant, tpl.ID, "en", 1, "publisher")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sql := range []string{
+		`UPDATE template_versions SET subject = 'tampered' WHERE id = $1`,
+		`UPDATE template_versions SET html_body = '<p>tampered</p>' WHERE id = $1`,
+		`UPDATE template_versions SET text_body = NULL WHERE id = $1`,
+		`UPDATE template_versions SET published_at = now() WHERE id = $1`,
+		`UPDATE template_versions SET version = 99 WHERE id = $1`,
+	} {
+		if _, err := db.Exec(context.Background(), sql, v1.ID); err == nil || !strings.Contains(err.Error(), "immutable") {
+			t.Errorf("%s: %v", sql, err)
+		}
+	}
+	// A later publish only deactivates it.
+	e.save(t, tpl.ID, "en", 1, "Reset your password now", "editor")
+	if _, err := e.svc.Publish(e.ctx, e.tenant, tpl.ID, "en", 2, "publisher"); err != nil {
+		t.Fatalf("publish over an immutable version: %v", err)
+	}
+	if err := e.svc.Delete(e.ctx, e.tenant, tpl.ID); err != nil {
+		t.Fatal(err)
+	}
+	var subject string
+	var active bool
+	if err := db.QueryRow(context.Background(), `SELECT subject, is_active FROM template_versions WHERE id = $1`, v1.ID).
+		Scan(&subject, &active); err != nil || subject != "Reset your password" || active {
+		t.Fatalf("version after a new publish and delete: %q %v %v", subject, active, err)
+	}
+}
