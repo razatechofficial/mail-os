@@ -68,6 +68,29 @@ type Repository interface {
 	PurgeRecords(ctx context.Context, tenantID string, before time.Time) (int64, error)
 }
 
+// SecretStore keeps the sealed live secrets of authentication-class
+// messages (message_secrets) until the message is final or the secrets
+// expire, whichever is first; only the delivery path reads them.
+type SecretStore interface {
+	// InTx runs fn in one transaction, so a message and its secrets are
+	// stored together or not at all.
+	InTx(ctx context.Context, fn func(ctx context.Context) error) error
+	Put(ctx context.Context, tenantID, messageID, sealed string, createdAt, expiresAt time.Time) error
+	// Get returns the sealed secrets; ok is false when there are none or
+	// they expired by now.
+	Get(ctx context.Context, tenantID, messageID string, now time.Time) (sealed string, ok bool, err error)
+	Delete(ctx context.Context, tenantID, messageID string) error
+	// DeleteExpired deletes every row expired by now, and returns how many.
+	DeleteExpired(ctx context.Context, now time.Time) (int64, error)
+}
+
+// Cipher seals and opens the live secrets (key manager purpose
+// message_secret).
+type Cipher interface {
+	Seal(ctx context.Context, plaintext []byte) (string, error)
+	Open(ctx context.Context, ciphertext string) ([]byte, error)
+}
+
 // Queue schedules a message's delivery: the critical queue for
 // transactional mail.
 type Queue interface {
@@ -209,6 +232,11 @@ type Deps struct {
 	Unsubscribe Unsubscribes
 	// Scanner checks attachments; nil is NoScan.
 	Scanner Scanner
+	// Secrets and SecretCipher keep the live secrets of
+	// authentication-class messages for retries. Without them such a
+	// message is refused, never stored with its secrets.
+	Secrets      SecretStore
+	SecretCipher Cipher
 }
 
 // Config tunes sending and retention.
