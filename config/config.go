@@ -6,6 +6,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"os"
@@ -267,11 +268,29 @@ type KeyManager struct {
 	Vault  KeyManagerVaultTransit  `yaml:"vault_transit"`
 }
 
-// Retention purges message bodies (contract §6: default 30 days).
+// Retention purges message bodies (contract §6: default 30 days, at most
+// 90). It never applies to the audit log, whose retention is Audit's.
 type Retention struct {
 	MessageDays   int           `yaml:"message_days" env:"MESSAGE_RETENTION_DAYS" env-default:"30"`
 	PurgeInterval time.Duration `yaml:"purge_interval" env:"MESSAGE_RETENTION_INTERVAL" env-default:"1h"`
 	PurgeBatch    int           `yaml:"purge_batch" env:"MESSAGE_RETENTION_BATCH" env-default:"1000"`
+	// MessageDigestKey is the base64 key (at least 32 bytes) of the keyed
+	// digest kept as evidence of what each message was sent with. Required
+	// in production; elsewhere, unset records no digest.
+	MessageDigestKey string `yaml:"message_digest_key" env:"MESSAGE_DIGEST_KEY" env-default:""`
+}
+
+// DigestKey decodes MessageDigestKey; nil when unset.
+func (r Retention) DigestKey() ([]byte, error) {
+	raw := strings.TrimSpace(r.MessageDigestKey)
+	if raw == "" {
+		return nil, nil
+	}
+	key, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil || len(key) < 32 {
+		return nil, fmt.Errorf("MESSAGE_DIGEST_KEY must be base64 of at least 32 bytes")
+	}
+	return key, nil
 }
 
 // Worker runs the asynq queues.
@@ -472,6 +491,11 @@ func (c *Config) Validate() error {
 	}
 	if c.Retention.PurgeInterval < time.Minute || c.Retention.PurgeBatch < 1 {
 		return fmt.Errorf("MESSAGE_RETENTION_INTERVAL must be at least 1m and MESSAGE_RETENTION_BATCH positive")
+	}
+	if key, err := c.Retention.DigestKey(); err != nil {
+		return err
+	} else if key == nil && c.App.IsProduction() {
+		return fmt.Errorf("MESSAGE_DIGEST_KEY is required in production (evidence of what each message was sent with)")
 	}
 	if c.Audit.RetentionDays < 365 && c.App.IsProduction() {
 		return fmt.Errorf("AUDIT_RETENTION_DAYS must be at least 365 in production (PCI DSS 10.5.1)")
