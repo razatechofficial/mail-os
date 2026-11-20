@@ -467,8 +467,8 @@ func (c *Config) Validate() error {
 	if err := c.KeyManager.validate(); err != nil {
 		return err
 	}
-	if c.Retention.MessageDays < 1 || c.Retention.MessageDays > 3650 {
-		return fmt.Errorf("MESSAGE_RETENTION_DAYS must be between 1 and 3650")
+	if c.Retention.MessageDays < 1 || c.Retention.MessageDays > 90 {
+		return fmt.Errorf("MESSAGE_RETENTION_DAYS must be between 1 and 90")
 	}
 	if c.Retention.PurgeInterval < time.Minute || c.Retention.PurgeBatch < 1 {
 		return fmt.Errorf("MESSAGE_RETENTION_INTERVAL must be at least 1m and MESSAGE_RETENTION_BATCH positive")

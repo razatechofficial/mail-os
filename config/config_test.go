@@ -80,6 +80,7 @@ func TestLoadRefusesUnsafeProduction(t *testing.T) {
 		{"redis without TLS", map[string]string{"REDIS_TLS": "false"}, "REDIS_TLS"},
 		{"short audit retention", map[string]string{"AUDIT_RETENTION_DAYS": "90"}, "AUDIT_RETENTION_DAYS"},
 		{"unsigned audit log", map[string]string{"AUDIT_DIGEST_SIGNING_KEY": ""}, "AUDIT_DIGEST_SIGNING_KEY"},
+		{"message retention past 90 days", map[string]string{"MESSAGE_RETENTION_DAYS": "91"}, "MESSAGE_RETENTION_DAYS"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
