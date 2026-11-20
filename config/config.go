@@ -273,6 +273,11 @@ type Retention struct {
 	MessageDays   int           `yaml:"message_days" env:"MESSAGE_RETENTION_DAYS" env-default:"30"`
 	PurgeInterval time.Duration `yaml:"purge_interval" env:"MESSAGE_RETENTION_INTERVAL" env-default:"1h"`
 	PurgeBatch    int           `yaml:"purge_batch" env:"MESSAGE_RETENTION_BATCH" env-default:"1000"`
+	// SecretTTL is how long an authentication-class message's live code or
+	// link is kept, sealed, for retries: default 1 h, refused above 24 h
+	// (ADR 0001 §3.14 class (a)). It moves to the platform config store
+	// with the same bound.
+	SecretTTL time.Duration `yaml:"secret_ttl" env:"MESSAGE_SECRET_TTL" env-default:"1h"`
 }
 
 // Worker runs the asynq queues.
@@ -473,6 +478,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Retention.PurgeInterval < time.Minute || c.Retention.PurgeBatch < 1 {
 		return fmt.Errorf("MESSAGE_RETENTION_INTERVAL must be at least 1m and MESSAGE_RETENTION_BATCH positive")
+	}
+	if c.Retention.SecretTTL < time.Minute || c.Retention.SecretTTL > 24*time.Hour {
+		return fmt.Errorf("MESSAGE_SECRET_TTL must be between 1m and 24h")
 	}
 	if c.Audit.RetentionDays < 365 && c.App.IsProduction() {
 		return fmt.Errorf("AUDIT_RETENTION_DAYS must be at least 365 in production (PCI DSS 10.5.1)")

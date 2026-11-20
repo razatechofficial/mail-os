@@ -170,7 +170,7 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 		c.PublicRoutes = append(c.PublicRoutes, handler.NewUnsubscribeHandler(unsub, c.Redis, cfg.Unsubscribe.RatePerMinute))
 	}
 	c.Messages = appmessage.NewService(deps, appmessage.Config{MaxAttempts: cfg.Worker.MaxRetry + 1,
-		RetentionDays: cfg.Retention.MessageDays, PurgeBatch: cfg.Retention.PurgeBatch, DefaultFrom: cfg.SMTP.FromAddr,
+		RetentionDays: cfg.Retention.MessageDays, SecretTTL: cfg.Retention.SecretTTL, PurgeBatch: cfg.Retention.PurgeBatch, DefaultFrom: cfg.SMTP.FromAddr,
 		StaleSending: 3*cfg.Worker.SendTimeout + time.Minute,
 		Attachments: domainmsg.AttachmentLimits{MaxBytes: cfg.Attachments.MaxBytes, MaxTotalBytes: cfg.Attachments.MaxTotalBytes,
 			MaxCount: cfg.Attachments.MaxCount, AllowedTypes: cfg.Attachments.AllowedTypes, BlockedTypes: cfg.Attachments.BlockedTypes,

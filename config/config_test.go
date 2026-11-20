@@ -81,6 +81,7 @@ func TestLoadRefusesUnsafeProduction(t *testing.T) {
 		{"short audit retention", map[string]string{"AUDIT_RETENTION_DAYS": "90"}, "AUDIT_RETENTION_DAYS"},
 		{"unsigned audit log", map[string]string{"AUDIT_DIGEST_SIGNING_KEY": ""}, "AUDIT_DIGEST_SIGNING_KEY"},
 		{"message retention past 90 days", map[string]string{"MESSAGE_RETENTION_DAYS": "91"}, "MESSAGE_RETENTION_DAYS"},
+		{"secret kept past 24 h", map[string]string{"MESSAGE_SECRET_TTL": "24h1m"}, "MESSAGE_SECRET_TTL"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
