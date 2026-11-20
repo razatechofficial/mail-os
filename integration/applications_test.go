@@ -177,7 +177,8 @@ func appMessageService(e appsEnv, platform mailer.Sender, webhooks appmessage.No
 		Suppressions: appsuppression.NewService(postgres.NewSuppressionRepository(e.db), e.audit), Tenants: e.tenants,
 		Templates: templates{}, Versions: templates{}, Branding: templates{}, Render: renderContent, Sender: routerSender{router},
 		Webhooks: webhooks, Stats: analytics.NewService(postgres.NewStatsRepository(e.db)), Audit: e.audit,
-		Secrets: postgres.NewMessageSecretRepository(e.db), SecretCipher: e.keys.Cipher(domainkm.PurposeMessageSecret)},
+		Secrets: postgres.NewMessageSecretRepository(e.db), SecretCipher: e.keys.Cipher(domainkm.PurposeMessageSecret),
+		Evidence: e.keys.Evidence()},
 		appmessage.Config{MaxAttempts: 3, RetentionDays: 30, DefaultFrom: "noreply@platform.example"})
 }
 

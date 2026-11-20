@@ -25,7 +25,7 @@ func TestAttachmentsStoredDeliveredAndPurged(t *testing.T) {
 	svc := appmessage.NewService(appmessage.Deps{Repo: postgres.NewMessageRepository(e.db), Queue: nopQueue{},
 		Suppressions: appsuppression.NewService(postgres.NewSuppressionRepository(e.db), e.audit), Tenants: e.tenants,
 		Render: renderContent, Sender: routerSender{mailer.NewRouter(provSource{providers}, sink, mailer.Options{})},
-		Audit: e.audit}, appmessage.Config{MaxAttempts: 3, RetentionDays: 30,
+		Audit: e.audit, Evidence: e.keys.Evidence()}, appmessage.Config{MaxAttempts: 3, RetentionDays: 30,
 		Attachments: domainmsg.AttachmentLimits{MaxBytes: 1 << 20, MaxTotalBytes: 2 << 20, MaxCount: 5}})
 	ctx := context.Background()
 	to := "files-" + e.tenant[:8] + "@example.com"

@@ -4,7 +4,9 @@ package integration
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"strings"
 	"sync/atomic"
@@ -265,12 +267,10 @@ func messageService(e msgEnv, platform mailer.Sender) *appmessage.Service {
 		Suppressions: appsuppression.NewService(postgres.NewSuppressionRepository(e.db), e.audit), Tenants: e.tenants,
 		Templates: templates{}, Versions: templates{}, Branding: templates{}, Render: renderContent, Sender: routerSender{router},
 		Stats: analytics.NewService(postgres.NewStatsRepository(e.db)), Audit: e.audit,
-		Secrets: postgres.NewMessageSecretRepository(e.db), SecretCipher: e.keys.Cipher(domainkm.PurposeMessageSecret)},
-		appmessage.Config{MaxAttempts: 3, RetentionDays: 30, DefaultFrom: "noreply@platform.example", DigestKey: digestKey})
+		Secrets: postgres.NewMessageSecretRepository(e.db), SecretCipher: e.keys.Cipher(domainkm.PurposeMessageSecret),
+		Evidence: e.keys.Evidence()},
+		appmessage.Config{MaxAttempts: 3, RetentionDays: 30, DefaultFrom: "noreply@platform.example"})
 }
-
-// digestKey keys the evidence digests in these tests.
-var digestKey = []byte("integration-digest-key-0123456789")
 
 // platformFrom is the e2e sink's platform sender, as the container passes it.
 var platformFrom = domainmsg.Address{Name: "Platform", Email: "noreply@platform.example"}
@@ -327,8 +327,17 @@ func TestSendRetryAndPurge(t *testing.T) {
 		t.Fatal("secrets kept after the send")
 	}
 	stored, _ = postgres.NewMessageRepository(e.db).Get(ctx, e.tenant, m.ID)
-	if !stored.SentDigest.Verify(digestKey, got[0].Subject, got[0].Text, got[0].HTML) || stored.TemplateVersionID == "" || stored.TemplateID == "" {
+	if ok, err := stored.SentDigest.Verify(ctx, e.keys.Evidence(), got[0].Subject, got[0].Text, got[0].HTML); !ok || err != nil ||
+		stored.TemplateVersionID == "" || stored.TemplateID == "" {
 		t.Fatalf("sent digest %+v does not verify, or no template version", stored.SentDigest)
+	}
+	// It is keyed: a bare SHA-256 of what was sent does not give it, and the
+	// key schedule keeps the evidence key while the hash names it.
+	if bare := sha256.Sum256([]byte(got[0].Text)); hex.EncodeToString(bare[:]) == stored.SentDigest.Text {
+		t.Fatal("the stored hash is a bare SHA-256")
+	}
+	if n, err := postgres.NewMessageRepository(e.db).EvidenceColumn().CountByKID(ctx, stored.SentDigest.KeyID); err != nil || n < 1 {
+		t.Fatalf("evidence key not counted: %d %v", n, err)
 	}
 	v, _ := svc.Get(ctx, e.tenant, m.ID)
 	if !v.AuthClass || v.TemplateData["code"] != "[redacted: code, 6 characters]" {
