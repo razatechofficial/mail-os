@@ -132,6 +132,45 @@ func TestSecretsSealedAtRest(t *testing.T) {
 	}
 }
 
+// recordingPoster answers every post with status and keeps the headers.
+type recordingPoster struct {
+	status  int
+	headers []map[string]string
+}
+
+func (p *recordingPoster) Post(_ context.Context, _ string, headers map[string]string, _ []byte) (int, error) {
+	p.headers = append(p.headers, headers)
+	return p.status, nil
+}
+
+// A queued delivery reads back with its webhook and sealed secret, is
+// posted signed, and is marked delivered: the worker's path.
+func TestWebhookDeliveryIsPostedAndRecorded(t *testing.T) {
+	e := newMsgEnv(t)
+	ctx := context.Background()
+	repo := postgres.NewWebhookRepository(e.db)
+	post := &recordingPoster{status: 204}
+	hooks := appwebhook.NewService(repo, e.keys.Cipher(domainkm.PurposeWebhook), nopQueue{}, post, e.audit, appwebhook.Config{})
+	w, _, err := hooks.Create(ctx, e.tenant, appwebhook.Input{URL: "https://hooks.bank.example/d", Events: []string{"message.sent"}}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hooks.Notify(ctx, e.tenant, "", "message.sent", "", map[string]any{"status": "sent"}); err != nil {
+		t.Fatal(err)
+	}
+	id := e.raw(t, `SELECT id FROM webhook_deliveries WHERE webhook_id = $1`, w.ID)
+	if err := hooks.Deliver(ctx, id, false); err != nil {
+		t.Fatalf("deliver: %v", err)
+	}
+	if len(post.headers) != 1 || post.headers[0]["webhook-signature"] == "" {
+		t.Fatalf("posts %v", post.headers)
+	}
+	d, _, err := repo.Delivery(ctx, id)
+	if err != nil || d.Status != "delivered" || d.Attempts != 1 || d.StatusCode != 204 {
+		t.Fatalf("delivery %+v %v", d, err)
+	}
+}
+
 // Plaintext secrets written before sealing are sealed once at startup and
 // the plaintext cleared; a second run changes nothing.
 func TestLegacyPlaintextConversion(t *testing.T) {
