@@ -136,7 +136,7 @@ func (s *Service) Deliver(ctx context.Context, tenantID, id string) error {
 		}
 		if len(s.cfg.DigestKey) > 0 {
 			// Evidence of what was sent: of the full content, never stored.
-			m.SentDigest = domainmsg.SentDigest(s.cfg.DigestKey, out.Subject, out.Text, out.HTML)
+			m.SentDigest = domainmsg.NewSentDigest(s.cfg.DigestKey, out.Subject, out.Text, out.HTML)
 		}
 		if _, err := s.update(ctx, m, domainmsg.StatusSending); err != nil {
 			return err

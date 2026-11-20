@@ -261,9 +261,9 @@ func TestDeliverRendersSignsAndCounts(t *testing.T) {
 	}
 	// The evidence digest is of what the relay got, with the template
 	// version that reproduces it; the redacted copy alone does not verify.
-	if !domainmsg.VerifySentDigest(testDigestKey, got.SentDigest, out.Subject, out.Text, out.HTML) || got.TemplateVersionID != "ver-3" ||
-		domainmsg.VerifySentDigest(testDigestKey, got.SentDigest, got.Subject, got.TextBody, got.HTMLBody) {
-		t.Fatalf("sent digest %q", got.SentDigest)
+	if !got.SentDigest.Verify(testDigestKey, out.Subject, out.Text, out.HTML) || got.TemplateVersionID != "ver-3" ||
+		got.SentDigest.Verify(testDigestKey, got.Subject, got.TextBody, got.HTMLBody) {
+		t.Fatalf("sent digest %+v", got.SentDigest)
 	}
 	// It survives the retention purge with the envelope.
 	purged := got

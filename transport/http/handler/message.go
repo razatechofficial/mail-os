@@ -247,7 +247,7 @@ type messageView struct {
 	AuthClass bool `json:"auth_class"`
 	// SentDigest is the keyed digest of the content the provider accepted:
 	// evidence of what was sent (never the content itself).
-	SentDigest string `json:"sent_digest,omitempty"`
+	SentDigest *domainmsg.SentDigest `json:"sent_digest,omitempty"`
 	// Attachments describe the files (never their content); only a single
 	// message's view lists them.
 	Attachments  []attachmentView `json:"attachments,omitempty"`
@@ -290,7 +290,7 @@ func messageViewOf(v appmsg.View) messageView {
 	return messageView{Attachments: attachmentViews(m.Attachments), ID: m.ID, ApplicationID: m.ApplicationID, Sandbox: m.Sandbox, Stream: string(m.Stream), CampaignID: m.CampaignID, FromName: m.FromName, FromEmail: m.FromEmail, ToEmail: m.ToEmail,
 		ToName: m.ToName, ReplyTo: m.ReplyTo, Subject: m.Subject, Type: string(m.Type), Status: string(m.Status),
 		Priority: int(m.Priority), Tags: tags, Metadata: m.Metadata, Topic: m.Topic, TemplateID: m.TemplateID,
-		TemplateVersionID: m.TemplateVersionID, Locale: m.Locale, TemplateData: m.TemplateData, AuthClass: v.AuthClass, SentDigest: m.SentDigest, EventID: m.EventID,
+		TemplateVersionID: m.TemplateVersionID, Locale: m.Locale, TemplateData: m.TemplateData, AuthClass: v.AuthClass, SentDigest: sentDigestOf(m.SentDigest), EventID: m.EventID,
 		ActorType: string(m.Actor.Type), ActorID: m.Actor.ID, ProviderID: m.ProviderID, ProviderMessageID: m.ProviderMessageID,
 		Attempts: m.Attempts, LastError: m.LastError, HasBody: m.BodyPurgedAt == nil && (m.HTMLBody != "" || m.TextBody != ""),
 		ScheduledAt: m.ScheduledAt, SentAt: m.SentAt, DeliveredAt: m.DeliveredAt, BouncedAt: m.BouncedAt, FailedAt: m.FailedAt,
@@ -376,4 +376,12 @@ func (h *MessageHandler) Resend(c *gin.Context) {
 		return
 	}
 	response.Created(c, appmsg.Result{MessageID: m.ID, Status: string(m.Status)})
+}
+
+// sentDigestOf is the digest for the view; none before a send.
+func sentDigestOf(d domainmsg.SentDigest) *domainmsg.SentDigest {
+	if d.IsZero() {
+		return nil
+	}
+	return &d
 }
