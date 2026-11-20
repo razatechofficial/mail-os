@@ -5,10 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	appkm "github.com/razatechofficial/mail-os/application/keymanager"
 	"github.com/razatechofficial/mail-os/application/tenant"
 	"github.com/razatechofficial/mail-os/domain/access"
-	domainkm "github.com/razatechofficial/mail-os/domain/keymanager"
 	domaintenant "github.com/razatechofficial/mail-os/domain/tenant"
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
 	"github.com/razatechofficial/mail-os/pkg/pagination"
@@ -17,37 +15,18 @@ import (
 )
 
 // TenantHandler serves the caller's identity, the tenant record and its
-// security settings, and the encryption key status.
+// security settings. The deployment's encryption keys are not a tenant's:
+// no tenant role, the operator tenant's included, reaches them here (ADR
+// 0001 §3.9); scheduled data-key rotation keeps running in the worker, and
+// manual rotation returns on the platform API with two custodians.
 type TenantHandler struct {
 	tenants *tenant.Service
 	repo    tenant.Repository
-	keys    *appkm.Service
-	// operatorTenant is the only tenant whose administrators manage the
-	// encryption keys: data keys and KEKs belong to the deployment and
-	// seal every tenant's secrets. Empty refuses every key route.
-	operatorTenant string
 }
 
 // NewTenantHandler builds the handler.
-func NewTenantHandler(tenants *tenant.Service, repo tenant.Repository, keys *appkm.Service) *TenantHandler {
-	return &TenantHandler{tenants: tenants, repo: repo, keys: keys}
-}
-
-// WithOperatorTenant names the tenant whose administrators manage the
-// deployment's encryption keys (IAM_SERVICE_TENANT_ID).
-func (h *TenantHandler) WithOperatorTenant(tenantID string) *TenantHandler {
-	h.operatorTenant = tenantID
-	return h
-}
-
-// operatorOnly refuses the key routes to every tenant but the operator's.
-func (h *TenantHandler) operatorOnly(c *gin.Context) {
-	if h.operatorTenant == "" || middleware.PrincipalFrom(c).TenantID != h.operatorTenant {
-		response.FromError(c, apperrors.Forbidden("only the operator tenant's administrators manage the encryption keys"))
-		c.Abort()
-		return
-	}
-	c.Next()
+func NewTenantHandler(tenants *tenant.Service, repo tenant.Repository) *TenantHandler {
+	return &TenantHandler{tenants: tenants, repo: repo}
 }
 
 // Mount registers the routes.
@@ -57,10 +36,6 @@ func (h *TenantHandler) Mount(api *gin.RouterGroup, g middleware.Guard) {
 	api.GET("/organizations/:id", g.Require(access.PermSettingsRead), h.GetOrganization)
 	api.GET("/tenant/settings", g.Require(access.PermSettingsRead), h.GetSettings)
 	api.PUT("/tenant/settings", g.Require(access.PermSettingsManage), h.UpdateSettings)
-	api.GET("/keys/encryption", g.Require(access.PermSettingsManage), h.operatorOnly, h.EncryptionKeys)
-	api.POST("/keys/encryption/:purpose/rotate", g.Require(access.PermSettingsManage), h.operatorOnly, h.RotateKey)
-	api.GET("/keys/kek", g.Require(access.PermSettingsManage), h.operatorOnly, h.KEKStatus)
-	api.POST("/keys/kek/rotate", g.Require(access.PermSettingsManage), h.operatorOnly, h.RotateKEK)
 }
 
 type meView struct {
@@ -160,60 +135,4 @@ func (h *TenantHandler) UpdateSettings(c *gin.Context) {
 		return
 	}
 	response.OK(c, s)
-}
-
-// EncryptionKeys is GET /keys/encryption: keys per purpose and how many
-// values each still seals, never key material.
-func (h *TenantHandler) EncryptionKeys(c *gin.Context) {
-	st, err := h.keys.Status(c.Request.Context())
-	if err != nil {
-		response.FromError(c, err)
-		return
-	}
-	response.OK(c, st)
-}
-
-// RotateKey is POST /keys/encryption/:purpose/rotate (mailos_admin, step-up).
-func (h *TenantHandler) RotateKey(c *gin.Context) {
-	purpose := domainkm.Purpose(c.Param("purpose"))
-	if !purpose.Valid() {
-		response.FromError(c, apperrors.Invalid("purpose", "invalid", "unknown key purpose"))
-		return
-	}
-	k, err := h.keys.Rotate(c.Request.Context(), purpose, middleware.PrincipalFrom(c).Actor())
-	if err != nil {
-		response.FromError(c, err)
-		return
-	}
-	response.Created(c, appkm.KeyStatus{KID: k.KID, State: k.State, Provider: k.Provider, CreatedAt: k.CreatedAt})
-}
-
-// KEKStatus is GET /keys/kek: the key-encryption keys (by id, never
-// material), how many data keys each wraps, and the KEK rotations.
-func (h *TenantHandler) KEKStatus(c *gin.Context) {
-	st, err := h.keys.KEKStatus(c.Request.Context())
-	if err != nil {
-		response.FromError(c, err)
-		return
-	}
-	response.OK(c, st)
-}
-
-type rotateKEKInput struct {
-	Reason string `json:"reason" binding:"max=500"`
-}
-
-// RotateKEK is POST /keys/kek/rotate (mailos_admin, step-up): re-wrap every
-// data key under the new KEK configured on every replica.
-func (h *TenantHandler) RotateKEK(c *gin.Context) {
-	var in rotateKEKInput
-	if !bind(c, &in) {
-		return
-	}
-	r, err := h.keys.StartKEKRotation(c.Request.Context(), middleware.PrincipalFrom(c).Actor(), in.Reason)
-	if err != nil {
-		response.FromError(c, err)
-		return
-	}
-	response.Created(c, appkm.RotationStatus(*r))
 }
