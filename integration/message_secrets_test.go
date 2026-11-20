@@ -67,10 +67,10 @@ func TestMessageSecretsSealed(t *testing.T) {
 	if n, err := repo.SealedColumn().CountByKID(ctx, strings.Split(got, ".")[1]); err != nil || n < 1 {
 		t.Fatalf("sealed column count %d %v", n, err)
 	}
-	// More than an hour is refused by the table itself.
+	// More than 24 hours is refused by the table itself.
 	other := storeMessage(t, e)
-	if err := repo.Put(ctx, e.tenant, other, sealed, now, now.Add(61*time.Minute)); err == nil {
-		t.Fatal("a secret kept longer than an hour was stored")
+	if err := repo.Put(ctx, e.tenant, other, sealed, now, now.Add(24*time.Hour+time.Minute)); err == nil {
+		t.Fatal("a secret kept longer than 24 hours was stored")
 	}
 
 	if err := repo.Delete(ctx, e.tenant, id); err != nil {
