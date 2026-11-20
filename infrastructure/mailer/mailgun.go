@@ -73,6 +73,12 @@ func (m *Mailgun) Send(ctx context.Context, out message.Outgoing) (Result, error
 	if out.MessageID != "" {
 		form.Set("v:mailos_message_id", out.MessageID)
 	}
+	if out.NoTracking {
+		// Per-message options override the domain's tracking settings.
+		form.Set("o:tracking", "no")
+		form.Set("o:tracking-clicks", "no")
+		form.Set("o:tracking-opens", "no")
+	}
 	payload, ctype := []byte(form.Encode()), "application/x-www-form-urlencoded"
 	if len(out.Attachments) > 0 {
 		payload, ctype = multipartForm(form, out.Attachments)

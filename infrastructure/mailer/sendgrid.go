@@ -64,6 +64,22 @@ type sgRequest struct {
 	Categories  []string          `json:"categories,omitempty"`
 	CustomArgs  map[string]string `json:"custom_args,omitempty"`
 	Attachments []sgAttachment    `json:"attachments,omitempty"`
+	// TrackingSettings turns tracking off for the message (NoTracking).
+	TrackingSettings *sgTracking `json:"tracking_settings,omitempty"`
+}
+
+// sgSwitch is one of SendGrid's tracking settings.
+type sgSwitch struct {
+	Enable     bool  `json:"enable"`
+	EnableText *bool `json:"enable_text,omitempty"`
+}
+
+// sgTracking is tracking_settings: click (HTML and text), open and
+// subscription tracking, each off per message (v3 mail/send).
+type sgTracking struct {
+	ClickTracking        sgSwitch `json:"click_tracking"`
+	OpenTracking         sgSwitch `json:"open_tracking"`
+	SubscriptionTracking sgSwitch `json:"subscription_tracking"`
 }
 
 type sgAttachment struct {
@@ -92,6 +108,10 @@ func (s *SendGrid) Send(ctx context.Context, out message.Outgoing) (Result, erro
 	}
 	if !out.ReplyTo.IsZero() {
 		body.ReplyTo = &sgAddress{Email: out.ReplyTo.Email, Name: out.ReplyTo.Name}
+	}
+	if out.NoTracking {
+		off := false
+		body.TrackingSettings = &sgTracking{ClickTracking: sgSwitch{EnableText: &off}}
 	}
 	// text/plain must come before text/html.
 	if out.Text != "" {

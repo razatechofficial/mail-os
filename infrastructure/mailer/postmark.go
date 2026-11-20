@@ -53,7 +53,11 @@ type pmRequest struct {
 	Tag           string            `json:"Tag,omitempty"`
 	Metadata      map[string]string `json:"Metadata,omitempty"`
 	MessageStream string            `json:"MessageStream"`
-	Attachments   []pmAttachment    `json:"Attachments,omitempty"`
+	// TrackOpens and TrackLinks are sent only to turn tracking off
+	// (NoTracking); left out, the server's defaults apply.
+	TrackOpens  *bool          `json:"TrackOpens,omitempty"`
+	TrackLinks  string         `json:"TrackLinks,omitempty"`
+	Attachments []pmAttachment `json:"Attachments,omitempty"`
 }
 
 // pmAttachment is a file; an inline one's ContentID is "cid:<id>".
@@ -97,6 +101,10 @@ func (p *Postmark) Send(ctx context.Context, out message.Outgoing) (Result, erro
 	}
 	if out.MessageID != "" {
 		body.Metadata = map[string]string{"mailos_message_id": out.MessageID}
+	}
+	if out.NoTracking {
+		off := false
+		body.TrackOpens, body.TrackLinks = &off, "None"
 	}
 	for _, a := range out.Attachments {
 		f := pmAttachment{Name: a.Filename, Content: b64(a.Data), ContentType: a.ContentType}
