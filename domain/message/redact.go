@@ -174,3 +174,31 @@ func setPath(data map[string]any, key string, val any) {
 	}
 	cur[segs[len(segs)-1]] = val
 }
+
+// ScrubError returns err with the live values replaced in its text. A
+// SendError keeps its classification (reason, provider, status, wait), so
+// the queue and the router still treat it the same; the wrapped error
+// stays reachable for errors.Is.
+func (s Secrets) ScrubError(err error) error {
+	if err == nil || len(s) == 0 {
+		return err
+	}
+	if se, ok := AsSendError(err); ok {
+		c := *se
+		c.Detail = s.Scrub(c.Detail)
+		if c.Err != nil {
+			c.Err = scrubbedError{msg: s.Scrub(c.Err.Error()), err: c.Err}
+		}
+		return &c
+	}
+	return scrubbedError{msg: s.Scrub(err.Error()), err: err}
+}
+
+// scrubbedError is an error whose text had live values replaced.
+type scrubbedError struct {
+	msg string
+	err error
+}
+
+func (e scrubbedError) Error() string { return e.msg }
+func (e scrubbedError) Unwrap() error { return e.err }

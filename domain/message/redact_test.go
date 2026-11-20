@@ -1,6 +1,9 @@
 package message
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -132,5 +135,29 @@ func TestAuthClassMessage(t *testing.T) {
 	m.Topic = tpl.TopicApprovalRequested
 	if m.AuthClass() {
 		t.Fatal("approval is authentication-class")
+	}
+}
+
+func TestScrubError(t *testing.T) {
+	s := Secrets{"code": "482913"}
+	se := &SendError{Provider: "smtp", Reason: ReasonRejected, Status: 550, Detail: "content 482913 refused",
+		Err: errors.New("550 body 482913")}
+	got := s.ScrubError(se)
+	out, ok := AsSendError(got)
+	if !ok || out.Reason != ReasonRejected || out.Status != 550 || out.Provider != "smtp" {
+		t.Fatalf("classification lost: %#v", got)
+	}
+	if strings.Contains(got.Error(), "482913") || strings.Contains(out.Err.Error(), "482913") || strings.Contains(SafeDetail(got), "482913") {
+		t.Fatalf("scrubbed error leaks: %v / %v", got, out.Err)
+	}
+	if se.Detail != "content 482913 refused" {
+		t.Fatal("original mutated")
+	}
+	wrapped := s.ScrubError(fmt.Errorf("send: %w (code 482913)", context.Canceled))
+	if !errors.Is(wrapped, context.Canceled) || strings.Contains(wrapped.Error(), "482913") {
+		t.Fatalf("plain error: %v", wrapped)
+	}
+	if Secrets(nil).ScrubError(se) != error(se) {
+		t.Fatal("nil secrets changed the error")
 	}
 }
