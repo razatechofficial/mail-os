@@ -28,9 +28,10 @@ const sampleDesign = `{
     {"type": "image", "attrs": {"src": "https://cdn.example.com/a.png", "href": "https://example.com"}},
     {"type": "divider"},
     {"type": "spacer", "attrs": {"height": 24}},
+    {"type": "details", "attrs": {"rows": [{"label": "Amount", "value": "PKR {{txn.amount}}"}, {"label": "Reference"}]}},
     {"type": "columns", "attrs": {"count": 2}, "content": [
       {"type": "column", "content": [{"type": "button", "attrs": {"href": "https://example.com/a"}}]},
-      {"type": "column", "content": [{"type": "text", "content": []}]}
+      {"type": "column", "content": [{"type": "text", "content": []}, {"type": "details"}]}
     ]},
     {"type": "footer", "attrs": {"show_unsubscribe": true}}
   ]
@@ -78,6 +79,11 @@ func TestValidateDesign_refuses(t *testing.T) {
 		"link js":           {block(`{"type":"text","content":[{"type":"paragraph","content":[{"type":"text","text":"x","marks":[{"type":"link","attrs":{"href":" javascript:alert(1)"}}]}]}]}`), "design.content[0].content[0].content[0].marks[0].attrs.href", CodeInvalidURL},
 		"variable key":      {block(`{"type":"text","content":[{"type":"paragraph","content":[{"type":"variable","attrs":{"key":".Foo"}}]}]}`), "design.content[0].content[0].content[0].attrs.key", CodeInvalidVariable},
 		"raw html":          {block(`{"type":"spacer"},{"type":"html","attrs":{"html":"<b>x</b>"}}`), "design.content[1]", CodeRawHTML},
+		"details not list":  {block(`{"type":"details","attrs":{"rows":"x"}}`), "design.content[0].attrs.rows", CodeInvalidType},
+		"details row type":  {block(`{"type":"details","attrs":{"rows":[5]}}`), "design.content[0].attrs.rows[0]", CodeInvalidType},
+		"details extra key": {block(`{"type":"details","attrs":{"rows":[{"href":"x"}]}}`), "design.content[0].attrs.rows[0].href", CodeInvalid},
+		"details value int": {block(`{"type":"details","attrs":{"rows":[{"value":1}]}}`), "design.content[0].attrs.rows[0].value", CodeInvalidType},
+		"details content":   {block(`{"type":"details","content":[{"type":"paragraph"}]}`), "design.content[0].content", CodeInvalidNesting},
 		"unknown field":     {`{"type":"email","script":"x"}`, "design", CodeInvalid},
 		"not json":          {`{"type":`, "design", CodeInvalid},
 		"trailing data":     {`{"type":"email"} {}`, "design", CodeInvalid},
@@ -124,6 +130,23 @@ func TestValidateDesign_limits(t *testing.T) {
 	many := strings.Repeat(`{"type":"bogus"},`, 200)
 	if errs := ValidateDesign([]byte(block(many+`{"type":"spacer"}`)), DesignOptions{}); len(errs) != maxDesignErrors {
 		t.Fatalf("errors not capped: %d", len(errs))
+	}
+}
+
+func TestValidateDesign_detailLimits(t *testing.T) {
+	rows := strings.Repeat(`{"label":"a"},`, MaxDetailRows) + `{"label":"a"}`
+	errs := ValidateDesign([]byte(block(`{"type":"details","attrs":{"rows":[`+rows+`]}}`)), DesignOptions{})
+	if len(errs) != 1 || errs[0].Code != CodeTooMany {
+		t.Fatalf("too many rows: %+v", errs)
+	}
+	long := strings.Repeat("é", MaxDetailText+1)
+	errs = ValidateDesign([]byte(block(`{"type":"details","attrs":{"rows":[{"value":"`+long+`"}]}}`)), DesignOptions{})
+	if len(errs) != 1 || errs[0].Code != CodeTooLong || errs[0].Field != "design.content[0].attrs.rows[0].value" {
+		t.Fatalf("long value: %+v", errs)
+	}
+	ok := strings.Repeat("é", MaxDetailText)
+	if errs := ValidateDesign([]byte(block(`{"type":"details","attrs":{"rows":[{"value":"`+ok+`"}]}}`)), DesignOptions{}); errs != nil {
+		t.Fatalf("value at the limit refused: %+v", errs)
 	}
 }
 

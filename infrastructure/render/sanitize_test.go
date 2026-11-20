@@ -30,7 +30,10 @@ func checkSafe(t *testing.T, vector, out string) {
 	walk = func(n *html.Node) {
 		switch n.Type {
 		case html.CommentNode:
-			t.Errorf("vector %q: comment survived in %q", vector, out)
+			// Only an Outlook ghost table, exactly as MSOComment rebuilds it.
+			if kept, ok := MSOComment(n.Data); !ok || kept != n.Data {
+				t.Errorf("vector %q: comment survived in %q", vector, out)
+			}
 		case html.ElementNode:
 			if n.Namespace != "" || droppedElements[n.Data] || !keptElements[n.Data] {
 				t.Errorf("vector %q: element <%s> survived in %q", vector, n.Data, out)
@@ -152,6 +155,19 @@ var xssVectors = []string{
 	`<video><source onerror="alert(1)"></video>`,
 	`<marquee onstart=alert(1)>x</marquee>`,
 	`<a href="java&#0000009;script:alert(1)">x</a>`,
+	// Outlook conditional comments: only ghost tables survive.
+	`<!--[if mso]><script>alert(1)</script><![endif]-->`,
+	`<!--[if mso]><img src=x onerror=alert(1)><![endif]-->`,
+	`<!--[if mso]><table onload="alert(1)"><tr><td><![endif]-->`,
+	`<!--[if mso]><a href="javascript:alert(1)">x</a><![endif]-->`,
+	`<!--[if mso]><td style="width:expression(alert(1))"><![endif]-->`,
+	`<!--[if mso]><td style="background:url(http://tracker.example/p.gif)"><![endif]-->`,
+	`<!--[if mso]><table width="1"--><script>alert(1)</script><!--><![endif]-->`,
+	`<!--[if mso]><td title="&lt;script&gt;"><![endif]-->`,
+	`<!--[if mso]>text<![endif]-->`,
+	`<!--[if !mso]><!--><script>alert(1)</script><!--<![endif]-->`,
+	`<!--[if gte mso 9]><xml><o:OfficeDocumentSettings></o:OfficeDocumentSettings></xml><![endif]-->`,
+	`<!--[if mso]><v:roundrect href="https://example.com"></v:roundrect><![endif]-->`,
 }
 
 func TestSanitizeHTML_xssVectors(t *testing.T) {
@@ -189,6 +205,29 @@ func TestSanitizeHTML_keepsEmailLayout(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("lost %q\nin %s", want, out)
 		}
+	}
+}
+
+func TestSanitizeHTML_keepsOutlookGhostTables(t *testing.T) {
+	src := `<table role="presentation" width="100%"><tr><td>` +
+		`<!--[if mso]><table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->` +
+		`<div style="max-width:600px">x</div>` +
+		`<!--[if gte mso 9]></td><td width="16" style="font-size:0;line-height:0;">&nbsp;</td><td width="292" valign="top"><![endif]-->` +
+		`<!--[if mso]></td></tr></table><![endif]-->` +
+		`</td></tr></table>`
+	out := sanitize(t, src)
+	for _, want := range []string{
+		`<!--[if mso]><table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->`,
+		"<!--[if gte mso 9]></td><td width=\"16\" style=\"font-size:0;line-height:0;\">\u00a0</td><td width=\"292\" valign=\"top\"><![endif]-->",
+		`<!--[if mso]></td></tr></table><![endif]-->`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("lost %q\nin %s", want, out)
+		}
+	}
+	checkSafe(t, src, out)
+	if again := sanitize(t, out); again != out {
+		t.Errorf("not stable:\n  %q\n  %q", out, again)
 	}
 }
 

@@ -199,6 +199,17 @@ func TestRender_cssValueCannotBreakOut(t *testing.T) {
 	}
 }
 
+func TestRender_keepsOutlookGhostTables(t *testing.T) {
+	ghost := `<!--[if mso]><table role="presentation" width="600"><tr><td><![endif]-->`
+	out := render(t, Content{
+		HTML: `<div>` + ghost + `<p>Hi {{name}}</p><!-- note --><!--[if mso]></td></tr></table><![endif]--></div>`,
+	}, map[string]any{"name": "<b>Amna</b>"}, Options{})
+	want := `<div>` + ghost + `<p>Hi &lt;b&gt;Amna&lt;/b&gt;</p><!--[if mso]></td></tr></table><![endif]--></div>`
+	if out.HTML != want {
+		t.Fatalf("html = %q\nwant   %q", out.HTML, want)
+	}
+}
+
 func TestDelimitersAvoidContent(t *testing.T) {
 	l, r, err := delimiters("[[")
 	if err != nil || !strings.HasPrefix(l, "[[") || !strings.HasSuffix(r, "]]") || l == "[[" {

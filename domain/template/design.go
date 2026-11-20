@@ -7,13 +7,14 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
 )
 
 // The design is the designer's node tree, in the shape of Desk's designer:
 // an email node holding blocks (header, text, button, image, divider,
-// spacer, columns, footer), text blocks holding paragraphs, headings and
+// spacer, details, columns, footer), text blocks holding paragraphs, headings and
 // lists of inline text, variables and line breaks. The console compiles it
 // to HTML and plain text; the server stores it and validates it, and never
 // renders it.
@@ -26,20 +27,26 @@ const (
 	MaxDesignDepth = 32
 	// maxDesignErrors caps the details of one refusal.
 	maxDesignErrors = 50
+	// MaxDetailRows and MaxDetailText bound a details block's rows.
+	MaxDetailRows = 30
+	MaxDetailText = 500
 )
 
 // Node types.
 const (
-	NodeEmail       = "email"
-	NodeHeader      = "header"
-	NodeText        = "text" // a text block at block level, a run of text inline
-	NodeButton      = "button"
-	NodeImage       = "image"
-	NodeDivider     = "divider"
-	NodeSpacer      = "spacer"
-	NodeColumns     = "columns"
-	NodeColumn      = "column"
-	NodeFooter      = "footer"
+	NodeEmail   = "email"
+	NodeHeader  = "header"
+	NodeText    = "text" // a text block at block level, a run of text inline
+	NodeButton  = "button"
+	NodeImage   = "image"
+	NodeDivider = "divider"
+	NodeSpacer  = "spacer"
+	NodeColumns = "columns"
+	NodeColumn  = "column"
+	NodeFooter  = "footer"
+	// NodeDetails is a table of label and value rows (attrs.rows), such
+	// as a transaction's amount, account and reference.
+	NodeDetails     = "details"
 	NodeParagraph   = "paragraph"
 	NodeHeading     = "heading"
 	NodeBulletList  = "bulletList"
@@ -100,8 +107,8 @@ const (
 )
 
 var (
-	blockTypes  = []string{NodeHeader, NodeText, NodeButton, NodeImage, NodeDivider, NodeSpacer, NodeColumns, NodeFooter, NodeHTML}
-	columnTypes = []string{NodeText, NodeButton, NodeImage, NodeDivider, NodeSpacer, NodeHTML}
+	blockTypes  = []string{NodeHeader, NodeText, NodeButton, NodeImage, NodeDivider, NodeSpacer, NodeDetails, NodeColumns, NodeFooter, NodeHTML}
+	columnTypes = []string{NodeText, NodeButton, NodeImage, NodeDivider, NodeSpacer, NodeDetails, NodeHTML}
 	textTypes   = []string{NodeParagraph, NodeHeading, NodeBulletList, NodeOrderedList}
 	inlineTypes = []string{NodeText, NodeVariable, NodeHardBreak}
 	itemTypes   = []string{NodeParagraph, NodeBulletList, NodeOrderedList}
@@ -274,6 +281,8 @@ func (v *designValidator) attrs(n Node, path string) {
 		v.linkURL(n.Attrs, "href", path, false)
 	case NodeHeader:
 		v.imageURL(n.Attrs, "logo_url", path)
+	case NodeDetails:
+		v.detailRows(n.Attrs["rows"], path+".attrs.rows")
 	case NodeVariable:
 		key, ok := n.Attrs["key"].(string)
 		if !ok || !ValidKey(key) {
@@ -286,6 +295,45 @@ func (v *designValidator) attrs(n Node, path string) {
 		}
 		if _, ok := n.Attrs["html"].(string); !ok {
 			v.add(path+".attrs.html", CodeInvalidType, "html must be a string")
+		}
+	}
+}
+
+// detailRows checks a details block's rows: a list of at most
+// MaxDetailRows objects holding only a label and a value, each a string of
+// at most MaxDetailText characters. Values may hold placeholders.
+func (v *designValidator) detailRows(raw any, path string) {
+	if raw == nil {
+		return
+	}
+	rows, ok := raw.([]any)
+	if !ok {
+		v.add(path, CodeInvalidType, "rows must be a list")
+		return
+	}
+	if len(rows) > MaxDetailRows {
+		v.add(path, CodeTooMany, fmt.Sprintf("a details block has at most %d rows", MaxDetailRows))
+		return
+	}
+	for i, r := range rows {
+		at := fmt.Sprintf("%s[%d]", path, i)
+		row, ok := r.(map[string]any)
+		if !ok {
+			v.add(at, CodeInvalidType, "a row must be an object")
+			continue
+		}
+		for k, val := range row {
+			if k != "label" && k != "value" {
+				v.add(at+"."+k, CodeInvalid, "a row holds only label and value")
+				continue
+			}
+			s, ok := val.(string)
+			switch {
+			case !ok:
+				v.add(at+"."+k, CodeInvalidType, k+" must be a string")
+			case utf8.RuneCountInString(s) > MaxDetailText:
+				v.add(at+"."+k, CodeTooLong, fmt.Sprintf("%s is longer than %d characters", k, MaxDetailText))
+			}
 		}
 	}
 }
