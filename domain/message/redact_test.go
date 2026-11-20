@@ -111,8 +111,11 @@ func TestSecretExpiry(t *testing.T) {
 	if got := SecretExpiry(nil, now, 0); !got.Equal(now.Add(time.Hour)) {
 		t.Fatalf("default = %v", got)
 	}
-	if got := SecretExpiry(nil, now, 3*time.Hour); !got.Equal(now.Add(time.Hour)) {
-		t.Fatalf("ttl above an hour = %v", got)
+	if got := SecretExpiry(nil, now, 3*time.Hour); !got.Equal(now.Add(3 * time.Hour)) {
+		t.Fatalf("ttl of 3 h = %v", got)
+	}
+	if got := SecretExpiry(nil, now, 30*time.Hour); !got.Equal(now.Add(MaxSecretTTL)) {
+		t.Fatalf("ttl past the 24 h ceiling = %v", got)
 	}
 	if got := SecretExpiry(map[string]any{"expires_in_minutes": float64(10)}, now, time.Hour); !got.Equal(now.Add(10 * time.Minute)) {
 		t.Fatalf("minutes = %v", got)
@@ -122,7 +125,7 @@ func TestSecretExpiry(t *testing.T) {
 		t.Fatalf("expires_at = %v", got)
 	}
 	late := now.Add(48 * time.Hour).Format(time.RFC3339)
-	if got := SecretExpiry(map[string]any{"expires_at": late}, now, time.Hour); !got.Equal(now.Add(time.Hour)) {
+	if got := SecretExpiry(map[string]any{"expires_at": late}, now, 0); !got.Equal(now.Add(time.Hour)) {
 		t.Fatalf("late expires_at = %v", got)
 	}
 }

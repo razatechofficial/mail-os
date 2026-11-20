@@ -125,16 +125,24 @@ func (s Secrets) Scrub(text string) string {
 	return text
 }
 
-// DefaultSecretTTL is the longest a live secret is kept for retries.
-const DefaultSecretTTL = time.Hour
+// DefaultSecretTTL is how long a live secret is kept for retries unless
+// the platform sets otherwise; MaxSecretTTL is the product's hard ceiling
+// (NIST SP 800-63B-4 §4.2.2: an emailed recovery secret lives at most 24 h;
+// ADR 0001 §3.14 class (a)).
+const (
+	DefaultSecretTTL = time.Hour
+	MaxSecretTTL     = 24 * time.Hour
+)
 
 // SecretExpiry is when a message's live secrets must be gone: ttl after
-// now, or sooner when the event says its code or link expires sooner
-// (expires_at, expires_in_minutes). A secret past it is never sent.
+// now (DefaultSecretTTL when unset, never past MaxSecretTTL), or sooner
+// when the event says its code or link expires sooner (expires_at,
+// expires_in_minutes). A secret past it is never sent.
 func SecretExpiry(data map[string]any, now time.Time, ttl time.Duration) time.Time {
-	if ttl <= 0 || ttl > DefaultSecretTTL {
+	if ttl <= 0 {
 		ttl = DefaultSecretTTL
 	}
+	ttl = min(ttl, MaxSecretTTL)
 	at := now.Add(ttl)
 	if v, ok := lookup(data, "expires_at"); ok {
 		if s, ok := v.(string); ok {
