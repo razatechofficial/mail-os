@@ -10,12 +10,13 @@ import (
 )
 
 func TestIsSecretFieldKey(t *testing.T) {
-	for _, k := range []string{"password", "api_key", "redis_password", "Authorization", "code", "email_otp", "template_data", "link", "reset_link", "verify_link"} {
+	for _, k := range []string{"password", "api_key", "redis_password", "Authorization", "code", "email_otp", "template_data", "link", "reset_link", "verify_link",
+		"session", "sid", "session_id", "SessionID", "iam_session", "user.sid"} {
 		if !IsSecretFieldKey(k) {
 			t.Errorf("expected secret %q", k)
 		}
 	}
-	for _, k := range []string{"password_configured", "service.name", "path", "status_code"} {
+	for _, k := range []string{"password_configured", "service.name", "path", "status_code", "session_count", "considered", "linked_accounts"} {
 		if IsSecretFieldKey(k) {
 			t.Errorf("expected safe %q", k)
 		}

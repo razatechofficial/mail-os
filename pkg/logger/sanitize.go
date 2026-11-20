@@ -45,6 +45,12 @@ var secretKeySuffixes = []string{
 	"otp",
 	// Token-bearing links of authentication mail (reset_link, link).
 	"link",
+	// Session identifiers (session, sid, session_id, iam_session): a
+	// session ID is a bearer credential (ADR 0001 §3.14 class (f)).
+	"session",
+	"sid",
+	"session_id",
+	"sessionid",
 }
 
 const redactedValue = "***"
