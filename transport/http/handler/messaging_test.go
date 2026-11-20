@@ -16,6 +16,7 @@ import (
 	appprovider "github.com/razatechofficial/mail-os/application/provider"
 	"github.com/razatechofficial/mail-os/domain/access"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
+	domaintemplate "github.com/razatechofficial/mail-os/domain/template"
 	domainprovider "github.com/razatechofficial/mail-os/domain/provider"
 	domaintenant "github.com/razatechofficial/mail-os/domain/tenant"
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
@@ -91,10 +92,14 @@ func do(r *gin.Engine, method, path string, body any) *httptest.ResponseRecorder
 	return w
 }
 
+// redactedCode is how a stored authentication message holds its code.
+const redactedCode = "[redacted: code, 6 characters]"
+
 func otpMessage() domainmsg.Message {
-	return domainmsg.Message{ID: "m1", OrgID: testTenant, ToEmail: "ana@example.com", Subject: "Code 482913",
-		HTMLBody: "<p>482913</p>", Type: domainmsg.TypeTransactional, Status: domainmsg.StatusSent,
-		TemplateData: map[string]any{"code": "482913"}, SecretKeys: []string{"code"}, CreatedAt: time.Now()}
+	return domainmsg.Message{ID: "m1", OrgID: testTenant, ToEmail: "ana@example.com", Subject: "Code " + redactedCode,
+		HTMLBody: "<p>" + redactedCode + "</p>", Type: domainmsg.TypeTransactional, Status: domainmsg.StatusSent,
+		Topic: domaintemplate.TopicMFAEmailCode, TemplateData: map[string]any{"code": redactedCode}, SecretKeys: []string{"code"},
+		CreatedAt: time.Now()}
 }
 
 func messageHandler(a *recAudit) *MessageHandler {
@@ -117,7 +122,7 @@ func TestBodyNeedsRoleAndStepUp(t *testing.T) {
 		t.Fatal("a refused read was audited as viewed")
 	}
 	w = do(engine(t, h, []access.Role{access.RoleAuditor}, time.Minute, access.ACRMFA), "GET", "/api/v1/messages/m1/body", nil)
-	if w.Code != http.StatusOK || strings.Contains(w.Body.String(), "482913") || a.actions[0] != "message.body_viewed" || w.Header().Get("Cache-Control") != "no-store" {
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "[redacted: code") || a.actions[0] != "message.body_viewed" || w.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("fresh auditor: %d %s %v", w.Code, w.Body, a.actions)
 	}
 }
@@ -126,9 +131,15 @@ func TestMessageGetAndListHideBodiesAndSecrets(t *testing.T) {
 	r := engine(t, messageHandler(&recAudit{}), []access.Role{access.RoleViewer}, time.Hour, access.ACRPassword)
 	for _, path := range []string{"/api/v1/messages/m1", "/api/v1/messages"} {
 		w := do(r, "GET", path, nil)
-		if w.Code != http.StatusOK || strings.Contains(w.Body.String(), "482913") || strings.Contains(w.Body.String(), "html_body") {
+		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"auth_class":true`) ||
+			!strings.Contains(w.Body.String(), "[redacted: code") || strings.Contains(w.Body.String(), "html_body") {
 			t.Fatalf("%s: %d %s", path, w.Code, w.Body)
 		}
+	}
+	// Authentication mail is never resent, by any role.
+	op := engine(t, messageHandler(&recAudit{}), []access.Role{access.RoleAdmin}, time.Minute, access.ACRMFA)
+	if w := do(op, "POST", "/api/v1/messages/m1/resend", nil); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "fresh code") {
+		t.Fatalf("resend: %d %s", w.Code, w.Body)
 	}
 	if w := do(r, "POST", "/api/v1/messages/send", map[string]any{"to_email": "a@example.com"}); w.Code != http.StatusForbidden {
 		t.Fatalf("viewer sent mail: %d", w.Code)

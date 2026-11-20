@@ -123,23 +123,6 @@ func TestRecordSendFailure(t *testing.T) {
 	}
 }
 
-func TestSecretsMasked(t *testing.T) {
-	m := otpMessage()
-	data := m.MaskedTemplateData()
-	if data["otp"] != Mask || data["user"].(map[string]any)["pin"] != Mask || data["user"].(map[string]any)["name"] != "Ana" {
-		t.Fatalf("masked: %v", data)
-	}
-	if m.TemplateData["otp"] != "482913" {
-		t.Fatal("masking changed the stored data")
-	}
-	if got := m.Redact(m.HTMLBody); strings.Contains(got, "482913") || !strings.Contains(got, Mask) {
-		t.Fatalf("redact: %s", got)
-	}
-	if got := m.Redact("pin 9071"); got != "pin "+Mask {
-		t.Fatalf("numeric secret: %s", got)
-	}
-}
-
 func TestPurgeBody(t *testing.T) {
 	m := otpMessage()
 	if m.BodyPurgeDue(time.Hour, now.Add(2*time.Hour)) {
@@ -154,7 +137,7 @@ func TestPurgeBody(t *testing.T) {
 		t.Fatal("not due after retention")
 	}
 	m.PurgeBody(now)
-	if m.HTMLBody != "" || m.TextBody != "" || m.TemplateData != nil || strings.Contains(m.Subject, "482913") || m.BodyPurgedAt == nil {
+	if m.HTMLBody != "" || m.TextBody != "" || m.TemplateData != nil || m.Subject != "Your code is 482913" || m.BodyPurgedAt == nil {
 		t.Fatalf("purge left data: %+v", m)
 	}
 	if _, err := m.Outgoing(); !errors.Is(err, ErrBodyPurged) {

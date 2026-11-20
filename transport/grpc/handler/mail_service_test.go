@@ -30,7 +30,8 @@ func ctxAs(p access.Principal) context.Context { return access.WithPrincipal(con
 
 func TestMailServiceRefusesServicesAndMissingRoles(t *testing.T) {
 	svc := &MailService{Messages: appmsg.NewService(appmsg.Deps{Repo: oneMessage{m: domainmsg.Message{ID: "m1", OrgID: "t1",
-		Subject: "Code 482913", TemplateData: map[string]any{"code": "482913"}, SecretKeys: []string{"code"}}}}, appmsg.Config{})}
+		Subject: "Code [redacted: code, 6 characters]", TemplateData: map[string]any{"code": "[redacted: code, 6 characters]"},
+		SecretKeys: []string{"code"}}}}, appmsg.Config{})}
 	cases := []struct {
 		ctx  context.Context
 		code codes.Code
@@ -46,7 +47,7 @@ func TestMailServiceRefusesServicesAndMissingRoles(t *testing.T) {
 		}
 	}
 	m, err := svc.GetMessage(ctxAs(access.Principal{Kind: access.KindUser, TenantID: "t1", Roles: []access.Role{access.RoleViewer}}), &v1.GetMessageRequest{Id: "m1"})
-	if err != nil || m.GetSubject() != "Code "+domainmsg.Mask {
+	if err != nil || m.GetSubject() != "Code [redacted: code, 6 characters]" {
 		t.Fatal(m, err)
 	}
 	if _, err := svc.SendEmail(ctxAs(access.Principal{Kind: access.KindUser, TenantID: "t1", Roles: []access.Role{access.RoleViewer}}), &v1.SendEmailRequest{}); status.Code(err) != codes.PermissionDenied {
