@@ -44,7 +44,6 @@ docker compose -f docker-compose.test.yaml down -v
 | `IAM_AUDIENCE`, `IAM_CONSOLE_AUDIENCES` | `mailos`, `mailos-console` | The fake IAM's defaults for `aud` and `client_id` |
 | `IAM_SERVICE_CLIENT_ID`, `IAM_SERVICE_TENANT_ID`, `IAM_SERVICE_TOPICS` | `mailos-iam`, a new UUID per `up`, `iam.*` | IAM's own client, seeded as the system application of that tenant (contract §1). Every other caller is an application a test registers |
 | `KEY_MANAGER_MASTER_KEY` | random per work dir | Required everywhere |
-| `MESSAGE_DIGEST_KEY` | random per work dir | Keys the evidence digest (`sent_digest`) the canary checks; required in production |
 | `MAILOS_E2E_HOOKS`, `MAILOS_E2E_HOOKS_TOKEN` | `true`, random 48 characters | Capture mail, serve `/e2e/v1` |
 | `FEATURE_PUBSUB_INGEST`, `FEATURE_AUDIT_STREAM` | `false` | There is no broker in the stack (yet) |
 | `FEATURE_RAW_HTML_BLOCKS` | `true` | The suite covers it |
@@ -148,7 +147,9 @@ masked at persistence (ADR 0001 §3.6): `messages` holds redaction descriptors i
 both bodies; the live values sit only in `message_secrets`, sealed by the key manager (purpose `message_secret`),
 for at most an hour and never past a final status; the worker renders the full message in memory for the relay,
 with click and open tracking off, and scrubs the values from its log lines and errors. Such a message is never
-resent, and carries `sent_digest`, a keyed HMAC-SHA-256 of what the provider got.
+resent, and carries `sent_digest`: one HMAC-SHA-256 per part (subject, text, HTML) of what the provider got, under
+a key-manager evidence key (purpose `evidence`), with the key's id. A bare hash would give a 6-digit code away to
+anyone who reads the row; verifying a copy needs the key (`mailos-verify-sent`).
 
 `TestNoLiveSecretAtRest` has IAM send a sign-in code and a password-reset link with values unique to the run.
 After both arrive in full, it searches:

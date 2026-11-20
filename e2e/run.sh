@@ -60,7 +60,6 @@ keys() {
   [ -f "$k/hooks.token" ] || secret 36 > "$k/hooks.token"
   [ -f "$k/iam-mint.token" ] || secret 36 > "$k/iam-mint.token"
   [ -f "$k/oidc-client.secret" ] || secret 36 > "$k/oidc-client.secret"
-  [ -f "$k/message-digest.key" ] || secret 32 > "$k/message-digest.key"
   chmod 600 "$k"/*
 }
 
@@ -98,7 +97,6 @@ IAM_SERVICE_CLIENT_ID=$IAM_SERVICE_CLIENT
 IAM_SERVICE_TENANT_ID=$(cat "$k/iam-tenant")
 IAM_SERVICE_TOPICS=iam.*
 KEY_MANAGER_MASTER_KEY=$(cat "$k/master.key")
-MESSAGE_DIGEST_KEY=$(cat "$k/message-digest.key")
 CORS_ORIGINS=$CONSOLE_ORIGIN
 FEATURE_PUBSUB_INGEST=false
 FEATURE_AUDIT_STREAM=false
