@@ -31,11 +31,15 @@ type Env struct {
 	// IAMClient is IAM's own client, which MailOS seeds as the system
 	// application of IAMTenant.
 	IAMClient, IAMTenant string
+	// PostgresDSN, RedisAddr and LogDir reach the stores and the server and
+	// worker logs directly, for the canary that searches them for secrets.
+	PostgresDSN, RedisAddr, LogDir string
 }
 
 // LoadEnv reads MAILOS_E2E_BASE_URL, MAILOS_E2E_GRPC_ADDR,
 // MAILOS_E2E_HOOK_TOKEN, MAILOS_E2E_IAM_URL, MAILOS_E2E_IAM_TOKEN,
-// MAILOS_E2E_IAM_CLIENT and MAILOS_E2E_IAM_TENANT
+// MAILOS_E2E_IAM_CLIENT, MAILOS_E2E_IAM_TENANT, MAILOS_E2E_PG_DSN,
+// MAILOS_E2E_REDIS_ADDR and MAILOS_E2E_LOG_DIR
 // (e2e/run.sh env prints them). A missing value is an error, never a skip:
 // the gate fails rather than passing with nothing run.
 func LoadEnv() (*Env, error) {
@@ -47,12 +51,16 @@ func LoadEnv() (*Env, error) {
 		IAMMintToken: os.Getenv("MAILOS_E2E_IAM_TOKEN"),
 		IAMClient:    os.Getenv("MAILOS_E2E_IAM_CLIENT"),
 		IAMTenant:    os.Getenv("MAILOS_E2E_IAM_TENANT"),
+		PostgresDSN:  os.Getenv("MAILOS_E2E_PG_DSN"),
+		RedisAddr:    os.Getenv("MAILOS_E2E_REDIS_ADDR"),
+		LogDir:       os.Getenv("MAILOS_E2E_LOG_DIR"),
 	}
 	var missing []string
 	for name, v := range map[string]string{
 		"MAILOS_E2E_BASE_URL": e.BaseURL, "MAILOS_E2E_GRPC_ADDR": e.GRPCAddr, "MAILOS_E2E_HOOK_TOKEN": e.HookToken,
 		"MAILOS_E2E_IAM_URL": e.IAMURL, "MAILOS_E2E_IAM_TOKEN": e.IAMMintToken,
 		"MAILOS_E2E_IAM_CLIENT": e.IAMClient, "MAILOS_E2E_IAM_TENANT": e.IAMTenant,
+		"MAILOS_E2E_PG_DSN": e.PostgresDSN, "MAILOS_E2E_REDIS_ADDR": e.RedisAddr, "MAILOS_E2E_LOG_DIR": e.LogDir,
 	} {
 		if v == "" {
 			missing = append(missing, name)

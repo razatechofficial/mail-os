@@ -60,6 +60,7 @@ keys() {
   [ -f "$k/hooks.token" ] || secret 36 > "$k/hooks.token"
   [ -f "$k/iam-mint.token" ] || secret 36 > "$k/iam-mint.token"
   [ -f "$k/oidc-client.secret" ] || secret 36 > "$k/oidc-client.secret"
+  [ -f "$k/message-digest.key" ] || secret 32 > "$k/message-digest.key"
   chmod 600 "$k"/*
 }
 
@@ -97,6 +98,7 @@ IAM_SERVICE_CLIENT_ID=$IAM_SERVICE_CLIENT
 IAM_SERVICE_TENANT_ID=$(cat "$k/iam-tenant")
 IAM_SERVICE_TOPICS=iam.*
 KEY_MANAGER_MASTER_KEY=$(cat "$k/master.key")
+MESSAGE_DIGEST_KEY=$(cat "$k/message-digest.key")
 CORS_ORIGINS=$CONSOLE_ORIGIN
 FEATURE_PUBSUB_INGEST=false
 FEATURE_AUDIT_STREAM=false
@@ -172,6 +174,10 @@ print_env() {
   echo "MAILOS_E2E_IAM_TENANT=$(cat "$WORK/keys/iam-tenant")"
   echo "MAILOS_E2E_OIDC_CLIENT_ID=$OIDC_CLIENT"
   echo "MAILOS_E2E_OIDC_CLIENT_SECRET=$(cat "$WORK/keys/oidc-client.secret")"
+  # The secrets canary reads the stores and logs directly.
+  echo "MAILOS_E2E_PG_DSN=postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable"
+  echo "MAILOS_E2E_REDIS_ADDR=$REDIS_HOST:$REDIS_PORT"
+  echo "MAILOS_E2E_LOG_DIR=$WORK"
 }
 
 run_tests() {
