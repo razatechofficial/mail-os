@@ -9,13 +9,13 @@ import (
 	"github.com/razatechofficial/mail-os/infrastructure/persistence/postgres"
 	"github.com/razatechofficial/mail-os/infrastructure/worker"
 	"github.com/razatechofficial/mail-os/pkg/logger"
-	"github.com/razatechofficial/mail-os/transport/http/handler"
 )
 
 // buildAuditIntegrity seals the audit log with signed, chained digests
-// (AUDIT_DIGEST_SIGNING_KEY) and serves their verification to the operator
-// tenant. Production refuses to start without the key (config); elsewhere
-// the log is left unsealed.
+// (AUDIT_DIGEST_SIGNING_KEY). Production refuses to start without the key
+// (config); elsewhere the log is left unsealed. Verification covers every
+// tenant's rows, so no tenant route serves it (ADR 0001 §3.9): it returns
+// on the platform API under the log administrator role.
 func (c *Container) buildAuditIntegrity(context.Context) error {
 	cfg := c.Cfg.Audit
 	if cfg.DigestSigningKey == "" {
@@ -31,7 +31,6 @@ func (c *Container) buildAuditIntegrity(context.Context) error {
 		return err
 	}
 	svc := auditintegrity.NewService(postgres.NewAuditIntegrityRepository(c.DB), signer, previous...)
-	c.Routes = append(c.Routes, handler.NewAuditIntegrityHandler(svc, c.Audit, c.Cfg.IAM.ServiceTenantID))
 	c.Tasks = append(c.Tasks, func(s *worker.Server) error {
 		s.HandleFunc(worker.TypeAuditSeal, worker.AuditSeal(svc))
 		every := cfg.DigestInterval
