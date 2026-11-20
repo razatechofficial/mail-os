@@ -101,6 +101,18 @@ func TestScrub(t *testing.T) {
 			t.Fatalf("scrub left %q: %s", leak, got)
 		}
 	}
+	// The token alone, as a relay may quote it or a quoted-printable body
+	// leaves it, is scrubbed too; short path words are not.
+	link := Secrets{"reset_link": "https://iam.example.com/reset-password?token=tok-fee434bd",
+		"link": "https://iam.example.com/magic/0123456789abcdef0123#token=frag-token-1"}
+	for _, leak := range []string{"tok-fee434bd", "0123456789abcdef0123", "frag-token-1"} {
+		if got := link.Scrub("smtp: rejected " + leak + " token=3D" + leak); strings.Contains(got, leak) {
+			t.Fatalf("token %q left: %s", leak, got)
+		}
+	}
+	if got := link.Scrub("see /magic/ and reset-password"); got != "see /magic/ and reset-password" {
+		t.Fatalf("ordinary words scrubbed: %s", got)
+	}
 	if Secrets(nil).Scrub("x 12") != "x 12" {
 		t.Fatal("nil secrets changed text")
 	}

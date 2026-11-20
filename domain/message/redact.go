@@ -99,17 +99,26 @@ func (s Secrets) Merge(data map[string]any) map[string]any {
 
 // Values lists the live values, longest first, each also in the escaped
 // forms a body or URL carries it in, so a value containing another is
-// replaced whole.
+// replaced whole. A link's token is listed on its own too (its query and
+// fragment values of 8 characters or more, and path segments of 16 or
+// more): a relay may quote the token alone, or a body encode the link so
+// that only the token survives (quoted-printable turns "=" into "=3D").
 func (s Secrets) Values() []string {
 	var out []string
+	add := func(f string) {
+		if f != "" && !slices.Contains(out, f) {
+			out = append(out, f)
+		}
+	}
 	for _, v := range s {
 		if v == "" {
 			continue
 		}
 		for _, f := range []string{v, html.EscapeString(v), url.QueryEscape(v)} {
-			if !slices.Contains(out, f) {
-				out = append(out, f)
-			}
+			add(f)
+		}
+		for _, t := range linkTokens(v) {
+			add(t)
 		}
 	}
 	slices.SortFunc(out, func(a, b string) int { return len(b) - len(a) })
@@ -210,3 +219,31 @@ type scrubbedError struct {
 
 func (e scrubbedError) Error() string { return e.msg }
 func (e scrubbedError) Unwrap() error { return e.err }
+
+// linkTokens are the parts of a link that may be its bearer token.
+func linkTokens(v string) []string {
+	u, err := url.Parse(v)
+	if err != nil || u.Host == "" {
+		return nil
+	}
+	var out []string
+	q := u.Query()
+	if f, err := url.ParseQuery(u.Fragment); err == nil {
+		for k, vs := range f {
+			q[k] = append(q[k], vs...)
+		}
+	}
+	for _, vs := range q {
+		for _, t := range vs {
+			if len(t) >= 8 {
+				out = append(out, t)
+			}
+		}
+	}
+	for _, seg := range strings.Split(u.Path, "/") {
+		if len(seg) >= 16 {
+			out = append(out, seg)
+		}
+	}
+	return out
+}
