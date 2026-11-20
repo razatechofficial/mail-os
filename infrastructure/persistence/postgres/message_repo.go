@@ -408,3 +408,23 @@ func stream(m domain.Message) domain.Stream {
 	}
 	return m.Stream
 }
+
+var _ app.StoredMail = (*MessageRepository)(nil)
+
+// AuthMessagesAfter lists up to limit messages of every tenant with one of
+// topics and a stored body, with id above afterID, in id order.
+func (r *MessageRepository) AuthMessagesAfter(ctx context.Context, topics []string, afterID string, limit int) ([]domain.Message, error) {
+	return r.query(ctx, `SELECT `+messageCols+` FROM messages WHERE topic = ANY($1) AND body_purged_at IS NULL AND id > $2
+		ORDER BY id LIMIT $3`, topics, afterID, limit)
+}
+
+// SaveRedacted stores a redacted message's subject, bodies, template data
+// and last error.
+func (r *MessageRepository) SaveRedacted(ctx context.Context, m domain.Message) error {
+	_, err := QuerierFromContext(ctx, r.db).Exec(ctx, `
+		UPDATE messages SET subject = $3, html_body = NULLIF($4, ''), text_body = NULLIF($5, ''), template_data = $6,
+			last_error = NULLIF($7, '')
+		WHERE id = $1 AND org_id = $2`,
+		m.ID, m.OrgID, m.Subject, m.HTMLBody, m.TextBody, jsonOrNil(m.TemplateData), m.LastError)
+	return err
+}
