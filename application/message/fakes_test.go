@@ -383,3 +383,13 @@ func (fakeCipher) Seal(_ context.Context, p []byte) (string, error) {
 func (fakeCipher) Open(_ context.Context, c string) ([]byte, error) {
 	return base64.StdEncoding.DecodeString(strings.TrimPrefix(c, "km1.test."))
 }
+
+// downEvidence is a key manager that cannot answer.
+type downEvidence struct{}
+
+func (downEvidence) MAC(context.Context, ...[]byte) (string, [][]byte, error) {
+	return "", nil, errDown
+}
+func (downEvidence) VerifyMAC(context.Context, string, []byte, []byte) (bool, error) {
+	return false, errDown
+}

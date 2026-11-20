@@ -19,6 +19,7 @@ import (
 	"github.com/razatechofficial/mail-os/domain/access"
 	domainapp "github.com/razatechofficial/mail-os/domain/application"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
+	"github.com/razatechofficial/mail-os/domain/message/messagetest"
 	"github.com/razatechofficial/mail-os/domain/sendingdomain"
 	"github.com/razatechofficial/mail-os/domain/suppression"
 	domaintemplate "github.com/razatechofficial/mail-os/domain/template"
@@ -27,8 +28,6 @@ import (
 )
 
 const tenant = "0192f0c4-0000-7000-8000-000000000001"
-
-var testDigestKey = []byte("0123456789abcdef0123456789abcdef")
 
 type fixture struct {
 	svc      *Service
@@ -62,8 +61,8 @@ func newFixture(t *testing.T) *fixture {
 	f.sandbox.Environment, f.sandbox.Stream = domainapp.EnvSandbox, domainapp.StreamBroadcast
 	f.svc = NewService(Deps{Applications: appstest.New(f.core, f.sandbox), Repo: f.repo, Queue: f.queue, Suppressions: f.sups, Tenants: memTenants{}, Templates: tpls,
 		Versions: tpls, Branding: tpls, Render: fakeRender, Sender: f.sender, Signer: memSigner{},
-		Webhooks: f.notifier, Stats: f.stats, Audit: f.audit, Secrets: f.secrets, SecretCipher: fakeCipher{}},
-		Config{MaxAttempts: 3, RetentionDays: 30, DigestKey: testDigestKey})
+		Webhooks: f.notifier, Stats: f.stats, Audit: f.audit, Secrets: f.secrets, SecretCipher: fakeCipher{}, Evidence: messagetest.Evidence{}},
+		Config{MaxAttempts: 3, RetentionDays: 30})
 	return f
 }
 
@@ -261,9 +260,13 @@ func TestDeliverRendersSignsAndCounts(t *testing.T) {
 	}
 	// The evidence digest is of what the relay got, with the template
 	// version that reproduces it; the redacted copy alone does not verify.
-	if !got.SentDigest.Verify(testDigestKey, out.Subject, out.Text, out.HTML) || got.TemplateVersionID != "ver-3" ||
-		got.SentDigest.Verify(testDigestKey, got.Subject, got.TextBody, got.HTMLBody) {
+	ctx := context.Background()
+	if ok, _ := got.SentDigest.Verify(ctx, messagetest.Evidence{}, out.Subject, out.Text, out.HTML); !ok || got.TemplateVersionID != "ver-3" ||
+		got.SentDigest.KeyID != messagetest.KeyID {
 		t.Fatalf("sent digest %+v", got.SentDigest)
+	}
+	if ok, _ := got.SentDigest.Verify(ctx, messagetest.Evidence{}, got.Subject, got.TextBody, got.HTMLBody); ok {
+		t.Fatal("the redacted copy verifies as sent")
 	}
 	// It survives the retention purge with the envelope.
 	purged := got
@@ -569,6 +572,23 @@ func TestSweepDeletesExpiredSecrets(t *testing.T) {
 	}
 }
 
+// No message goes out without its evidence hash: an unavailable evidence
+// key is retried like a DKIM key, and none configured fails the message.
+func TestDeliverNeedsTheEvidenceKey(t *testing.T) {
+	f := newFixture(t)
+	f.svc.d.Evidence = downEvidence{}
+	r, _ := f.svc.Send(userCtx(), direct())
+	if _, ok := f.svc.Deliver(context.Background(), tenant, r.MessageID).(*RetryError); !ok || len(f.sender.sent) != 0 {
+		t.Fatal("sent, or not retried, without the evidence key")
+	}
+	f.svc.d.Evidence = nil
+	_ = f.svc.Deliver(context.Background(), tenant, r.MessageID)
+	if m, _ := f.repo.Get(context.Background(), tenant, r.MessageID); m.Status != domainmsg.StatusFailed || len(f.sender.sent) != 0 ||
+		!strings.Contains(m.LastError, "evidence") {
+		t.Fatalf("without an evidence key: %s %q", m.Status, m.LastError)
+	}
+}
+
 func TestBatchLimitsAndPartialFailure(t *testing.T) {
 	f := newFixture(t)
 	bad := direct()
@@ -738,5 +758,28 @@ func TestTemplatedSendRendersDerivedVariables(t *testing.T) {
 	}
 	if out := f.sender.sent[0]; out.Text != "Your multi-factor authentication was reset" || !strings.Contains(out.HTML, "contact them immediately") {
 		t.Fatalf("outgoing %q / %q", out.Text, out.HTML)
+	}
+}
+
+// The custodian's check: a copy rebuilt with the live code matches every
+// part; the redacted copy does not; an unsent message has nothing to check.
+func TestVerifySent(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	m, _ := f.svc.SendTemplated(ctx, otpSend())
+	if _, err := f.svc.VerifySent(ctx, tenant, m.ID, "", "", ""); apperrors.KindOf(err) != apperrors.KindConflict {
+		t.Fatalf("unsent message: %v", err)
+	}
+	if err := f.svc.Deliver(ctx, tenant, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	out := f.sender.sent[0]
+	c, err := f.svc.VerifySent(ctx, tenant, m.ID, out.Subject, out.Text, out.HTML)
+	if err != nil || !c.Match() || c.KeyID != messagetest.KeyID {
+		t.Fatalf("copy as sent: %+v %v", c, err)
+	}
+	row, _ := f.repo.Get(ctx, tenant, m.ID)
+	if c, _ := f.svc.VerifySent(ctx, tenant, m.ID, row.Subject, row.TextBody, row.HTMLBody); c.Match() || c.Text {
+		t.Fatalf("the redacted copy matched: %+v", c)
 	}
 }

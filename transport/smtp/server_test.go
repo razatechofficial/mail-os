@@ -23,6 +23,7 @@ import (
 	"github.com/razatechofficial/mail-os/config"
 	domainapp "github.com/razatechofficial/mail-os/domain/application"
 	domainmsg "github.com/razatechofficial/mail-os/domain/message"
+	"github.com/razatechofficial/mail-os/domain/message/messagetest"
 	"github.com/razatechofficial/mail-os/domain/smtpcredential"
 	"github.com/razatechofficial/mail-os/infrastructure/jwt"
 	"github.com/razatechofficial/mail-os/internal/testutil/fakeiam"
@@ -97,7 +98,7 @@ func newHarness(t *testing.T, mutate func(*config.SMTPSubmission, *domainapp.App
 		applications.Config{AllowPlaintext: true})
 	h.creds = smtpcred.NewService(&memCreds{creds: map[string]smtpcredential.Credential{}}, h.apps, h.audit, smtpcred.Config{})
 	h.messages = appmsg.NewService(appmsg.Deps{Applications: h.apps, Repo: h.msgs, Queue: nopQueue{},
-		Suppressions: noSuppressions{}, Tenants: nopTenants{}, Sender: h.sender, Audit: h.audit},
+		Suppressions: noSuppressions{}, Tenants: nopTenants{}, Sender: h.sender, Audit: h.audit, Evidence: messagetest.Evidence{}},
 		appmsg.Config{Attachments: domainmsg.AttachmentLimits{MaxBytes: 1 << 20, MaxTotalBytes: 2 << 20, MaxCount: 5}})
 	verifier := jwt.NewVerifier(jwt.Config{Issuer: iamSrv.URL, Audience: "mailos"})
 
