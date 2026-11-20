@@ -87,7 +87,7 @@ func (r *memMessages) Stale(context.Context, time.Time, time.Time, int) ([]domai
 	return nil, nil
 }
 func (r *memMessages) PurgeTenants(context.Context) ([]string, error) { return nil, nil }
-func (r *memMessages) PurgeCandidates(context.Context, string, time.Time, int) ([]domainmsg.Message, error) {
+func (r *memMessages) PurgeCandidates(context.Context, string, time.Time, time.Time, int) ([]domainmsg.Message, error) {
 	return nil, nil
 }
 func (r *memMessages) SavePurged(context.Context, domainmsg.Message) error            { return nil }
