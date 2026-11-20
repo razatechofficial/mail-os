@@ -12,13 +12,22 @@ import (
 )
 
 // sealedColumn is one column of key-manager values, for the key schedule
-// to count and re-encrypt what each key sealed. table and column are
-// constants of this package, never input.
+// to count and re-encrypt what each key sealed. table, column and key are
+// constants of this package, never input; key is the row's primary key
+// column ("id" when empty).
 type sealedColumn struct {
 	db      *Pool
 	purpose domain.Purpose
 	table   string
 	column  string
+	key     string
+}
+
+func (c sealedColumn) keyColumn() string {
+	if c.key == "" {
+		return "id"
+	}
+	return c.key
 }
 
 var _ app.SealedColumn = sealedColumn{}
@@ -50,7 +59,7 @@ func (c sealedColumn) CountByKID(ctx context.Context, kid string) (int, error) {
 // Reencrypt rewraps up to limit values, each only if unchanged since read.
 func (c sealedColumn) Reencrypt(ctx context.Context, kid string, limit int, rewrap func(old string) (string, error)) (int, error) {
 	q := QuerierFromContext(ctx, c.db)
-	rows, err := q.Query(ctx, `SELECT id, `+c.column+` FROM `+c.table+` WHERE `+c.column+` LIKE $1 LIMIT $2`, kidPattern(kid), limit)
+	rows, err := q.Query(ctx, `SELECT `+c.keyColumn()+`, `+c.column+` FROM `+c.table+` WHERE `+c.column+` LIKE $1 LIMIT $2`, kidPattern(kid), limit)
 	if err != nil {
 		return 0, err
 	}
@@ -74,7 +83,7 @@ func (c sealedColumn) Reencrypt(ctx context.Context, kid string, limit int, rewr
 		if err != nil {
 			return n, err
 		}
-		tag, err := q.Exec(ctx, `UPDATE `+c.table+` SET `+c.column+` = $1 WHERE id = $2 AND `+c.column+` = $3`, next, r.id, r.value)
+		tag, err := q.Exec(ctx, `UPDATE `+c.table+` SET `+c.column+` = $1 WHERE `+c.keyColumn()+` = $2 AND `+c.column+` = $3`, next, r.id, r.value)
 		if err != nil {
 			return n, err
 		}

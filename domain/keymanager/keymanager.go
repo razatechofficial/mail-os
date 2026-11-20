@@ -25,10 +25,13 @@ const (
 	PurposeDKIM Purpose = "dkim"
 	// PurposeWebhook seals the signing secrets of outbound webhooks.
 	PurposeWebhook Purpose = "webhook"
+	// PurposeMessageSecret seals the live codes and links of
+	// authentication-class messages while they wait to be sent.
+	PurposeMessageSecret Purpose = "message_secret"
 )
 
 // Purposes lists every purpose.
-var Purposes = []Purpose{PurposeProvider, PurposeDKIM, PurposeWebhook}
+var Purposes = []Purpose{PurposeProvider, PurposeDKIM, PurposeWebhook, PurposeMessageSecret}
 
 // Valid reports whether p is a known purpose.
 func (p Purpose) Valid() bool {
