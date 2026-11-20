@@ -14,6 +14,7 @@ import (
 	apptemplate "github.com/razatechofficial/mail-os/application/template"
 	"github.com/razatechofficial/mail-os/application/tenant"
 	"github.com/razatechofficial/mail-os/domain/access"
+	domainmsg "github.com/razatechofficial/mail-os/domain/message"
 	domain "github.com/razatechofficial/mail-os/domain/template"
 	"github.com/razatechofficial/mail-os/infrastructure/audit"
 	"github.com/razatechofficial/mail-os/infrastructure/persistence/postgres"
@@ -321,6 +322,20 @@ func TestTemplateVersionsImmutable(t *testing.T) {
 	if _, err := e.svc.Publish(e.ctx, e.tenant, tpl.ID, "en", 2, "publisher"); err != nil {
 		t.Fatalf("publish over an immutable version: %v", err)
 	}
+	// A message used v1: neither it nor its template can be deleted.
+	now := time.Now().UTC()
+	if err := postgres.NewMessageRepository(db).Create(context.Background(), domainmsg.Message{ID: uuid.NewString(), OrgID: e.tenant,
+		FromEmail: "noreply@bank.example", ToEmail: "a@example.com", Subject: "Reset your password", TextBody: "x",
+		Type: domainmsg.TypeTransactional, Status: domainmsg.StatusSent, Priority: domainmsg.PriorityNormal,
+		TemplateID: tpl.ID, TemplateVersionID: v1.ID, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(context.Background(), `DELETE FROM template_versions WHERE id = $1`, v1.ID); err == nil || !strings.Contains(err.Error(), "kept") {
+		t.Fatalf("a used version was deleted: %v", err)
+	}
+	if _, err := db.Exec(context.Background(), `DELETE FROM templates WHERE id = $1`, tpl.ID); err == nil || !strings.Contains(err.Error(), "kept") {
+		t.Fatalf("a template with a used version was deleted: %v", err)
+	}
 	if err := e.svc.Delete(e.ctx, e.tenant, tpl.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -329,5 +344,13 @@ func TestTemplateVersionsImmutable(t *testing.T) {
 	if err := db.QueryRow(context.Background(), `SELECT subject, is_active FROM template_versions WHERE id = $1`, v1.ID).
 		Scan(&subject, &active); err != nil || subject != "Reset your password" || active {
 		t.Fatalf("version after a new publish and delete: %q %v %v", subject, active, err)
+	}
+	// Removing the whole tenant still removes its templates and messages.
+	if _, err := db.Exec(context.Background(), `DELETE FROM organizations WHERE id = $1`, e.tenant); err != nil {
+		t.Fatalf("tenant removal blocked: %v", err)
+	}
+	var left int
+	if err := db.QueryRow(context.Background(), `SELECT count(*) FROM template_versions WHERE id = $1`, v1.ID).Scan(&left); err != nil || left != 0 {
+		t.Fatalf("versions left after tenant removal: %d %v", left, err)
 	}
 }
