@@ -520,6 +520,20 @@ func TestSweepRequeuesLostWork(t *testing.T) {
 	}
 }
 
+// The sweep deletes live secrets past their expiry, even of a message
+// that never reached a final status.
+func TestSweepDeletesExpiredSecrets(t *testing.T) {
+	f := newFixture(t)
+	m, _ := f.svc.SendTemplated(context.Background(), otpSend())
+	if _, err := f.svc.Sweep(context.Background()); err != nil || !f.secrets.has(m.ID) {
+		t.Fatal("live secrets swept early", err)
+	}
+	f.svc.now = func() time.Time { return time.Now().Add(61 * time.Minute).UTC() }
+	if _, err := f.svc.Sweep(context.Background()); err != nil || f.secrets.has(m.ID) {
+		t.Fatal("expired secrets kept", err)
+	}
+}
+
 func TestBatchLimitsAndPartialFailure(t *testing.T) {
 	f := newFixture(t)
 	bad := direct()

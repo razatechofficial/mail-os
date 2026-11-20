@@ -45,9 +45,18 @@ func (s *Service) ReleaseScheduled(ctx context.Context) (int, error) {
 // Sweep queues again what was lost: queued messages whose task vanished,
 // and sending ones whose worker died. A worker that died after the
 // provider accepted the message makes the retry a duplicate; that is the
-// price of not losing a one-time code.
+// price of not losing a one-time code. It first deletes every live secret
+// past its expiry (at most an hour after it was stored), including any a
+// final status failed to delete.
 func (s *Service) Sweep(ctx context.Context) (int, error) {
 	now := s.now()
+	if s.d.Secrets != nil {
+		if n, err := s.d.Secrets.DeleteExpired(ctx, now); err != nil {
+			logger.FromContext(ctx).Warn("sweep expired message secrets", logger.Err(err))
+		} else if n > 0 {
+			logger.Info("expired message secrets deleted", logger.Int64("count", n))
+		}
+	}
 	stale, err := s.d.Repo.Stale(ctx, now.Add(-queuedGrace), now.Add(-s.cfg.StaleSending), sweepBatch)
 	if err != nil {
 		return 0, err

@@ -46,6 +46,9 @@ func init() {
 	bootstrap.Register("message attachments (20261121010000)",
 		"SELECT message_id, position, content_id, inline, sha256, data FROM message_attachments LIMIT 0", true,
 		"messages with attachments cannot be stored or sent")
+	bootstrap.Register("message secrets (20261124090000)",
+		"SELECT message_id, org_id, sealed, expires_at, created_at FROM message_secrets LIMIT 0", true,
+		"authentication mail cannot be stored redacted or retried")
 	bootstrap.Register("provider last test (20261104110000)", "SELECT last_test FROM providers LIMIT 0", true,
 		"providers cannot be listed or tested")
 	bootstrap.Register("applications and their scope (20261031150000-150200)",
@@ -107,7 +110,8 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 	providerRepo := postgres.NewProviderRepository(c.DB)
 	domainRepo := postgres.NewSendingDomainRepository(c.DB)
 	webhookRepo := postgres.NewWebhookRepository(c.DB)
-	c.Keys.Register(providerRepo.SealedColumn(), domainRepo.SealedColumn(), webhookRepo.SealedColumn())
+	secretRepo := postgres.NewMessageSecretRepository(c.DB)
+	c.Keys.Register(providerRepo.SealedColumn(), domainRepo.SealedColumn(), webhookRepo.SealedColumn(), secretRepo.SealedColumn())
 
 	queue := worker.NewMessageQueue(c.Enqueuer, cfg.Worker.MaxRetry, cfg.Worker.SendTimeout)
 	providers := appprovider.NewService(providerRepo, c.Keys.Cipher(domainkm.PurposeProvider), c.Audit,
@@ -147,7 +151,8 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 	router.SetFailureRecorder(providers)
 	deps := appmessage.Deps{Applications: c.Apps, Repo: postgres.NewMessageRepository(c.DB), Queue: queue, Suppressions: suppressions, Tenants: c.Tenants,
 		Render: renderContent, Sender: routerSender{router}, Signer: c.SendingDomains, Webhooks: webhooks, Stats: stats, Audit: c.Audit,
-		Events: postgres.NewMessageEventRepository(c.DB), Feedback: suppressions}
+		Events: postgres.NewMessageEventRepository(c.DB), Feedback: suppressions,
+		Secrets: secretRepo, SecretCipher: c.Keys.Cipher(domainkm.PurposeMessageSecret)}
 	if c.Templates != nil {
 		deps.Templates, deps.Versions, deps.Branding = c.Templates, c.Templates, c.Templates
 	}
