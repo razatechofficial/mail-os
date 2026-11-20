@@ -243,6 +243,8 @@ type messageView struct {
 	Attempts          int            `json:"attempts"`
 	LastError         string         `json:"last_error,omitempty"`
 	HasBody           bool           `json:"has_body"`
+	// AuthClass marks authentication mail: stored redacted, never resent.
+	AuthClass bool `json:"auth_class"`
 	// Attachments describe the files (never their content); only a single
 	// message's view lists them.
 	Attachments  []attachmentView `json:"attachments,omitempty"`
@@ -283,9 +285,9 @@ func messageViewOf(v appmsg.View) messageView {
 		tags = []string{}
 	}
 	return messageView{Attachments: attachmentViews(m.Attachments), ID: m.ID, ApplicationID: m.ApplicationID, Sandbox: m.Sandbox, Stream: string(m.Stream), CampaignID: m.CampaignID, FromName: m.FromName, FromEmail: m.FromEmail, ToEmail: m.ToEmail,
-		ToName: m.ToName, ReplyTo: m.ReplyTo, Subject: v.MaskedSubject, Type: string(m.Type), Status: string(m.Status),
+		ToName: m.ToName, ReplyTo: m.ReplyTo, Subject: m.Subject, Type: string(m.Type), Status: string(m.Status),
 		Priority: int(m.Priority), Tags: tags, Metadata: m.Metadata, Topic: m.Topic, TemplateID: m.TemplateID,
-		TemplateVersionID: m.TemplateVersionID, Locale: m.Locale, TemplateData: v.MaskedTemplateData, EventID: m.EventID,
+		TemplateVersionID: m.TemplateVersionID, Locale: m.Locale, TemplateData: m.TemplateData, AuthClass: v.AuthClass, EventID: m.EventID,
 		ActorType: string(m.Actor.Type), ActorID: m.Actor.ID, ProviderID: m.ProviderID, ProviderMessageID: m.ProviderMessageID,
 		Attempts: m.Attempts, LastError: m.LastError, HasBody: m.BodyPurgedAt == nil && (m.HTMLBody != "" || m.TextBody != ""),
 		ScheduledAt: m.ScheduledAt, SentAt: m.SentAt, DeliveredAt: m.DeliveredAt, BouncedAt: m.BouncedAt, FailedAt: m.FailedAt,

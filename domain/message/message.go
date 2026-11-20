@@ -2,10 +2,11 @@
 // event, template and data, or a rendered body), where it is in delivery,
 // and what a provider sends (Outgoing).
 //
-// Bodies and template data hold one-time codes and personal data (contract
-// §6): they are kept only for the retention period (PurgeBody), and the
-// values of the template variables named in SecretKeys are masked wherever
-// a message is shown (MaskedTemplateData, Redact).
+// Bodies and template data hold personal data (contract §6): they are kept
+// only for the retention period (PurgeBody). An authentication-class
+// message is stored redacted: its one-time codes and token-bearing links
+// are redaction descriptors in its data, subject and bodies, and the live
+// values exist only in memory and the sealed retry store (redact.go).
 package message
 
 import (
@@ -129,9 +130,6 @@ func (a Actor) String() string { return string(a.Type) + ":" + a.ID }
 // Retention defaults (contract §6).
 const DefaultBodyRetention = 30 * 24 * time.Hour
 
-// Mask replaces secret values in views and logs.
-const Mask = "••••••"
-
 // Limits.
 const (
 	MaxTags           = 10
@@ -141,9 +139,6 @@ const (
 	MaxIdempotencyKey = 255
 	MaxSubjectLen     = 998
 	maxLine           = 255
-	// minSecretLen is the shortest secret value Redact replaces: shorter
-	// values would mask unrelated text.
-	minSecretLen = 4
 )
 
 // CarriedHeaders are the headers a sender may set on a message and that
@@ -195,7 +190,8 @@ type Message struct {
 	// TemplateData is the event payload the template is rendered with.
 	TemplateData map[string]any
 	// SecretKeys name the TemplateData variables (dotted paths for nested
-	// values) whose values are masked in views: one-time codes, tokens.
+	// values) that are secrets: one-time codes and token-bearing links,
+	// stored as redaction descriptors.
 	SecretKeys []string
 	// EventID is the producer's event id (the message signature's jti for
 	// pub/sub), for tracing and de-duplication.
@@ -438,56 +434,15 @@ func (m *Message) BodyPurgeDue(retention time.Duration, now time.Time) bool {
 	return m.BodyPurgedAt == nil && m.Status.Final() && !now.Before(m.CreatedAt.Add(retention))
 }
 
-// PurgeBody erases the bodies and template data, and masks secret values
-// in the subject, keeping the delivery record.
+// PurgeBody erases the bodies and template data, keeping the delivery
+// record and the subject (redacted already for authentication mail).
 func (m *Message) PurgeBody(now time.Time) {
-	m.Subject = m.Redact(m.Subject)
 	m.HTMLBody = ""
 	m.TextBody = ""
 	m.TemplateData = nil
 	m.Attachments = nil
 	m.BodyPurgedAt = &now
 	m.UpdatedAt = now
-}
-
-// secretValues returns the string forms of the secret variables' values.
-func (m *Message) secretValues() []string {
-	var out []string
-	for _, k := range m.SecretKeys {
-		v, ok := lookup(m.TemplateData, k)
-		if !ok || v == nil {
-			continue
-		}
-		s := fmt.Sprint(v)
-		if len(s) >= minSecretLen {
-			out = append(out, s)
-		}
-	}
-	// Longest first, so a value containing another is masked whole.
-	slices.SortFunc(out, func(a, b string) int { return len(b) - len(a) })
-	return out
-}
-
-// Redact replaces every secret value found in s with Mask: a rendered
-// subject or body shown in the console, or a log line.
-func (m *Message) Redact(s string) string {
-	for _, v := range m.secretValues() {
-		s = strings.ReplaceAll(s, v, Mask)
-	}
-	return s
-}
-
-// MaskedTemplateData returns a copy of the template data with the secret
-// variables' values replaced by Mask.
-func (m *Message) MaskedTemplateData() map[string]any {
-	if m.TemplateData == nil {
-		return nil
-	}
-	out := deepCopy(m.TemplateData).(map[string]any)
-	for _, k := range m.SecretKeys {
-		mask(out, strings.Split(k, "."))
-	}
-	return out
 }
 
 // lookup reads a dotted path from nested maps.
@@ -503,20 +458,6 @@ func lookup(data map[string]any, path string) (any, bool) {
 		}
 	}
 	return cur, true
-}
-
-func mask(data map[string]any, path []string) {
-	v, ok := data[path[0]]
-	if !ok {
-		return
-	}
-	if len(path) == 1 {
-		data[path[0]] = Mask
-		return
-	}
-	if child, ok := v.(map[string]any); ok {
-		mask(child, path[1:])
-	}
 }
 
 func deepCopy(v any) any {

@@ -124,7 +124,7 @@ func (s *MailService) BatchSend(ctx context.Context, r *v1.BatchSendRequest) (*v
 func messageOf(v appmsg.View) *v1.Message {
 	m := v.Message
 	return &v1.Message{Id: m.ID, OrgId: m.OrgID, FromName: m.FromName, FromEmail: m.FromEmail, ToEmail: m.ToEmail, ToName: m.ToName,
-		Subject: v.MaskedSubject, Type: string(m.Type), Status: string(m.Status), Priority: int32(m.Priority), Tags: m.Tags,
+		Subject: m.Subject, Type: string(m.Type), Status: string(m.Status), Priority: int32(m.Priority), Tags: m.Tags,
 		CreatedAt: m.CreatedAt.UTC().Format(time.RFC3339), UpdatedAt: m.UpdatedAt.UTC().Format(time.RFC3339)}
 }
 
