@@ -44,6 +44,7 @@ docker compose -f docker-compose.test.yaml down -v
 | `IAM_AUDIENCE`, `IAM_CONSOLE_AUDIENCES` | `mailos`, `mailos-console` | The fake IAM's defaults for `aud` and `client_id` |
 | `IAM_SERVICE_CLIENT_ID`, `IAM_SERVICE_TENANT_ID`, `IAM_SERVICE_TOPICS` | `mailos-iam`, a new UUID per `up`, `iam.*` | IAM's own client, seeded as the system application of that tenant (contract §1). Every other caller is an application a test registers |
 | `KEY_MANAGER_MASTER_KEY` | random per work dir | Required everywhere |
+| `MESSAGE_DIGEST_KEY` | random per work dir | Keys the evidence digest (`sent_digest`) the canary checks; required in production |
 | `MAILOS_E2E_HOOKS`, `MAILOS_E2E_HOOKS_TOKEN` | `true`, random 48 characters | Capture mail, serve `/e2e/v1` |
 | `FEATURE_PUBSUB_INGEST`, `FEATURE_AUDIT_STREAM` | `false` | There is no broker in the stack (yet) |
 | `FEATURE_RAW_HTML_BLOCKS` | `true` | The suite covers it |
@@ -131,14 +132,34 @@ With `MAILOS_E2E_HOOKS=true` and `MAILOS_E2E_HOOKS_TOKEN` (at least 32 character
 | Package | Covers |
 |---|---|
 | `e2e/smoke` | `/health` and `/ready`; `/api/v1/templates` without a token is 401; a forged signature is 401; the administrator's token is accepted |
-| `e2e/flows` | IAM's tenant: a published template rendered for IAM's event with the OTP masked, body step-up and audit, duplicate events, scoped service callers, four-eyes, and IAM as the seeded system application (listed, not editable) |
+| `e2e/flows` | IAM's tenant: a published template rendered for IAM's event with the OTP masked, body step-up and audit, duplicate events, scoped service callers, four-eyes, IAM as the seeded system application (listed, not editable), and the secrets canary below |
 | `e2e/applications` | A registered server application sends from its default verified sender; Idempotency-Key replays and refuses reuse; another sender, type or tenant, an unregistered client, suspension and the daily quota are refused and audited; usage and the message filter; only administrators manage applications, with step-up, and senders must be verified; sandbox mail is captured; a spa user sends a browser template only to their own verified address, from the allowed origin, within the per-user limit |
-| `e2e/access` | every route against all six roles and no role; refused tokens (expired, not yet valid, other audience or issuer, no tenant, DPoP-bound as Bearer, `alg: none`); step-up (stale, weak ACR, delegated) with the RFC 9470 challenge on every sensitive route; refusals audited |
+| `e2e/access` | every route against all six roles and no role; the key and audit-integrity routes are 404 for every role of every tenant, the operator tenant's included; refused tokens (expired, not yet valid, other audience or issuer, no tenant, DPoP-bound as Bearer, `alg: none`); step-up (stale, weak ACR, delegated) with the RFC 9470 challenge on every sensitive route; refusals audited |
 | `e2e/tenancy` | another tenant reads, changes, deletes and lists none of a tenant's resources; suppressions and idempotency keys stay per tenant; a service token cannot name another tenant |
 | `e2e/messaging` | direct sends, idempotency keys, batches, scheduling and cancel, resend, suppressions (unsubscribe stops marketing only), sealed provider credentials, masked views and audited body reads |
 | `e2e/integrations` | webhooks: secret shown once, HMAC signature, retry of the same delivery, pause, validation; events from a registered application: message-type allow-list, 400/413/409/422, refusal without a published template |
 | `e2e/content` | template revisions, versions, restore, escaped preview, test-send sender rule, delete; events render the published version; branding; sending domains (records, DKIM private key never returned) ; audit export |
 | `e2e/limits` | starts its own server (port 19885 in the QA stack, `MAILOS_E2E_SERVER_BIN`) with rate limits on: 429 `RATE_LIMITED` with `Retry-After`, per tenant |
+
+### Secrets canary (`e2e/flows/secrets_test.go`)
+
+Authentication-class mail (topics with a `secret` or `secret_url` variable: codes and token-bearing links) is
+masked at persistence (ADR 0001 §3.6): `messages` holds redaction descriptors in `template_data`, the subject and
+both bodies; the live values sit only in `message_secrets`, sealed by the key manager (purpose `message_secret`),
+for at most an hour and never past a final status; the worker renders the full message in memory for the relay,
+with click and open tracking off, and scrubs the values from its log lines and errors. Such a message is never
+resent, and carries `sent_digest`, a keyed HMAC-SHA-256 of what the provider got.
+
+`TestNoLiveSecretAtRest` has IAM send a sign-in code and a password-reset link with values unique to the run.
+After both arrive in full, it searches:
+
+- every row of every table in the `public` schema (`MAILOS_E2E_PG_DSN`), including the audit log and webhook deliveries;
+- every Redis key (`MAILOS_E2E_REDIS_ADDR`) except `mailos:e2e:captured`, the sink that keeps sent mail on purpose;
+- `server.log` and `worker.log` in `MAILOS_E2E_LOG_DIR`;
+- every webhook payload its receiver (`127.0.0.1:19887`) got.
+
+None may hold the code or the token. It also checks that the console sees the descriptors, `auth_class` and
+`sent_digest`, and that resend is a 409. `e2e/run.sh env` prints the three variables.
 
 Feature packages come with the features. Each package uses its own `TestMain` and fixture, as above.
 

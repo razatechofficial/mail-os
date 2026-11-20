@@ -15,7 +15,7 @@ import (
 )
 
 // canaryHookAddr is where the canary's webhook receiver listens.
-const canaryHookAddr = "127.0.0.1:19885"
+const canaryHookAddr = "127.0.0.1:19887"
 
 // e2eSinkKey is the e2e sink's Redis list: it holds the mail as sent, on
 // purpose, so the test can read it, and is the only place a secret may be.
