@@ -54,6 +54,10 @@ type mandrillMessage struct {
 	Tags       []string          `json:"tags,omitempty"`
 	Subaccount string            `json:"subaccount,omitempty"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
+	// TrackOpens and TrackClicks are sent only to turn tracking off
+	// (NoTracking); left out, the account's sending defaults apply.
+	TrackOpens  *bool `json:"track_opens,omitempty"`
+	TrackClicks *bool `json:"track_clicks,omitempty"`
 	// Attachments, and Images: inline images named by their Content-ID.
 	Attachments []mandrillFile `json:"attachments,omitempty"`
 	Images      []mandrillFile `json:"images,omitempty"`
@@ -84,6 +88,10 @@ func (m *Mandrill) Send(ctx context.Context, out message.Outgoing) (Result, erro
 	}
 	if out.MessageID != "" {
 		msg.Metadata = map[string]string{"mailos_message_id": out.MessageID}
+	}
+	if out.NoTracking {
+		off := false
+		msg.TrackOpens, msg.TrackClicks = &off, &off
 	}
 	for _, a := range out.Attachments {
 		if a.Inline && a.ContentID != "" && strings.HasPrefix(a.ContentType, "image/") {

@@ -53,6 +53,11 @@ type spFile struct {
 type spRequest struct {
 	Options struct {
 		Transactional bool `json:"transactional"`
+		// Tracking switches, sent only to turn tracking off (NoTracking);
+		// initial_open is the top open pixel.
+		OpenTracking  *bool `json:"open_tracking,omitempty"`
+		ClickTracking *bool `json:"click_tracking,omitempty"`
+		InitialOpen   *bool `json:"initial_open,omitempty"`
 	} `json:"options"`
 	Recipients []struct {
 		Address spAddress `json:"address"`
@@ -87,6 +92,10 @@ func (s *SparkPost) Send(ctx context.Context, out message.Outgoing) (Result, err
 	}
 	var body spRequest
 	body.Options.Transactional = true
+	if out.NoTracking {
+		off := false
+		body.Options.OpenTracking, body.Options.ClickTracking, body.Options.InitialOpen = &off, &off, &off
+	}
 	body.Recipients = []struct {
 		Address spAddress `json:"address"`
 	}{{Address: spAddress{Email: out.To.Email, Name: out.To.Name}}}

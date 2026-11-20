@@ -50,6 +50,10 @@ type mjMessage struct {
 	HTMLPart string            `json:"HTMLPart,omitempty"`
 	Headers  map[string]string `json:"Headers,omitempty"`
 	CustomID string            `json:"CustomID,omitempty"`
+	// TrackOpens and TrackClicks are "disabled" to turn tracking off
+	// (NoTracking); left out, the account default applies.
+	TrackOpens  string `json:"TrackOpens,omitempty"`
+	TrackClicks string `json:"TrackClicks,omitempty"`
 	// Attachments and InlinedAttachments (by ContentID).
 	Attachments        []mjFile `json:"Attachments,omitempty"`
 	InlinedAttachments []mjFile `json:"InlinedAttachments,omitempty"`
@@ -97,6 +101,9 @@ func (m *Mailjet) Send(ctx context.Context, out message.Outgoing) (Result, error
 		Subject: out.Subject, TextPart: out.Text, HTMLPart: out.HTML, Headers: out.Headers, CustomID: out.MessageID}
 	if !out.ReplyTo.IsZero() {
 		msg.ReplyTo = &mjAddress{Email: out.ReplyTo.Email, Name: out.ReplyTo.Name}
+	}
+	if out.NoTracking {
+		msg.TrackOpens, msg.TrackClicks = "disabled", "disabled"
 	}
 	for _, a := range out.Attachments {
 		f := mjFile{ContentType: a.ContentType, Filename: a.Filename, Base64Content: b64(a.Data)}
