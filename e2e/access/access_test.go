@@ -132,14 +132,15 @@ func routes() []route {
 	}
 }
 
-// operatorRoutes manage the deployment's encryption keys: only the
-// administrators of the operator tenant (IAM's, IAM_SERVICE_TENANT_ID) call
-// them; every other tenant's roles, administrators included, are refused.
-func operatorRoutes() []route {
-	return []route{
-		{http.MethodGet, "/api/v1/keys/encryption", []string{admin}, true},
-		{http.MethodPost, "/api/v1/keys/encryption/nonexistent/rotate", []string{admin}, true},
-	}
+// removedRoutes were the deployment's key and audit-integrity routes: they
+// are on no tenant's API any more, the operator tenant's included (ADR 0001
+// §3.9; they return on the platform API).
+var removedRoutes = []struct{ method, path string }{
+	{http.MethodGet, "/api/v1/keys/encryption"},
+	{http.MethodPost, "/api/v1/keys/encryption/provider/rotate"},
+	{http.MethodGet, "/api/v1/keys/kek"},
+	{http.MethodPost, "/api/v1/keys/kek/rotate"},
+	{http.MethodGet, "/api/v1/analytics/audit-logs/integrity"},
 }
 
 // body is a request body no handler accepts, so a permitted write changes
@@ -166,9 +167,12 @@ func TestEveryRouteAgainstEveryRole(t *testing.T) {
 				checkRoute(t, c, r, role, slices.Contains(r.roles, role))
 			}
 			op := fx.As(t, harness.User{Tenant: fx.Env.IAMTenant, Roles: []string{role}})
-			for _, r := range operatorRoutes() {
-				checkRoute(t, c, r, role, false)
-				checkRoute(t, op, r, "operator tenant "+role, slices.Contains(r.roles, role))
+			for _, r := range removedRoutes {
+				for _, cl := range []*harness.Client{c, op} {
+					if res := cl.Do(t, r.method, r.path, map[string]any{"reason": "e2e"}); res.Status != http.StatusNotFound {
+						t.Errorf("%s %s %s = %d, want 404", role, r.method, r.path, res.Status)
+					}
+				}
 			}
 		})
 	}
@@ -266,17 +270,11 @@ func TestUnsignedAndMalformedTokens(t *testing.T) {
 }
 
 func TestStepUpOnSensitiveRoutes(t *testing.T) {
-	tenants := map[string]string{}
-	all := routes()
-	for _, r := range operatorRoutes() {
-		tenants[r.method+" "+r.path] = fx.Env.IAMTenant
-		all = append(all, r)
-	}
-	for _, r := range all {
+	for _, r := range routes() {
 		if !r.stepUp {
 			continue
 		}
-		role, tenant := r.roles[0], tenants[r.method+" "+r.path]
+		role, tenant := r.roles[0], ""
 		t.Run(r.method+" "+r.path, func(t *testing.T) {
 			as := func(u harness.User) *harness.Client {
 				u.Tenant = tenant
