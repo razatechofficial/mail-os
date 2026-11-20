@@ -51,8 +51,6 @@ func routes() []route {
 		{http.MethodGet, p("/api/v1/organizations/{id}"), all, false},
 		{http.MethodGet, "/api/v1/tenant/settings", all, false},
 		{http.MethodPut, "/api/v1/tenant/settings", adm, true},
-		{http.MethodGet, "/api/v1/keys/encryption", adm, true},
-		{http.MethodPost, "/api/v1/keys/encryption/nonexistent/rotate", adm, true},
 
 		{http.MethodGet, "/api/v1/templates", all, false},
 		{http.MethodPost, "/api/v1/templates", []string{admin, editor}, false},
@@ -134,6 +132,16 @@ func routes() []route {
 	}
 }
 
+// operatorRoutes manage the deployment's encryption keys: only the
+// administrators of the operator tenant (IAM's, IAM_SERVICE_TENANT_ID) call
+// them; every other tenant's roles, administrators included, are refused.
+func operatorRoutes() []route {
+	return []route{
+		{http.MethodGet, "/api/v1/keys/encryption", []string{admin}, true},
+		{http.MethodPost, "/api/v1/keys/encryption/nonexistent/rotate", []string{admin}, true},
+	}
+}
+
 // body is a request body no handler accepts, so a permitted write changes
 // nothing: it fails validation or finds nothing.
 func body(r route) any {
@@ -155,18 +163,28 @@ func TestEveryRouteAgainstEveryRole(t *testing.T) {
 		t.Run(role, func(t *testing.T) {
 			c, _ := fx.NewUser(t, role)
 			for _, r := range routes() {
-				res := c.Do(t, r.method, r.path, body(r))
-				allowed := slices.Contains(r.roles, role)
-				switch {
-				case allowed && (res.Status == http.StatusForbidden || res.Status == http.StatusUnauthorized):
-					t.Errorf("%s %s as %s = %s, want it permitted", r.method, r.path, role, res)
-				case !allowed && (res.Status != http.StatusForbidden || res.ErrorCode() != "FORBIDDEN"):
-					t.Errorf("%s %s as %s = %s, want 403 FORBIDDEN", r.method, r.path, role, res)
-				case allowed && res.Status >= 500:
-					t.Errorf("%s %s as %s = %s, want no server error", r.method, r.path, role, res)
-				}
+				checkRoute(t, c, r, role, slices.Contains(r.roles, role))
+			}
+			op := fx.As(t, harness.User{Tenant: fx.Env.IAMTenant, Roles: []string{role}})
+			for _, r := range operatorRoutes() {
+				checkRoute(t, c, r, role, false)
+				checkRoute(t, op, r, "operator tenant "+role, slices.Contains(r.roles, role))
 			}
 		})
+	}
+}
+
+// checkRoute calls r as c and checks it is permitted or refused 403.
+func checkRoute(t *testing.T, c *harness.Client, r route, who string, allowed bool) {
+	t.Helper()
+	res := c.Do(t, r.method, r.path, body(r))
+	switch {
+	case allowed && (res.Status == http.StatusForbidden || res.Status == http.StatusUnauthorized):
+		t.Errorf("%s %s as %s = %s, want it permitted", r.method, r.path, who, res)
+	case !allowed && (res.Status != http.StatusForbidden || res.ErrorCode() != "FORBIDDEN"):
+		t.Errorf("%s %s as %s = %s, want 403 FORBIDDEN", r.method, r.path, who, res)
+	case allowed && res.Status >= 500:
+		t.Errorf("%s %s as %s = %s, want no server error", r.method, r.path, who, res)
 	}
 }
 
@@ -248,31 +266,41 @@ func TestUnsignedAndMalformedTokens(t *testing.T) {
 }
 
 func TestStepUpOnSensitiveRoutes(t *testing.T) {
-	for _, r := range routes() {
+	tenants := map[string]string{}
+	all := routes()
+	for _, r := range operatorRoutes() {
+		tenants[r.method+" "+r.path] = fx.Env.IAMTenant
+		all = append(all, r)
+	}
+	for _, r := range all {
 		if !r.stepUp {
 			continue
 		}
-		role := r.roles[0]
+		role, tenant := r.roles[0], tenants[r.method+" "+r.path]
 		t.Run(r.method+" "+r.path, func(t *testing.T) {
-			stale := fx.As(t, harness.User{Roles: []string{role}, AuthAge: 10 * time.Minute})
+			as := func(u harness.User) *harness.Client {
+				u.Tenant = tenant
+				return fx.As(t, u)
+			}
+			stale := as(harness.User{Roles: []string{role}, AuthAge: 10 * time.Minute})
 			res := stale.ExpectError(t, http.StatusForbidden, "STEP_UP_REQUIRED", r.method, r.path, body(r))
 			h := res.Header.Get("WWW-Authenticate")
 			if !strings.Contains(h, `error="insufficient_user_authentication"`) || !strings.Contains(h, "max_age=") {
 				t.Errorf("stale challenge = %q", h)
 			}
-			weak := fx.As(t, harness.User{Roles: []string{role}, ACR: "urn:iam:acr:password"})
+			weak := as(harness.User{Roles: []string{role}, ACR: "urn:iam:acr:password"})
 			res = weak.ExpectError(t, http.StatusForbidden, "STEP_UP_REQUIRED", r.method, r.path, body(r))
 			if h := res.Header.Get("WWW-Authenticate"); !strings.Contains(h, "acr_values=") {
 				t.Errorf("weak sign-in challenge has no acr_values: %q", h)
 			}
-			unknown := fx.As(t, harness.User{Roles: []string{role}, ACR: "0"})
+			unknown := as(harness.User{Roles: []string{role}, ACR: "0"})
 			unknown.ExpectError(t, http.StatusForbidden, "STEP_UP_REQUIRED", r.method, r.path, body(r))
-			delegated := fx.As(t, harness.User{Roles: []string{role}, Extra: map[string]any{"act": map[string]any{"sub": harness.NewID()}}})
+			delegated := as(harness.User{Roles: []string{role}, Extra: map[string]any{"act": map[string]any{"sub": harness.NewID()}}})
 			res = delegated.Expect(t, http.StatusForbidden, r.method, r.path, body(r))
 			if res.ErrorCode() == "STEP_UP_REQUIRED" {
 				t.Errorf("a delegated token was offered step-up: %s", res)
 			}
-			fresh := fx.As(t, harness.User{Roles: []string{role}})
+			fresh := as(harness.User{Roles: []string{role}})
 			if res := fresh.Do(t, r.method, r.path, body(r)); res.Status == http.StatusForbidden {
 				t.Errorf("fresh MFA sign-in refused: %s", res)
 			}
