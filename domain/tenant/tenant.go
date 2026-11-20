@@ -36,10 +36,14 @@ var ErrDisabled = apperrors.Forbidden("MailOS is disabled for this tenant")
 // ErrNotFound is returned by repositories for an unknown tenant.
 var ErrNotFound = errors.New("tenant not found")
 
+// MaxRetentionDays bounds message retention, the platform default and a
+// tenant's own (ADR 0001 §3.6): it bounds what any stored body can reveal.
+const MaxRetentionDays = 90
+
 // Validate checks the settings an administrator submits.
 func (s Settings) Validate() error {
-	if s.MessageRetentionDays != nil && (*s.MessageRetentionDays < 1 || *s.MessageRetentionDays > 3650) {
-		return apperrors.Invalid("message_retention_days", "out_of_range", "must be between 1 and 3650 days")
+	if s.MessageRetentionDays != nil && (*s.MessageRetentionDays < 1 || *s.MessageRetentionDays > MaxRetentionDays) {
+		return apperrors.Invalid("message_retention_days", "out_of_range", "must be between 1 and 90 days")
 	}
 	return nil
 }
