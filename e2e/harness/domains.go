@@ -34,3 +34,19 @@ func (f *Fixture) VerifiedDomain(t T) string {
 	}
 	return name
 }
+
+// ServerApp registers a live server application of the package's tenant
+// that may send types, from a new verified domain, and returns a client
+// calling as its IAM service client. Events and API sends need one: only
+// IAM's own client is seeded, in IAM's tenant.
+func (f *Fixture) ServerApp(t T, types ...string) *Client {
+	t.Helper()
+	domain := f.VerifiedDomain(t)
+	client := "app-" + Unique()
+	f.Admin(t).Expect(t, http.StatusCreated, http.MethodPost, "/api/v1/applications", map[string]any{
+		"name": "App " + client, "kind": "server", "client_id": client, "environment": "live", "stream": "transactional",
+		"message_types": types, "senders": []string{"*@" + domain}, "default_from_email": "notices@" + domain,
+		"rate_limit_per_minute": 600, "daily_quota": 10000,
+	})
+	return f.Service(t, client)
+}
