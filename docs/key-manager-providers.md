@@ -77,15 +77,17 @@ from the master key into the HSM, from one HSM label to another, or from KMS bac
    `KEY_MANAGER_NEW_MASTER_KEY`, `KEY_MANAGER_PKCS11_NEW_KEK_LABEL` (with the PKCS#11 settings),
    `KEY_MANAGER_KMS_NEW_KEK_KEY_ID`, `KEY_MANAGER_GCP_KMS_NEW_KEK_KEY`, `KEY_MANAGER_AZURE_NEW_KEK_KEY` or
    `KEY_MANAGER_VAULT_NEW_KEK_KEY` (with that service's connection settings). Nothing changes yet.
-2. **Start**: `POST /api/v1/keys/kek/rotate` with `{"reason": "..."}` (`settings:manage`, step-up). A
-   `kek_rotations` row is recorded, and from then on new DEKs are wrapped under the new KEK. Every replica reads
-   the latest rotation before wrapping a DEK.
+2. **Start**: a `kek_rotations` row is recorded, and from then on new DEKs are wrapped under the new KEK. Every
+   replica reads the latest rotation before wrapping a DEK. The deployment's keys are on no tenant's API (ADR
+   0001 §3.9): the start, the key status and manual DEK rotation return on the platform API
+   (`/api/platform/v1/keys/*`), proposed by one `platform_key_custodian` and approved by another. Until that
+   release, DEKs keep rotating on their schedule, and a KEK rotation cannot be started.
 3. **Re-wrap**: the key schedule (every minute, one replica, under the advisory lock) unwraps each DEK whose
    `kek_id` is not the target and wraps it under the new KEK. It stores the result only if the row is unchanged
    (compare-and-swap on `key_ref`). The pass is idempotent and resumable: a failed key is counted
    (`failed`, `last_error`) and retried on the next pass, and a crash or restart just continues from what
    `kek_id` says. The rotation completes when nothing is left, nothing failed, and 2 minutes have passed since it
-   started. `GET /api/v1/keys/kek` shows the progress and how many DEKs each KEK wraps.
+   started. The platform API's KEK status shows the progress and how many DEKs each KEK wraps.
 4. **Promote**: make the new KEK current (for example `KEY_MANAGER_MASTER_KEY=<new>`, or
    `KEY_MANAGER_PROVIDER=pkcs11` with `KEY_MANAGER_PKCS11_KEK_LABEL=<new label>`), remove the `*_NEW_*` setting
    and the old KEK, and deploy. A replica that lacks the KEK named by the latest rotation refuses to start rather
