@@ -256,6 +256,9 @@ type Config struct {
 	// Attachments bound a message's files (ATTACHMENTS_*); the zero value
 	// refuses every attachment.
 	Attachments domainmsg.AttachmentLimits
+	// SecretTTL is the longest an authentication-class message's live
+	// secrets are kept for retries (at most and by default an hour).
+	SecretTTL time.Duration
 }
 
 func (c Config) withDefaults() Config {
@@ -270,6 +273,9 @@ func (c Config) withDefaults() Config {
 	}
 	if c.StaleSending <= 0 {
 		c.StaleSending = 10 * time.Minute
+	}
+	if c.SecretTTL <= 0 || c.SecretTTL > domainmsg.DefaultSecretTTL {
+		c.SecretTTL = domainmsg.DefaultSecretTTL
 	}
 	return c
 }

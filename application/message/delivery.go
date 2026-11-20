@@ -2,6 +2,7 @@ package message
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"maps"
 	"time"
@@ -30,6 +31,11 @@ func (e *RetryError) Unwrap() error { return e.Err }
 // RetryAfter is the worker's RetryAfter hook.
 func (e *RetryError) RetryAfter() time.Duration { return e.After }
 
+// SecretExpired is the failure of an authentication-class message whose
+// live secrets expired (or were never stored) before it could be sent: a
+// stale code is useless, so it is not sent at all.
+const SecretExpired = "secret_expired: the message's one-time code or link expired before it could be sent"
+
 // Deliver sends one queued message: suppression check, rendering of the
 // pinned version, DKIM key, the tenant's providers. A sandbox
 // application's message is rendered and captured instead: no provider is
@@ -37,6 +43,12 @@ func (e *RetryError) RetryAfter() time.Duration { return e.After }
 // requeues the message and returns a RetryError; a permanent one, or the
 // last attempt, records the outcome and returns nil. Messages that are no
 // longer queued (cancelled, already sent) are skipped.
+//
+// An authentication-class message is rendered twice on every attempt: in
+// full, in memory, with its live secrets from the sealed store, for the
+// relay (tracking off); and redacted, from its stored data, for the row.
+// Its secrets are scrubbed from every log line and error the attempt
+// writes, and deleted once it is final.
 func (s *Service) Deliver(ctx context.Context, tenantID, id string) error {
 	ctx = audit.WithTenant(ctx, tenantID)
 	m, err := s.d.Repo.Get(ctx, tenantID, id)
@@ -47,6 +59,17 @@ func (s *Service) Deliver(ctx context.Context, tenantID, id string) error {
 		return nil
 	}
 	now := s.now()
+	var live domainmsg.Secrets
+	if m.AuthClass() {
+		var found bool
+		if live, found, err = s.openSecrets(ctx, m, now); err != nil {
+			return err
+		}
+		if !found {
+			return s.fail(ctx, m, SecretExpired, now)
+		}
+		ctx = logger.ScrubContext(ctx, live.Values())
+	}
 	sup, err := s.d.Suppressions.Blocks(ctx, tenantID, m.ApplicationID, m.ToEmail, m.Type)
 	if err != nil {
 		return err
@@ -56,23 +79,20 @@ func (s *Service) Deliver(ctx context.Context, tenantID, id string) error {
 		if err := m.Transition(domainmsg.StatusSuppressed, now); err != nil {
 			return err
 		}
-		_, err := s.d.Repo.Update(ctx, m, domainmsg.StatusQueued)
+		_, err := s.update(ctx, m, domainmsg.StatusQueued)
 		return err
 	}
 	unsub := s.unsubscribeURL(ctx, m)
-	if m.TemplateVersionID != "" && m.HTMLBody == "" && m.TextBody == "" {
-		if err := s.render(ctx, &m, unsub); err != nil {
-			m.LastError = "the template could not be rendered"
-			if terr := m.Transition(domainmsg.StatusFailed, now); terr != nil {
-				return terr
-			}
-			if _, uerr := s.d.Repo.Update(ctx, m, domainmsg.StatusQueued); uerr != nil {
-				return uerr
-			}
-			logger.FromContext(ctx).Warn("render failed", logger.String("message_id", m.ID), logger.Err(err))
-			s.after(ctx, m, analytics.Failed, webhook.EventFailed)
-			return nil
+	var sent *Content
+	if m.TemplateVersionID != "" && (m.AuthClass() || m.HTMLBody == "" && m.TextBody == "") {
+		c, err := s.render(ctx, &m, unsub, live)
+		if err != nil {
+			// The template's identity only: never the data or the error text.
+			logger.FromContext(ctx).Warn("render failed", logger.String("message_id", m.ID),
+				logger.String("template_id", m.TemplateID), logger.String("template_version_id", m.TemplateVersionID))
+			return s.fail(ctx, m, "the template could not be rendered", now)
 		}
+		sent = &c
 	}
 	if err := m.Transition(domainmsg.StatusSending, now); err != nil {
 		return err
@@ -84,7 +104,7 @@ func (s *Service) Deliver(ctx context.Context, tenantID, id string) error {
 		if err := m.Transition(domainmsg.StatusCaptured, s.now()); err != nil {
 			return err
 		}
-		_, err := s.d.Repo.Update(ctx, m, domainmsg.StatusSending)
+		_, err := s.update(ctx, m, domainmsg.StatusSending)
 		return err
 	}
 
@@ -92,6 +112,10 @@ func (s *Service) Deliver(ctx context.Context, tenantID, id string) error {
 	if err != nil {
 		return err
 	}
+	if sent != nil {
+		out.Subject, out.HTML, out.Text = sent.Subject, sent.HTML, sent.Text
+	}
+	out.NoTracking = m.AuthClass()
 	if unsub != "" && out.Headers["List-Unsubscribe"] == "" {
 		if out.Headers == nil {
 			out.Headers = map[string]string{}
@@ -110,13 +134,16 @@ func (s *Service) Deliver(ctx context.Context, tenantID, id string) error {
 		if err := m.MarkSent(res.ProviderID, res.ProviderMessageID, now); err != nil {
 			return err
 		}
-		if _, err := s.d.Repo.Update(ctx, m, domainmsg.StatusSending); err != nil {
+		if _, err := s.update(ctx, m, domainmsg.StatusSending); err != nil {
 			return err
 		}
 		s.after(ctx, m, analytics.Sent, webhook.EventSent)
 		metrics.Delivered(now.Sub(acceptedAt(m)))
 		return nil
 	}
+	// A provider may echo the content in its error: the error is scrubbed
+	// before it is stored, logged or handed to the queue.
+	sendErr = live.ScrubError(sendErr)
 	if errors.Is(sendErr, context.Canceled) && ctx.Err() != nil {
 		// Shutting down: put it back for the next worker.
 		_ = m.Transition(domainmsg.StatusQueued, now)
@@ -127,7 +154,8 @@ func (s *Service) Deliver(ctx context.Context, tenantID, id string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := s.d.Repo.Update(ctx, m, domainmsg.StatusSending); err != nil {
+	m.LastError = live.Scrub(m.LastError)
+	if _, err := s.update(ctx, m, domainmsg.StatusSending); err != nil {
 		return err
 	}
 	switch m.Status {
@@ -143,6 +171,56 @@ func (s *Service) Deliver(ctx context.Context, tenantID, id string) error {
 		return &RetryError{Err: sendErr, After: domainmsg.RetryAfterOf(sendErr)}
 	}
 	return nil
+}
+
+// fail records a permanent failure of a queued message before it was
+// handed to a provider, and tells the tenant's webhooks.
+func (s *Service) fail(ctx context.Context, m domainmsg.Message, reason string, now time.Time) error {
+	m.LastError = reason
+	if err := m.Transition(domainmsg.StatusFailed, now); err != nil {
+		return err
+	}
+	if _, err := s.update(ctx, m, domainmsg.StatusQueued); err != nil {
+		return err
+	}
+	s.after(ctx, m, analytics.Failed, webhook.EventFailed)
+	return nil
+}
+
+// update saves m when its status is still expect; once it is final, an
+// authentication-class message's live secrets are deleted (a failed
+// delete is left to the expiry sweep, which runs every few minutes).
+func (s *Service) update(ctx context.Context, m domainmsg.Message, expect domainmsg.Status) (bool, error) {
+	ok, err := s.d.Repo.Update(ctx, m, expect)
+	if err != nil || !ok || !m.Status.Final() || !m.AuthClass() || s.d.Secrets == nil {
+		return ok, err
+	}
+	if err := s.d.Secrets.Delete(context.WithoutCancel(ctx), m.OrgID, m.ID); err != nil {
+		logger.FromContext(ctx).Warn("delete message secrets; the sweep removes them", logger.String("message_id", m.ID), logger.Err(err))
+	}
+	return ok, nil
+}
+
+// openSecrets reads and opens an authentication-class message's live
+// secrets; found is false when there are none or they expired. A store or
+// key manager failure is an error, retried by the queue.
+func (s *Service) openSecrets(ctx context.Context, m domainmsg.Message, now time.Time) (domainmsg.Secrets, bool, error) {
+	if s.d.Secrets == nil || s.d.SecretCipher == nil {
+		return nil, false, nil
+	}
+	sealed, found, err := s.d.Secrets.Get(ctx, m.OrgID, m.ID, now)
+	if err != nil || !found {
+		return nil, false, err
+	}
+	plain, err := s.d.SecretCipher.Open(ctx, sealed)
+	if err != nil {
+		return nil, false, err
+	}
+	var live domainmsg.Secrets
+	if err := json.Unmarshal(plain, &live); err != nil {
+		return nil, false, err
+	}
+	return live, true, nil
 }
 
 // signingKey is the DKIM key for the message's sender, or nil when the
@@ -184,15 +262,18 @@ func (s *Service) unsubscribeURL(ctx context.Context, m domainmsg.Message) strin
 	return u
 }
 
-// render fills the subject and bodies from the pinned version. unsub, when
-// set, is the {{unsubscribe_url}} variable unless the data has one.
-func (s *Service) render(ctx context.Context, m *domainmsg.Message, unsub string) error {
+// render fills m's subject and bodies from the pinned version and its
+// stored data, and returns what the relay sends: the same, or for an
+// authentication-class message a render with its live secrets merged in,
+// which is never stored. unsub, when set, is the {{unsubscribe_url}}
+// variable unless the data has one.
+func (s *Service) render(ctx context.Context, m *domainmsg.Message, unsub string, live domainmsg.Secrets) (Content, error) {
 	if s.d.Versions == nil || s.d.Render == nil {
-		return errors.New("templates are not available")
+		return Content{}, errors.New("templates are not available")
 	}
 	v, err := s.d.Versions.Version(ctx, m.OrgID, m.TemplateVersionID)
 	if err != nil {
-		return err
+		return Content{}, err
 	}
 	data := s.renderData(ctx, m.OrgID, m.Topic, m.TemplateData)
 	if _, ok := data["unsubscribe_url"]; unsub != "" && !ok {
@@ -202,12 +283,20 @@ func (s *Service) render(ctx context.Context, m *domainmsg.Message, unsub string
 		}
 		data["unsubscribe_url"] = unsub
 	}
-	c, err := s.d.Render(Content{Subject: v.Subject, HTML: v.HTMLBody, Text: v.TextBody}, data)
+	tpl := Content{Subject: v.Subject, HTML: v.HTMLBody, Text: v.TextBody}
+	stored, err := s.d.Render(tpl, data)
 	if err != nil {
-		return err
+		return Content{}, err
 	}
-	m.Subject, m.HTMLBody, m.TextBody = c.Subject, c.HTML, c.Text
-	return nil
+	sent := stored
+	if len(live) > 0 {
+		if sent, err = s.d.Render(tpl, live.Merge(data)); err != nil {
+			return Content{}, err
+		}
+		stored = Content{Subject: live.Scrub(stored.Subject), HTML: live.Scrub(stored.HTML), Text: live.Scrub(stored.Text)}
+	}
+	m.Subject, m.HTMLBody, m.TextBody = stored.Subject, stored.HTML, stored.Text
+	return sent, nil
 }
 
 // acceptedAt is when the message became due: its scheduled time, else

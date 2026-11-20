@@ -2,6 +2,7 @@ package message
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -26,6 +27,11 @@ var ErrDuplicateKey = errors.New("duplicate idempotency key")
 
 // ErrBodyGone is the 404 for a body erased under the retention policy.
 var ErrBodyGone = apperrors.NotFound("the message body is no longer stored")
+
+// ErrAuthResend refuses resending authentication mail: its stored copy
+// holds no live code or link, and a stale one is useless. The person asks
+// the IAM for a fresh code or link instead (ADR 0001 §3.6).
+var ErrAuthResend = apperrors.Conflict("authentication mail cannot be resent; the IAM issues a fresh code or link instead")
 
 // MaxBatch bounds one batch send.
 const MaxBatch = 100
@@ -123,7 +129,7 @@ func (s *Service) Send(ctx context.Context, in SendInput) (Result, error) {
 	if err := s.schedule(&m, in.ScheduleAt, now); err != nil {
 		return Result{}, err
 	}
-	m, err := s.queue(ctx, m, "", true)
+	m, err := s.queue(ctx, m, "", true, nil)
 	return Result{MessageID: m.ID, Status: string(m.Status)}, err
 }
 
@@ -173,8 +179,9 @@ func (s *Service) authorize(ctx context.Context, m *domainmsg.Message, slug stri
 // application's rules and the suppression list, stores it and hands it to
 // the queue. slug is the template's, for the application's message types.
 // scan is false only for files the scanner already passed (a campaign's,
-// scanned when the campaign was saved).
-func (s *Service) queue(ctx context.Context, m domainmsg.Message, slug string, scan bool) (domainmsg.Message, error) {
+// scanned when the campaign was saved). live are an authentication-class
+// message's secrets, stored sealed beside it, never in it.
+func (s *Service) queue(ctx context.Context, m domainmsg.Message, slug string, scan bool, live domainmsg.Secrets) (domainmsg.Message, error) {
 	if err := s.d.Tenants.Ensure(ctx, m.OrgID); err != nil {
 		return domainmsg.Message{}, err
 	}
@@ -204,7 +211,7 @@ func (s *Service) queue(ctx context.Context, m domainmsg.Message, slug string, s
 		m.Status = domainmsg.StatusSuppressed
 		m.LastError = "the recipient is on the suppression list (" + string(sup.Type) + ")"
 	}
-	if err := s.d.Repo.Create(ctx, m); err != nil {
+	if err := s.store(ctx, m, live); err != nil {
 		if errors.Is(err, ErrDuplicateKey) {
 			if prior, err := s.d.Repo.ByIdempotencyKey(ctx, m.OrgID, m.IdempotencyKey); err == nil && prior != nil {
 				return *prior, nil
@@ -226,6 +233,34 @@ func (s *Service) queue(ctx context.Context, m domainmsg.Message, slug string, s
 		return domainmsg.Message{}, err
 	}
 	return m, nil
+}
+
+// store saves m and, while it still has to be sent, its live secrets
+// sealed with the key manager, in one transaction. A message with secrets
+// is refused when the secret store is not configured: it is never stored
+// with them.
+func (s *Service) store(ctx context.Context, m domainmsg.Message, live domainmsg.Secrets) error {
+	if len(live) == 0 || m.Status.Final() {
+		return s.d.Repo.Create(ctx, m)
+	}
+	if s.d.Secrets == nil || s.d.SecretCipher == nil {
+		return apperrors.Unavailable("authentication mail cannot be sent: the message secret store is not configured")
+	}
+	plain, err := json.Marshal(live)
+	if err != nil {
+		return err
+	}
+	sealed, err := s.d.SecretCipher.Seal(ctx, plain)
+	if err != nil {
+		return err
+	}
+	expires := domainmsg.SecretExpiry(m.TemplateData, m.CreatedAt, s.cfg.SecretTTL)
+	return s.d.Secrets.InTx(ctx, func(ctx context.Context) error {
+		if err := s.d.Repo.Create(ctx, m); err != nil {
+			return err
+		}
+		return s.d.Secrets.Put(ctx, m.OrgID, m.ID, sealed, m.CreatedAt, expires)
+	})
 }
 
 // checkAttachments normalizes m's files and checks them against the
@@ -365,7 +400,9 @@ func typeOf(c domaintemplate.Category) domainmsg.Type {
 
 // SendTemplated resolves the template's published version, pins it, and
 // queues the message with the data and the topic's secret keys. The
-// worker renders it.
+// worker renders it. An authentication-class message is stored with its
+// secret values replaced by redaction descriptors; the live values go to
+// the sealed secret store for the worker alone.
 func (s *Service) SendTemplated(ctx context.Context, in TemplatedSend) (domainmsg.Message, error) {
 	if s.d.Templates == nil {
 		return domainmsg.Message{}, apperrors.Unavailable("templates are not available")
@@ -401,11 +438,12 @@ func (s *Service) SendTemplated(ctx context.Context, in TemplatedSend) (domainms
 		typ = typeOf(tpl.Category)
 	}
 	secretKeys := domaintemplate.SecretKeys(topic)
+	stored, live := domainmsg.SplitSecrets(topic, data)
 	now := s.now()
 	m := domainmsg.Message{
 		ID: id.New(), OrgID: in.TenantID, FromName: in.FromName, FromEmail: in.FromEmail, ToEmail: in.To, ToName: in.ToName,
 		ReplyTo: in.replyTo, Type: typ, Priority: domainmsg.Priority(in.priority), Tags: in.Tags, Metadata: in.metadata,
-		Topic: topic, TemplateID: tpl.ID, TemplateVersionID: ver.ID, Locale: string(ver.Locale), TemplateData: data,
+		Topic: topic, TemplateID: tpl.ID, TemplateVersionID: ver.ID, Locale: string(ver.Locale), TemplateData: stored,
 		SecretKeys: secretKeys, EventID: in.EventID, IdempotencyKey: in.IdempotencyKey, Actor: actorOf(ctx),
 		CampaignID: in.CampaignID, Attachments: in.Attachments, CreatedAt: now, UpdatedAt: now,
 	}
@@ -419,16 +457,17 @@ func (s *Service) SendTemplated(ctx context.Context, in TemplatedSend) (domainms
 		}
 		m.Metadata["source"] = in.Source
 	}
-	// The subject is rendered now so lists show it; views mask its secrets.
+	// The subject is rendered now, from the stored (redacted) data, so lists
+	// show it.
 	if s.d.Render != nil {
-		if c, err := s.d.Render(Content{Subject: ver.Subject}, s.renderData(ctx, in.TenantID, topic, data)); err == nil {
-			m.Subject = c.Subject
+		if c, err := s.d.Render(Content{Subject: ver.Subject}, s.renderData(ctx, in.TenantID, topic, stored)); err == nil {
+			m.Subject = live.Scrub(c.Subject)
 		}
 	}
 	if err := s.schedule(&m, in.scheduleAt, now); err != nil {
 		return domainmsg.Message{}, err
 	}
-	return s.queue(ctx, m, tpl.Slug, !in.scanned)
+	return s.queue(ctx, m, tpl.Slug, !in.scanned, live)
 }
 
 // TestMessage is a template test send, rendered by the templates slice.
@@ -446,19 +485,20 @@ func (s *Service) SendTest(ctx context.Context, t TestMessage) (messageID, statu
 	return r.MessageID, r.Status, err
 }
 
-// View is a message as the console and API show it: no bodies, the
-// subject and template data with secret values masked.
+// View is a message as the console and API show it: no bodies, and the
+// subject and template data as stored, in which an authentication-class
+// message holds redaction descriptors, never a live secret.
 type View struct {
 	domainmsg.Message
-	MaskedSubject      string
-	MaskedTemplateData map[string]any
+	// AuthClass marks authentication mail: never resent.
+	AuthClass bool
 	// Events are the providers' delivery events, oldest first; only Get
 	// fills them.
 	Events []domainmsg.DeliveryEvent
 }
 
 func viewOf(m domainmsg.Message) View {
-	return View{Message: m, MaskedSubject: m.Redact(m.Subject), MaskedTemplateData: m.MaskedTemplateData()}
+	return View{Message: m, AuthClass: m.AuthClass()}
 }
 
 // Get returns one message.
@@ -493,8 +533,8 @@ type Body struct {
 	Text string `json:"text_body"`
 }
 
-// Body returns a message's body, audited (message.body_viewed). Secret
-// values stay masked; a purged body is 404.
+// Body returns a message's stored body, audited (message.body_viewed). An
+// authentication-class body is the redacted copy; a purged body is 404.
 func (s *Service) Body(ctx context.Context, tenantID, id string) (Body, error) {
 	m, err := s.d.Repo.Get(ctx, tenantID, id)
 	if err != nil {
@@ -506,7 +546,7 @@ func (s *Service) Body(ctx context.Context, tenantID, id string) (Body, error) {
 	if err := s.d.Audit.Append(ctx, "message", m.ID, "message.body_viewed", map[string]any{"to": logger.MaskEmail(m.ToEmail)}); err != nil {
 		return Body{}, err
 	}
-	return Body{HTML: m.Redact(m.HTMLBody), Text: m.Redact(m.TextBody)}, nil
+	return Body{HTML: m.HTMLBody, Text: m.TextBody}, nil
 }
 
 // Cancel stops a queued or scheduled message.
@@ -522,7 +562,7 @@ func (s *Service) Cancel(ctx context.Context, tenantID, id string) (domainmsg.Me
 	if err := m.Transition(domainmsg.StatusCancelled, s.now()); err != nil {
 		return domainmsg.Message{}, err
 	}
-	ok, err := s.d.Repo.Update(ctx, m, from)
+	ok, err := s.update(ctx, m, from)
 	if err != nil {
 		return domainmsg.Message{}, err
 	}
@@ -536,10 +576,14 @@ func (s *Service) Cancel(ctx context.Context, tenantID, id string) (domainmsg.Me
 }
 
 // Resend queues a copy of a finished message as a new message.
+// Authentication mail is never resent (ErrAuthResend).
 func (s *Service) Resend(ctx context.Context, tenantID, messageID string) (domainmsg.Message, error) {
 	orig, err := s.d.Repo.Get(ctx, tenantID, messageID)
 	if err != nil {
 		return domainmsg.Message{}, err
+	}
+	if orig.AuthClass() {
+		return domainmsg.Message{}, ErrAuthResend
 	}
 	if !orig.Status.Final() {
 		return domainmsg.Message{}, apperrors.Conflict("the message is still being sent")
@@ -563,7 +607,7 @@ func (s *Service) Resend(ctx context.Context, tenantID, messageID string) (domai
 		// Rendered again from the pinned version and the stored data.
 		m.HTMLBody, m.TextBody = "", ""
 	}
-	out, err := s.queue(ctx, m, "", true)
+	out, err := s.queue(ctx, m, "", true, nil)
 	if err != nil {
 		return domainmsg.Message{}, err
 	}
