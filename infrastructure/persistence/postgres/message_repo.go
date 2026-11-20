@@ -305,11 +305,13 @@ func (r *MessageRepository) Stale(ctx context.Context, queuedBefore, sendingBefo
 		ORDER BY updated_at LIMIT $3`, queuedBefore, sendingBefore, limit)
 }
 
-// PurgeTenants lists tenants holding bodies of final messages, inbound
-// event receipts or finished webhook deliveries.
+// PurgeTenants lists tenants holding bodies of final messages or of
+// messages more than two days old (the shortest time a message may be
+// stuck), inbound event receipts or finished webhook deliveries.
 func (r *MessageRepository) PurgeTenants(ctx context.Context) ([]string, error) {
 	rows, err := QuerierFromContext(ctx, r.db).Query(ctx,
-		`SELECT DISTINCT org_id FROM messages WHERE body_purged_at IS NULL AND status IN `+finalStatuses+`
+		`SELECT DISTINCT org_id FROM messages WHERE body_purged_at IS NULL
+			AND (status IN `+finalStatuses+` OR created_at < now() - interval '2 days')
 		UNION SELECT DISTINCT org_id FROM inbound_events
 		UNION SELECT DISTINCT w.org_id FROM webhook_deliveries d JOIN webhooks w ON w.id = d.webhook_id WHERE d.status <> 'pending'`)
 	if err != nil {
@@ -327,21 +329,28 @@ func (r *MessageRepository) PurgeTenants(ctx context.Context) ([]string, error) 
 	return out, rows.Err()
 }
 
-// PurgeCandidates lists final messages past retention with their bodies.
-func (r *MessageRepository) PurgeCandidates(ctx context.Context, tenantID string, before time.Time, limit int) ([]domain.Message, error) {
+// PurgeCandidates lists messages with their bodies that are final and
+// past retention (created before before), or stuck (not final and created
+// before stuck).
+func (r *MessageRepository) PurgeCandidates(ctx context.Context, tenantID string, before, stuck time.Time, limit int) ([]domain.Message, error) {
 	return r.query(ctx, `SELECT `+messageCols+` FROM messages WHERE org_id = $1 AND body_purged_at IS NULL
-		AND created_at < $2 AND status IN `+finalStatuses+` ORDER BY created_at LIMIT $3`, tenantID, before, limit)
+		AND ((created_at < $2 AND status IN `+finalStatuses+`) OR (created_at < $3 AND status NOT IN `+finalStatuses+`))
+		ORDER BY created_at LIMIT $4`, tenantID, before, stuck, limit)
 }
 
-// SavePurged erases the bodies, template data and attachments and stores
-// the masked subject.
+// SavePurged erases the bodies, template data and attachments, stores the
+// subject and, for an abandoned message, its failed status; the message's
+// live secrets go with them.
 func (r *MessageRepository) SavePurged(ctx context.Context, m domain.Message) error {
 	return r.db.InTx(ctx, func(ctx context.Context) error {
 		q := QuerierFromContext(ctx, r.db)
 		if _, err := q.Exec(ctx, `
 			UPDATE messages SET subject = $3, html_body = NULL, text_body = NULL, template_data = NULL,
-				body_purged_at = $4, updated_at = $4
-			WHERE id = $1 AND org_id = $2`, m.ID, m.OrgID, m.Subject, m.BodyPurgedAt); err != nil {
+				body_purged_at = $4, updated_at = $4, status = $5, failed_at = $6, last_error = NULLIF($7, '')
+			WHERE id = $1 AND org_id = $2`, m.ID, m.OrgID, m.Subject, m.BodyPurgedAt, string(m.Status), m.FailedAt, m.LastError); err != nil {
+			return err
+		}
+		if _, err := q.Exec(ctx, `DELETE FROM message_secrets WHERE message_id = $1`, m.ID); err != nil {
 			return err
 		}
 		_, err := q.Exec(ctx, `DELETE FROM message_attachments WHERE message_id = $1 AND org_id = $2`, m.ID, m.OrgID)

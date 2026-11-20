@@ -57,11 +57,13 @@ type Repository interface {
 	// Stale lists queued messages not touched since queuedBefore and
 	// sending ones not touched since sendingBefore.
 	Stale(ctx context.Context, queuedBefore, sendingBefore time.Time, limit int) ([]domainmsg.Message, error)
-	// PurgeTenants lists tenants with stored bodies of final messages.
+	// PurgeTenants lists tenants with stored bodies of final messages, or
+	// of messages that may be stuck.
 	PurgeTenants(ctx context.Context) ([]string, error)
-	// PurgeCandidates lists final messages created before t whose body is
-	// still stored; SavePurged writes a purged message back.
-	PurgeCandidates(ctx context.Context, tenantID string, before time.Time, limit int) ([]domainmsg.Message, error)
+	// PurgeCandidates lists messages whose body is still stored: final ones
+	// created before t, and non-final ones created before stuck;
+	// SavePurged writes a purged message back, with its status.
+	PurgeCandidates(ctx context.Context, tenantID string, before, stuck time.Time, limit int) ([]domainmsg.Message, error)
 	SavePurged(ctx context.Context, m domainmsg.Message) error
 	// PurgeRecords deletes the tenant's inbound event receipts and finished
 	// webhook deliveries from before t, and returns how many.

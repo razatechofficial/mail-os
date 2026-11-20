@@ -81,9 +81,11 @@ func (s *Service) Sweep(ctx context.Context) (int, error) {
 
 // Purge erases the bodies and template data of finished messages past
 // each tenant's retention (MESSAGE_RETENTION_DAYS, or the tenant's
-// override), keeping the envelope, deletes the inbound event receipts and
-// finished webhook deliveries of the same age, and audits messages.purged
-// per tenant. The counts are the messages whose bodies were erased.
+// override, at most 90 days), keeping the envelope; a message still not
+// final after twice the retention is failed as abandoned and erased too.
+// It deletes the inbound event receipts and finished webhook deliveries of
+// the same age, and audits messages.purged per tenant. The counts are the
+// messages whose bodies were erased.
 func (s *Service) Purge(ctx context.Context) (map[string]int, error) {
 	tenants, err := s.d.Repo.PurgeTenants(ctx)
 	if err != nil {
@@ -96,14 +98,20 @@ func (s *Service) Purge(ctx context.Context) (map[string]int, error) {
 			return counts, err
 		}
 		days := settings.RetentionDays(s.cfg.RetentionDays)
-		before := s.now().Add(-time.Duration(days) * 24 * time.Hour)
-		total := 0
+		retention := time.Duration(days) * 24 * time.Hour
+		before := s.now().Add(-retention)
+		stuck := s.now().Add(-domainmsg.StuckFactor * retention)
+		total, abandoned := 0, 0
 		for {
-			batch, err := s.d.Repo.PurgeCandidates(ctx, t, before, s.cfg.PurgeBatch)
+			batch, err := s.d.Repo.PurgeCandidates(ctx, t, before, stuck, s.cfg.PurgeBatch)
 			if err != nil {
 				return counts, err
 			}
 			for _, m := range batch {
+				if !m.Status.Final() {
+					m.Abandon(s.now())
+					abandoned++
+				}
 				m.PurgeBody(s.now())
 				if err := s.d.Repo.SavePurged(ctx, m); err != nil {
 					return counts, err
@@ -126,7 +134,7 @@ func (s *Service) Purge(ctx context.Context) (map[string]int, error) {
 		}
 		tctx := audit.WithTenant(ctx, t)
 		if err := s.d.Audit.Append(tctx, "message", t, "messages.purged", map[string]any{"count": total, "records": records,
-			"retention_days": days}); err != nil {
+			"abandoned": abandoned, "retention_days": days}); err != nil {
 			logger.FromContext(ctx).Error("audit messages.purged", logger.Err(err))
 		}
 	}
