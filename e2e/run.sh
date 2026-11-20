@@ -35,9 +35,6 @@ IAM_URL="http://127.0.0.1:${IAM_PORT}"
 # The service client IAM calls MailOS as (contract §1), seeded as the
 # system application of a tenant of its own (keys/iam-tenant).
 IAM_SERVICE_CLIENT="mailos-iam"
-# A second service client granted one topic only, for the allow-list tests.
-NARROW_SERVICE_CLIENT="e2e-narrow"
-NARROW_TOPIC="iam.auth.mfa_email_code_requested"
 # The console's OIDC client at the fake IAM (its Playwright suite signs in through it).
 OIDC_CLIENT="mailos-console"
 # How long to wait for each process to answer (a fresh binary can start slowly).
@@ -99,7 +96,6 @@ IAM_JWKS_CACHE_TTL=1m
 IAM_SERVICE_CLIENT_ID=$IAM_SERVICE_CLIENT
 IAM_SERVICE_TENANT_ID=$(cat "$k/iam-tenant")
 IAM_SERVICE_TOPICS=iam.*
-MAILOS_SERVICE_CLIENTS='$IAM_SERVICE_CLIENT=iam.*;$NARROW_SERVICE_CLIENT=$NARROW_TOPIC'
 KEY_MANAGER_MASTER_KEY=$(cat "$k/master.key")
 CORS_ORIGINS=$CONSOLE_ORIGIN
 FEATURE_PUBSUB_INGEST=false
@@ -174,7 +170,6 @@ print_env() {
   echo "MAILOS_E2E_IAM_TOKEN=$(cat "$WORK/keys/iam-mint.token")"
   echo "MAILOS_E2E_IAM_CLIENT=$IAM_SERVICE_CLIENT"
   echo "MAILOS_E2E_IAM_TENANT=$(cat "$WORK/keys/iam-tenant")"
-  echo "MAILOS_E2E_NARROW_CLIENT=$NARROW_SERVICE_CLIENT"
   echo "MAILOS_E2E_OIDC_CLIENT_ID=$OIDC_CLIENT"
   echo "MAILOS_E2E_OIDC_CLIENT_SECRET=$(cat "$WORK/keys/oidc-client.secret")"
 }

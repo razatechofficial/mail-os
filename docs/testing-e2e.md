@@ -136,7 +136,7 @@ With `MAILOS_E2E_HOOKS=true` and `MAILOS_E2E_HOOKS_TOKEN` (at least 32 character
 | `e2e/access` | every route against all six roles and no role; refused tokens (expired, not yet valid, other audience or issuer, no tenant, DPoP-bound as Bearer, `alg: none`); step-up (stale, weak ACR, delegated) with the RFC 9470 challenge on every sensitive route; refusals audited |
 | `e2e/tenancy` | another tenant reads, changes, deletes and lists none of a tenant's resources; suppressions and idempotency keys stay per tenant; a service token cannot name another tenant |
 | `e2e/messaging` | direct sends, idempotency keys, batches, scheduling and cancel, resend, suppressions (unsubscribe stops marketing only), sealed provider credentials, masked views and audited body reads |
-| `e2e/integrations` | webhooks: secret shown once, HMAC signature, retry of the same delivery, pause, validation; events: topic allow-list (`e2e-narrow`), 400/413/409/422, refusal without a published template |
+| `e2e/integrations` | webhooks: secret shown once, HMAC signature, retry of the same delivery, pause, validation; events from a registered application: message-type allow-list, 400/413/409/422, refusal without a published template |
 | `e2e/content` | template revisions, versions, restore, escaped preview, test-send sender rule, delete; events render the published version; branding; sending domains (records, DKIM private key never returned) ; audit export |
 | `e2e/limits` | starts its own server (port 19885 in the QA stack, `MAILOS_E2E_SERVER_BIN`) with rate limits on: 429 `RATE_LIMITED` with `Retry-After`, per tenant |
 
