@@ -1,11 +1,17 @@
 package message
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/razatechofficial/mail-os/application/applications/appstest"
 	"github.com/razatechofficial/mail-os/application/campaign"
@@ -17,6 +23,7 @@ import (
 	"github.com/razatechofficial/mail-os/domain/suppression"
 	domaintemplate "github.com/razatechofficial/mail-os/domain/template"
 	apperrors "github.com/razatechofficial/mail-os/pkg/errors"
+	"github.com/razatechofficial/mail-os/pkg/logger"
 )
 
 const tenant = "0192f0c4-0000-7000-8000-000000000001"
@@ -30,6 +37,7 @@ type fixture struct {
 	notifier *memNotifier
 	stats    *memStats
 	audit    *memAudit
+	secrets  *memSecrets
 	// apps are the registry's applications: core (live, iam.auth.* topics,
 	// raw content) and sandbox (sandboxed, broadcast).
 	core, sandbox domainapp.Application
@@ -38,7 +46,8 @@ type fixture struct {
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	f := &fixture{repo: newMemRepo(), queue: &memQueue{}, sups: &memSuppressions{list: map[string]suppression.Type{}},
-		sender: &memSender{}, notifier: &memNotifier{}, stats: &memStats{counts: map[string]int{}}, audit: &memAudit{}}
+		sender: &memSender{}, notifier: &memNotifier{}, stats: &memStats{counts: map[string]int{}}, audit: &memAudit{},
+		secrets: newMemSecrets()}
 	tpls := memTemplates{
 		tpl: domaintemplate.Template{ID: "tpl-1", Slug: "mfa-code", Topic: domaintemplate.TopicMFAEmailCode, Category: domaintemplate.CategoryTransactional},
 		ver: domaintemplate.Version{ID: "ver-3", TemplateID: "tpl-1", Locale: "en", Subject: "{{brand.company_name}} code {{code}}",
@@ -51,7 +60,8 @@ func newFixture(t *testing.T) *fixture {
 	f.sandbox.Environment, f.sandbox.Stream = domainapp.EnvSandbox, domainapp.StreamBroadcast
 	f.svc = NewService(Deps{Applications: appstest.New(f.core, f.sandbox), Repo: f.repo, Queue: f.queue, Suppressions: f.sups, Tenants: memTenants{}, Templates: tpls,
 		Versions: tpls, Branding: tpls, Render: fakeRender, Sender: f.sender, Signer: memSigner{},
-		Webhooks: f.notifier, Stats: f.stats, Audit: f.audit}, Config{MaxAttempts: 3, RetentionDays: 30})
+		Webhooks: f.notifier, Stats: f.stats, Audit: f.audit, Secrets: f.secrets, SecretCipher: fakeCipher{}},
+		Config{MaxAttempts: 3, RetentionDays: 30})
 	return f
 }
 
@@ -151,25 +161,74 @@ func TestScheduleAndRelease(t *testing.T) {
 	}
 }
 
-func TestTemplatedSendPinsVersionAndMasks(t *testing.T) {
+func otpSend() TemplatedSend {
+	return TemplatedSend{TenantID: tenant, Topic: domaintemplate.TopicMFAEmailCode, To: "ana@example.com", EventID: "evt-1",
+		Source: "iam", FromEmail: "noreply@bank.example",
+		Data: map[string]any{"email": "ana@example.com", "code": "482913", "purpose": "sign_in", "expires_in_minutes": 10.0}}
+}
+
+// stored is everything a message row holds, as text.
+func stored(t *testing.T, m domainmsg.Message) string {
+	t.Helper()
+	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestTemplatedSendStoresRedacted(t *testing.T) {
 	f := newFixture(t)
-	m, err := f.svc.SendTemplated(context.Background(), TemplatedSend{TenantID: tenant, Topic: domaintemplate.TopicMFAEmailCode,
-		To: "ana@example.com", EventID: "evt-1", Source: "iam",
-		Data: map[string]any{"email": "ana@example.com", "code": "482913", "purpose": "sign_in", "expires_in_minutes": 10.0}})
+	m, err := f.svc.SendTemplated(context.Background(), otpSend())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if m.TemplateVersionID != "ver-3" || m.Topic != domaintemplate.TopicMFAEmailCode || len(m.SecretKeys) != 1 || m.Actor.Type != domainmsg.ActorSystem {
 		t.Fatalf("message %+v", m)
 	}
+	// Repo.Create got descriptors, never the value.
+	row, _ := f.repo.Get(context.Background(), tenant, m.ID)
+	if strings.Contains(stored(t, row), "482913") {
+		t.Fatalf("stored row holds the code: %s", stored(t, row))
+	}
+	if row.TemplateData["code"] != "[redacted: code, 6 characters]" || row.Subject != "Bank of Tests code [redacted: code, 6 characters]" ||
+		row.TemplateData["purpose"] != "sign_in" {
+		t.Fatalf("stored %q %v", row.Subject, row.TemplateData)
+	}
+	// The live value is sealed in the secret store, for at most its own
+	// expiry (10 minutes here).
+	r := f.secrets.rows[m.ID]
+	if plain, _ := (fakeCipher{}).Open(context.Background(), r.sealed); string(plain) != `{"code":"482913"}` || strings.Contains(r.sealed, "482913") {
+		t.Fatalf("sealed %q", r.sealed)
+	}
+	if d := r.expires.Sub(row.CreatedAt); d != 10*time.Minute {
+		t.Fatalf("secret kept %v", d)
+	}
 	v, _ := f.svc.Get(context.Background(), tenant, m.ID)
-	if strings.Contains(v.MaskedSubject, "482913") || v.MaskedTemplateData["code"] != domainmsg.Mask || v.MaskedSubject != "Bank of Tests code "+domainmsg.Mask {
-		t.Fatalf("view leaks the code: %q %v", v.MaskedSubject, v.MaskedTemplateData)
+	if !v.AuthClass || v.Subject != row.Subject {
+		t.Fatalf("view %+v", v)
 	}
 	// Data the topic refuses is a 422 that never quotes the value.
 	_, err = f.svc.SendTemplated(context.Background(), TemplatedSend{TenantID: tenant, Topic: domaintemplate.TopicMFAEmailCode,
 		To: "ana@example.com", Data: map[string]any{"email": "ana@example.com"}})
 	if apperrors.KindOf(err) != apperrors.KindInvalidInput {
+		t.Fatal(err)
+	}
+}
+
+// Without the secret store, authentication mail is refused and nothing is
+// stored; a failing store stores neither the message nor its secrets.
+func TestAuthMailNeedsTheSecretStore(t *testing.T) {
+	f := newFixture(t)
+	f.svc.d.Secrets = nil
+	if _, err := f.svc.SendTemplated(context.Background(), otpSend()); apperrors.KindOf(err) != apperrors.KindUnavailable {
+		t.Fatalf("sent without a secret store: %v", err)
+	}
+	if len(f.repo.msgs) != 0 || len(f.queue.ids) != 0 {
+		t.Fatal("stored or queued without a secret store")
+	}
+	// Ordinary mail does not need it.
+	if _, err := f.svc.Send(userCtx(), direct()); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -186,9 +245,17 @@ func TestDeliverRendersSignsAndCounts(t *testing.T) {
 	if got.Status != domainmsg.StatusSent || got.ProviderMessageID != "pm-"+m.ID || got.ProviderID != "p1" || got.Attempts != 1 {
 		t.Fatalf("after deliver %+v", got)
 	}
+	// The relay got the full message, without tracking; the row keeps the
+	// redacted render.
 	out := f.sender.sent[0]
-	if out.HTML != "<p>Your code is 482913</p>" || out.DKIM == nil {
+	if out.HTML != "<p>Your code is 482913</p>" || out.Subject != "Bank of Tests code 482913" || out.DKIM == nil || !out.NoTracking {
 		t.Fatalf("outgoing %+v", out)
+	}
+	if got.HTMLBody != "<p>Your code is [redacted: code, 6 characters]</p>" || strings.Contains(stored(t, got), "482913") {
+		t.Fatalf("stored body %q", got.HTMLBody)
+	}
+	if f.secrets.has(m.ID) {
+		t.Fatal("secrets kept after the message was sent")
 	}
 	if f.stats.counts["sent"] != 1 || f.notifier.events[0] != "message.sent" {
 		t.Fatal(f.stats.counts, f.notifier.events)
@@ -197,6 +264,104 @@ func TestDeliverRendersSignsAndCounts(t *testing.T) {
 	if err := f.svc.Deliver(context.Background(), tenant, m.ID); err != nil || len(f.sender.sent) != 1 {
 		t.Fatal("redelivery sent twice")
 	}
+	// Ordinary mail goes with the account's tracking.
+	r, _ := f.svc.Send(userCtx(), direct())
+	_ = f.svc.Deliver(context.Background(), tenant, r.MessageID)
+	if f.sender.sent[1].NoTracking {
+		t.Fatal("ordinary mail sent untracked")
+	}
+}
+
+// A failed send of authentication mail is retried with the live code from
+// the sealed store; a provider error quoting the code is scrubbed from the
+// row, the webhook and the retry error; the secrets go at the final status.
+func TestAuthMailRetriesWithTheLiveSecret(t *testing.T) {
+	f := newFixture(t)
+	m, _ := f.svc.SendTemplated(context.Background(), otpSend())
+	echo := &domainmsg.SendError{Provider: "smtp", Reason: domainmsg.ReasonUnavailable, Status: 451,
+		Detail: "try later; body was: Your code is 482913", Err: errors.New("451 482913")}
+	f.sender.errs = []error{echo, domainmsg.NewSendError("smtp", domainmsg.ReasonRejected, 554, "content 482913 rejected")}
+	err := f.svc.Deliver(context.Background(), tenant, m.ID)
+	re, ok := err.(*RetryError)
+	if !ok || strings.Contains(re.Error(), "482913") || strings.Contains(fmt.Sprint(re.Unwrap()), "482913") {
+		t.Fatalf("retry error %v", err)
+	}
+	row, _ := f.repo.Get(context.Background(), tenant, m.ID)
+	if row.Status != domainmsg.StatusQueued || strings.Contains(stored(t, row), "482913") || !f.secrets.has(m.ID) {
+		t.Fatalf("after a transient failure %+v", row)
+	}
+	// The second attempt is refused for good: the code never reaches the
+	// stored error or the webhook.
+	if err := f.svc.Deliver(context.Background(), tenant, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	row, _ = f.repo.Get(context.Background(), tenant, m.ID)
+	if row.Status != domainmsg.StatusFailed || strings.Contains(stored(t, row), "482913") || f.secrets.has(m.ID) {
+		t.Fatalf("after a permanent failure %+v", row)
+	}
+	if hook, _ := json.Marshal(f.notifier.data); strings.Contains(string(hook), "482913") || !strings.Contains(string(hook), "[redacted]") {
+		t.Fatalf("webhook payload %s", hook)
+	}
+
+	// A retry that succeeds sends the live code.
+	m2, _ := f.svc.SendTemplated(context.Background(), TemplatedSend{TenantID: tenant, Topic: domaintemplate.TopicMFAEmailCode,
+		To: "bo@example.com", Data: map[string]any{"email": "bo@example.com", "code": "771204", "purpose": "sign_in", "expires_in_minutes": 10.0}})
+	f.sender.errs = []error{&domainmsg.SendError{Reason: domainmsg.ReasonNetwork}}
+	if _, ok := f.svc.Deliver(context.Background(), tenant, m2.ID).(*RetryError); !ok {
+		t.Fatal("not retried")
+	}
+	if err := f.svc.Deliver(context.Background(), tenant, m2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if last := f.sender.sent[len(f.sender.sent)-1]; !strings.Contains(last.Text, "771204") {
+		t.Fatalf("retry sent %q", last.Text)
+	}
+}
+
+// Secrets past their expiry are never sent: the message fails with
+// secret_expired.
+func TestAuthMailFailsWhenItsSecretExpired(t *testing.T) {
+	f := newFixture(t)
+	m, _ := f.svc.SendTemplated(context.Background(), otpSend())
+	f.svc.now = func() time.Time { return time.Now().Add(11 * time.Minute).UTC() }
+	if err := f.svc.Deliver(context.Background(), tenant, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	row, _ := f.repo.Get(context.Background(), tenant, m.ID)
+	if row.Status != domainmsg.StatusFailed || row.LastError != SecretExpired || len(f.sender.sent) != 0 {
+		t.Fatalf("%s %q sent %d", row.Status, row.LastError, len(f.sender.sent))
+	}
+	if f.notifier.events[len(f.notifier.events)-1] != "message.failed" || f.secrets.has(m.ID) {
+		t.Fatal("expiry not reported, or secrets kept")
+	}
+}
+
+// The delivery path's log lines never hold the live secrets.
+func TestDeliverLogsNoSecret(t *testing.T) {
+	var buf bytes.Buffer
+	prev := logger.Log
+	logger.Log = zap.New(zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.AddSync(&buf), zapcore.DebugLevel))
+	defer func() { logger.Log = prev }()
+	f := newFixture(t)
+	f.svc.d.Signer = memSigner{err: fmt.Errorf("kms says no for 482913")}
+	f.svc.d.Webhooks = failingNotifier{}
+	m, _ := f.svc.SendTemplated(context.Background(), otpSend())
+	_ = f.svc.Deliver(context.Background(), tenant, m.ID)
+	f.svc.d.Signer = memSigner{}
+	f.sender.errs = []error{domainmsg.NewSendError("smtp", domainmsg.ReasonRejected, 554, "content 482913 rejected")}
+	_ = f.svc.Deliver(context.Background(), tenant, m.ID)
+	if buf.Len() == 0 {
+		t.Fatal("nothing logged")
+	}
+	if strings.Contains(buf.String(), "482913") {
+		t.Fatalf("log holds the code:\n%s", buf.String())
+	}
+}
+
+type failingNotifier struct{}
+
+func (failingNotifier) Notify(context.Context, string, string, string, string, map[string]any) error {
+	return errors.New("webhook down; payload had 482913")
 }
 
 func TestDeliverRetriesTransientThenFails(t *testing.T) {
@@ -284,6 +449,17 @@ func TestCancelResendAndBody(t *testing.T) {
 	}
 	if _, err := f.svc.Body(userCtx(), "other-tenant", again.ID); apperrors.KindOf(err) != apperrors.KindNotFound {
 		t.Fatal("another tenant read the body")
+	}
+	// Authentication mail is never resent, by anyone.
+	otp, _ := f.svc.SendTemplated(context.Background(), otpSend())
+	if err := f.svc.Deliver(context.Background(), tenant, otp.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.Resend(userCtx(), tenant, otp.ID); err != ErrAuthResend || apperrors.KindOf(err) != apperrors.KindConflict {
+		t.Fatalf("resent authentication mail: %v", err)
+	}
+	if b, err := f.svc.Body(userCtx(), tenant, otp.ID); err != nil || strings.Contains(b.HTML+b.Text, "482913") {
+		t.Fatalf("auth body %+v %v", b, err)
 	}
 }
 
@@ -447,7 +623,9 @@ func TestSandboxCapturesWithoutDelivering(t *testing.T) {
 	if m.Status != domainmsg.StatusCaptured || !m.Sandbox || m.Type != domainmsg.TypeMarketing || m.Stream != domainmsg.StreamBroadcast {
 		t.Fatalf("%+v", m)
 	}
-	if !strings.Contains(m.HTMLBody, "123456") || len(f.sender.sent) != 0 || len(f.notifier.events) != 0 {
+	// Captured authentication mail keeps the redacted copy only.
+	if !strings.Contains(m.HTMLBody, "[redacted: code, 6 characters]") || strings.Contains(m.HTMLBody, "123456") ||
+		f.secrets.has(r.MessageID) || len(f.sender.sent) != 0 || len(f.notifier.events) != 0 {
 		t.Fatalf("captured body %q, sent %d, events %v", m.HTMLBody, len(f.sender.sent), f.notifier.events)
 	}
 }

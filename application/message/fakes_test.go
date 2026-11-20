@@ -2,6 +2,7 @@ package message
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"slices"
@@ -267,10 +268,12 @@ func (s memSigner) SigningKey(context.Context, string, string) (*sendingdomain.S
 type memNotifier struct {
 	events []string
 	apps   []string
+	data   []map[string]any
 }
 
-func (n *memNotifier) Notify(_ context.Context, _, appID, event, _ string, _ map[string]any) error {
+func (n *memNotifier) Notify(_ context.Context, _, appID, event, _ string, data map[string]any) error {
 	n.events = append(n.events, event)
+	n.data = append(n.data, data)
 	n.apps = append(n.apps, appID)
 	return nil
 }
@@ -303,3 +306,79 @@ func (a *memAudit) has(action string) bool {
 }
 
 var errDown = errors.New("down")
+
+// memSecrets is the sealed secret store in memory.
+type memSecrets struct {
+	mu   sync.Mutex
+	rows map[string]memSecret
+	// putErr fails the next Put.
+	putErr error
+}
+
+type memSecret struct {
+	sealed, tenant string
+	expires        time.Time
+}
+
+func newMemSecrets() *memSecrets { return &memSecrets{rows: map[string]memSecret{}} }
+
+func (s *memSecrets) InTx(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) }
+
+func (s *memSecrets) Put(_ context.Context, tenantID, messageID, sealed string, _, expiresAt time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.putErr != nil {
+		return s.putErr
+	}
+	s.rows[messageID] = memSecret{sealed: sealed, tenant: tenantID, expires: expiresAt}
+	return nil
+}
+
+func (s *memSecrets) Get(_ context.Context, tenantID, messageID string, now time.Time) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.rows[messageID]
+	if !ok || r.tenant != tenantID || !now.Before(r.expires) {
+		return "", false, nil
+	}
+	return r.sealed, true, nil
+}
+
+func (s *memSecrets) Delete(_ context.Context, _, messageID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.rows, messageID)
+	return nil
+}
+
+func (s *memSecrets) DeleteExpired(_ context.Context, now time.Time) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var n int64
+	for id, r := range s.rows {
+		if !now.Before(r.expires) {
+			delete(s.rows, id)
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (s *memSecrets) has(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.rows[id]
+	return ok
+}
+
+// fakeCipher "seals" by reversing the bytes behind a prefix: never the
+// plaintext as it is.
+type fakeCipher struct{}
+
+func (fakeCipher) Seal(_ context.Context, p []byte) (string, error) {
+	return "km1.test." + base64.StdEncoding.EncodeToString(p), nil
+}
+
+func (fakeCipher) Open(_ context.Context, c string) ([]byte, error) {
+	return base64.StdEncoding.DecodeString(strings.TrimPrefix(c, "km1.test."))
+}
