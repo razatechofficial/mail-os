@@ -201,7 +201,10 @@ type Message struct {
 	IdempotencyKey    string
 	ProviderID        string
 	ProviderMessageID string
-	Attempts          int
+	// SentDigest is the keyed digest of the content the provider accepted
+	// (SentDigest), kept with the envelope as evidence of what was sent.
+	SentDigest string
+	Attempts   int
 	// LastError is the last send failure, safe to show (no secrets).
 	LastError string
 
