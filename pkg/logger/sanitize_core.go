@@ -12,6 +12,15 @@ func (c sanitizeCore) With(fields []zapcore.Field) zapcore.Core {
 	return sanitizeCore{Core: c.Core.With(sanitizeFields(fields))}
 }
 
+// Check adds this core, not the wrapped one, so Write runs: the embedded
+// Check would hand entries straight to the inner core.
+func (c sanitizeCore) Check(ent zapcore.Entry, ce *zapcore.CheckedEntry) *zapcore.CheckedEntry {
+	if c.Enabled(ent.Level) {
+		return ce.AddCore(ent, c)
+	}
+	return ce
+}
+
 func (c sanitizeCore) Write(ent zapcore.Entry, fields []zapcore.Field) error {
 	return c.Core.Write(ent, sanitizeFields(fields))
 }

@@ -43,6 +43,8 @@ var secretKeySuffixes = []string{
 	"access_key",
 	"authorization",
 	"otp",
+	// Token-bearing links of authentication mail (reset_link, link).
+	"link",
 }
 
 const redactedValue = "***"
