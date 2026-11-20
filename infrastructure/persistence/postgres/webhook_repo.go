@@ -131,7 +131,7 @@ func (r *WebhookRepository) Delivery(ctx context.Context, id string) (domain.Del
 		FROM webhook_deliveries d JOIN webhooks w ON w.id = d.webhook_id WHERE d.id = $1`, id).
 		Scan(&d.ID, &d.WebhookID, &d.MessageID, &d.Event, &payload, &status, &code, &d.Attempts, &d.LastError, &d.DeliveredAt,
 			&d.CreatedAt, &d.UpdatedAt, &w.ID, &w.OrgID, &w.URL, &w.Events, &w.Active, &w.CreatedBy, &w.UpdatedBy,
-			&w.CreatedAt, &w.UpdatedAt, &s.Sealed)
+			&w.CreatedAt, &w.UpdatedAt, &s.Sealed, &w.ApplicationID)
 	if err != nil {
 		return d, s, notFound(err, "webhook delivery")
 	}
