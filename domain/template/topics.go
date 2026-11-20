@@ -1,6 +1,7 @@
 package template
 
 import (
+	"errors"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,10 +18,18 @@ const (
 	KindEmail    Kind = "email"
 	KindDatetime Kind = "datetime" // RFC 3339
 	KindNumber   Kind = "number"
-	// KindSecret is a one-time code. The console masks it in previews and
-	// message views, and logs never show it (contract §6).
+	// KindSecret is a one-time code. It is never stored or shown: a
+	// message keeps a redaction descriptor in its place (contract §6).
 	KindSecret Kind = "secret"
+	// KindSecretURL is a link that carries a bearer token (reset, magic
+	// sign-in, invitation, verification). Redacted, it keeps only its
+	// scheme, host and the variable's declared static path prefix.
+	KindSecretURL Kind = "secret_url"
 )
+
+// Secret reports whether values of the kind are secrets, which make a
+// topic authentication-class.
+func (k Kind) Secret() bool { return k == KindSecret || k == KindSecretURL }
 
 // Sources of topics: the service that publishes the event.
 const (
@@ -42,6 +51,10 @@ type Variable struct {
 	// (derived.go); events do not carry them.
 	Derived bool       `json:"derived,omitempty"`
 	derive  deriveFunc `json:"-"`
+	// RedactPrefix is a secret_url's static path prefix (e.g.
+	// "/reset-password"), kept when the link is redacted; the token-bearing
+	// rest of the path, the query and the fragment are not.
+	RedactPrefix string `json:"redact_prefix,omitempty"`
 }
 
 // Topic is an event a template can serve, with the variables its data
@@ -53,6 +66,10 @@ type Topic struct {
 	Description string     `json:"description"`
 	Source      string     `json:"source"`
 	Variables   []Variable `json:"variables"`
+	// AuthClass marks an authentication-class topic: one with a secret or
+	// secret_url variable. Its messages are stored redacted, are never
+	// resent and are sent without click or open tracking.
+	AuthClass bool `json:"auth_class"`
 }
 
 // Topics IAM publishes, from iam/server/pkg/events and its lifecycle
@@ -121,6 +138,11 @@ func opt(key, label string, kind Kind, sample string) Variable {
 	return Variable{Key: key, Label: label, Kind: kind, Sample: sample}
 }
 
+// secretURL is a required token-bearing link whose redaction keeps prefix.
+func secretURL(key, label, prefix, sample string) Variable {
+	return Variable{Key: key, Label: label, Kind: KindSecretURL, Sample: sample, Required: true, RedactPrefix: prefix}
+}
+
 var recipientEmail = req("email", "Email", KindEmail, "amna@example.com")
 
 // commonVariables are offered by every topic; MailOS fills them from the
@@ -186,23 +208,23 @@ var catalogue = []topicSpec{
 		Description: "An invitation to join an organization",
 		Variables: []Variable{recipientEmail,
 			req("org_name", "Organization", KindText, "Averox"),
-			req("link", "Invitation link", KindURL, "https://iam.example.com/invite/sample"),
+			secretURL("link", "Invitation link", "/invite/", "https://iam.example.com/invite/accept?token=sample"),
 		}}, branded: true},
 	{Topic: Topic{Key: TopicMagicLink, Name: "Magic sign-in link", Source: SourceIAM,
 		Description: "A one-time link that signs the user in",
 		Variables: []Variable{recipientEmail,
-			req("link", "Sign-in link", KindURL, "https://iam.example.com/magic/sample"),
+			secretURL("link", "Sign-in link", "/auth/magic-link/consume", "https://iam.example.com/auth/magic-link/consume?token=sample"),
 		}}, branded: true},
 	{Topic: Topic{Key: TopicPasswordReset, Name: "Password reset", Source: SourceIAM,
 		Description: "A link to choose a new password",
 		Variables: []Variable{recipientEmail,
-			req("reset_link", "Reset link", KindURL, "https://iam.example.com/reset/sample"),
+			secretURL("reset_link", "Reset link", "/reset-password", "https://iam.example.com/reset-password?token=sample"),
 			opt("organization_uuid", "Organization ID", KindText, "0190f5e2-7c1a-7b3e-9f00-000000000002"),
 		}}, branded: true},
 	{Topic: Topic{Key: TopicEmailVerification, Name: "Email verification", Source: SourceIAM,
 		Description: "A link that confirms the user owns the address",
 		Variables: []Variable{recipientEmail,
-			req("verify_link", "Verification link", KindURL, "https://iam.example.com/verify/sample"),
+			secretURL("verify_link", "Verification link", "/verify", "https://iam.example.com/verify?token=sample"),
 		}}, branded: true},
 	{Topic: Topic{Key: TopicMFAEmailCode, Name: "Email sign-in code", Source: SourceIAM,
 		Description: "A one-time code sent as a second factor",
@@ -214,13 +236,13 @@ var catalogue = []topicSpec{
 	{Topic: Topic{Key: TopicPasskeyEnrolment, Name: "Passkey enrolment", Source: SourceIAM,
 		Description: "A link to register a passkey",
 		Variables: []Variable{recipientEmail,
-			req("link", "Enrolment link", KindURL, "https://iam.example.com/passkeys/enrol/sample"),
+			secretURL("link", "Enrolment link", "/enrol/passkey", "https://iam.example.com/enrol/passkey?token=sample"),
 			req("expires_at", "Expires", KindDatetime, "2026-11-01T09:30:00Z"),
 		}}},
 	{Topic: Topic{Key: TopicDeletionRequested, Name: "Account deletion requested", Source: SourceIAM,
 		Description: "The account will be deleted unless the user cancels",
 		Variables: []Variable{recipientEmail,
-			req("cancel_link", "Cancel link", KindURL, "https://iam.example.com/account/deletion/cancel/sample"),
+			secretURL("cancel_link", "Cancel link", "/account-deletion/cancel", "https://iam.example.com/account-deletion/cancel?token=sample"),
 			opt("scheduled_for", "Deletion date", KindDatetime, "2026-11-30T09:30:00Z"),
 		}}},
 	{Topic: Topic{Key: TopicAccessReview, Name: "Access review started", Source: SourceIAM,
@@ -267,7 +289,7 @@ var catalogue = []topicSpec{
 		req("reason", "Reason", KindText, "Ownership dispute upheld")),
 	signupTopic(TopicTenantSignupEmailVerification, "Workspace request: confirm your email",
 		"A link that confirms the address of someone asking for a workspace",
-		req("verify_link", "Verification link", KindURL, "https://iam.example.com/signup/workspace/verify#token=sample"),
+		secretURL("verify_link", "Verification link", "/signup/workspace/verify", "https://iam.example.com/signup/workspace/verify#token=sample"),
 		opt("expires_at", "Link expires", KindDatetime, "2026-11-01T09:30:00Z")),
 	signupTopic(TopicTenantSignupApproved, "Workspace request approved",
 		"A platform administrator approved the request and the workspace was created",
@@ -476,6 +498,12 @@ func init() {
 			vars = append(vars, brandVariables...)
 		}
 		t.Variables = append(vars, commonVariables...)
+		for _, v := range t.Variables {
+			if err := v.check(); err != nil {
+				panic("template catalogue: " + t.Key + ": " + err.Error())
+			}
+			t.AuthClass = t.AuthClass || v.Kind.Secret()
+		}
 		topicIndex[t.Key] = len(topics)
 		topics = append(topics, t)
 	}
@@ -537,16 +565,45 @@ func variablesOf(topic string) []Variable {
 	return commonVariables
 }
 
-// SecretKeys lists the topic's secret variables, such as an email code.
-// Their values are masked in console views and never logged.
+// check refuses a variable the catalogue cannot redact: a secret_url
+// needs a static path prefix starting with "/".
+func (v Variable) check() error {
+	switch {
+	case v.Kind == KindSecretURL && !strings.HasPrefix(v.RedactPrefix, "/"):
+		return errors.New(v.Key + ": a secret_url needs a redaction prefix starting with /")
+	case v.Kind != KindSecretURL && v.RedactPrefix != "":
+		return errors.New(v.Key + ": only a secret_url has a redaction prefix")
+	}
+	return nil
+}
+
+// SecretKeys lists the topic's secret and secret_url variables: one-time
+// codes and token-bearing links. Their values are never stored, shown or
+// logged.
 func SecretKeys(topic string) []string {
 	var keys []string
-	for _, v := range variablesOf(topic) {
-		if v.Kind == KindSecret {
-			keys = append(keys, v.Key)
-		}
+	for _, v := range Secrets(topic) {
+		keys = append(keys, v.Key)
 	}
 	return keys
+}
+
+// Secrets lists the topic's secret and secret_url variables.
+func Secrets(topic string) []Variable {
+	var out []Variable
+	for _, v := range variablesOf(topic) {
+		if v.Kind.Secret() {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// AuthClass reports whether topic is authentication-class: it has a
+// secret or secret_url variable.
+func AuthClass(topic string) bool {
+	i, ok := topicIndex[topic]
+	return ok && topics[i].AuthClass
 }
 
 // SampleData is event data built from the topic's samples, nested by key

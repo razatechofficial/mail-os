@@ -65,7 +65,7 @@ func checkKind(kind Kind, v any) (code, msg string) {
 		return CodeInvalidType, "must be a string"
 	}
 	switch kind {
-	case KindURL:
+	case KindURL, KindSecretURL:
 		if !webURL(s) {
 			return CodeInvalidURL, "must be an http or https URL"
 		}

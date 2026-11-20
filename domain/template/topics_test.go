@@ -103,8 +103,89 @@ func TestSecretKeys(t *testing.T) {
 	if got := SecretKeys(TopicMFAEmailCode); !slices.Equal(got, []string{"code"}) {
 		t.Fatalf("secrets = %v", got)
 	}
-	if got := SecretKeys(TopicMagicLink); got != nil {
+	if got := SecretKeys(TopicMagicLink); !slices.Equal(got, []string{"link"}) {
 		t.Fatalf("secrets = %v", got)
+	}
+	if got := SecretKeys(TopicApprovalRequested); got != nil {
+		t.Fatalf("secrets = %v", got)
+	}
+}
+
+func TestSecretURLNeedsPrefix(t *testing.T) {
+	for _, c := range []struct {
+		v  Variable
+		ok bool
+	}{
+		{Variable{Key: "reset_link", Kind: KindSecretURL, RedactPrefix: "/reset-password"}, true},
+		{Variable{Key: "reset_link", Kind: KindSecretURL}, false},
+		{Variable{Key: "reset_link", Kind: KindSecretURL, RedactPrefix: "reset"}, false},
+		{Variable{Key: "link", Kind: KindURL, RedactPrefix: "/x"}, false},
+		{Variable{Key: "code", Kind: KindSecret}, true},
+	} {
+		if err := c.v.check(); (err == nil) != c.ok {
+			t.Errorf("%+v: err = %v", c.v, err)
+		}
+	}
+	if !KindSecretURL.Secret() || !KindSecret.Secret() || KindURL.Secret() {
+		t.Fatal("Kind.Secret")
+	}
+	if code, _ := checkKind(KindSecretURL, "not a url"); code != CodeInvalidURL {
+		t.Fatalf("secret_url accepted a non-URL: %q", code)
+	}
+}
+
+// TestIAMTopicSecrets is the reviewed classification of every iam.* topic
+// (ADR 0001 §3.6): each link that carries a bearer token is a secret_url
+// with the static prefix IAM builds it with; every other link is a plain
+// url (console pages that need a sign-in, or a request id).
+func TestIAMTopicSecrets(t *testing.T) {
+	secrets := map[string]map[string]string{
+		TopicInvite:                        {"link": "/invite/"},
+		TopicMagicLink:                     {"link": "/auth/magic-link/consume"},
+		TopicPasswordReset:                 {"reset_link": "/reset-password"},
+		TopicEmailVerification:             {"verify_link": "/verify"},
+		TopicMFAEmailCode:                  {"code": ""},
+		TopicPasskeyEnrolment:              {"link": "/enrol/passkey"},
+		TopicDeletionRequested:             {"cancel_link": "/account-deletion/cancel"},
+		TopicTenantSignupEmailVerification: {"verify_link": "/signup/workspace/verify"},
+	}
+	n := 0
+	for _, tp := range Topics() {
+		if tp.Source != SourceIAM {
+			if tp.AuthClass {
+				t.Errorf("%s is authentication-class", tp.Key)
+			}
+			continue
+		}
+		n++
+		want := secrets[tp.Key]
+		got := map[string]string{}
+		for _, v := range tp.Variables {
+			if v.Kind.Secret() {
+				got[v.Key] = v.RedactPrefix
+			}
+		}
+		if len(got) != len(want) {
+			t.Errorf("%s: secrets %v, want %v", tp.Key, got, want)
+		}
+		for k, prefix := range want {
+			if p, ok := got[k]; !ok || p != prefix {
+				t.Errorf("%s: %s prefix %q, want %q", tp.Key, k, p, prefix)
+			}
+			v, _ := tp.Variable(k)
+			if v.Kind == KindSecretURL && !strings.Contains(v.Sample, prefix) {
+				t.Errorf("%s: %s sample %q lacks its prefix", tp.Key, k, v.Sample)
+			}
+		}
+		if tp.AuthClass != (len(want) > 0) || AuthClass(tp.Key) != tp.AuthClass {
+			t.Errorf("%s: auth class %v", tp.Key, tp.AuthClass)
+		}
+	}
+	if n != 33 {
+		t.Fatalf("reviewed %d iam topics, want 33", n)
+	}
+	if AuthClass("iam.unknown") || AuthClass("") {
+		t.Fatal("unknown topic is authentication-class")
 	}
 }
 
