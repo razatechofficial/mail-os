@@ -428,10 +428,34 @@ func (m *Message) RecordSendFailure(err error, maxAttempts int, now time.Time) (
 	return true, m.Transition(StatusQueued, now)
 }
 
-// BodyPurgeDue reports whether the retention period has passed for a
-// message that no longer needs its body.
+// StuckFactor times the retention is how long a message may stay in a
+// non-final status before it is given up and its body purged (ADR 0001
+// §3.6): nothing is kept indefinitely because it never finished.
+const StuckFactor = 2
+
+// Abandoned is the failure of a message given up as stuck.
+const Abandoned = "abandoned: the message did not reach a final status within twice the retention period"
+
+// BodyPurgeDue reports whether the body is due to be erased: a final
+// message past the retention period, or a stuck one past StuckFactor times
+// it.
 func (m *Message) BodyPurgeDue(retention time.Duration, now time.Time) bool {
-	return m.BodyPurgedAt == nil && m.Status.Final() && !now.Before(m.CreatedAt.Add(retention))
+	if m.BodyPurgedAt != nil {
+		return false
+	}
+	if m.Status.Final() {
+		return !now.Before(m.CreatedAt.Add(retention))
+	}
+	return !now.Before(m.CreatedAt.Add(StuckFactor * retention))
+}
+
+// Abandon fails a stuck message before its body is purged; a final message
+// is left as it is.
+func (m *Message) Abandon(now time.Time) {
+	if m.Status.Final() {
+		return
+	}
+	m.Status, m.FailedAt, m.LastError, m.UpdatedAt = StatusFailed, &now, Abandoned, now
 }
 
 // PurgeBody erases the bodies and template data, keeping the delivery

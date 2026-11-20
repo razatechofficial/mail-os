@@ -125,8 +125,16 @@ func TestRecordSendFailure(t *testing.T) {
 
 func TestPurgeBody(t *testing.T) {
 	m := otpMessage()
-	if m.BodyPurgeDue(time.Hour, now.Add(2*time.Hour)) {
-		t.Fatal("queued message purged")
+	if m.BodyPurgeDue(time.Hour, now.Add(90*time.Minute)) {
+		t.Fatal("queued message purged within twice the retention")
+	}
+	if !m.BodyPurgeDue(time.Hour, now.Add(2*time.Hour)) {
+		t.Fatal("stuck message not due after twice the retention")
+	}
+	stuck := *m
+	stuck.Abandon(now)
+	if stuck.Status != StatusFailed || stuck.FailedAt == nil || stuck.LastError != Abandoned {
+		t.Fatalf("abandon %+v", stuck)
 	}
 	_ = m.Transition(StatusSending, now)
 	_ = m.MarkSent("p", "x", now)
