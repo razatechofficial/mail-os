@@ -239,6 +239,9 @@ type Deps struct {
 	// message is refused, never stored with its secrets.
 	Secrets      SecretStore
 	SecretCipher Cipher
+	// Evidence keys the per-part hash of what each message was sent with
+	// (key manager purpose evidence). Without it no message is sent.
+	Evidence domainmsg.Evidence
 }
 
 // Config tunes sending and retention.
@@ -261,9 +264,6 @@ type Config struct {
 	// SecretTTL is the longest an authentication-class message's live
 	// secrets are kept for retries (at most and by default an hour).
 	SecretTTL time.Duration
-	// DigestKey keys the evidence digest of what each message was sent
-	// with (MESSAGE_DIGEST_KEY); nil records none.
-	DigestKey []byte
 }
 
 func (c Config) withDefaults() Config {

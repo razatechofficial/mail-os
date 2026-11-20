@@ -229,6 +229,23 @@ func (s *Service) VerifyMAC(ctx context.Context, p domain.Purpose, kid string, i
 	return hmac.Equal(m.Sum(nil), mac), nil
 }
 
+// EvidenceKeys is the evidence purpose's MAC and verification, for the
+// message use case and the custodian's verify command.
+type EvidenceKeys struct{ s *Service }
+
+// Evidence returns the evidence purpose's MAC and verification.
+func (s *Service) Evidence() EvidenceKeys { return EvidenceKeys{s: s} }
+
+// MAC computes HMAC-SHA-256 of each input under the active evidence key.
+func (e EvidenceKeys) MAC(ctx context.Context, inputs ...[]byte) (string, [][]byte, error) {
+	return e.s.MAC(ctx, domain.PurposeEvidence, inputs...)
+}
+
+// VerifyMAC checks mac under the evidence key kid.
+func (e EvidenceKeys) VerifyMAC(ctx context.Context, kid string, input, mac []byte) (bool, error) {
+	return e.s.VerifyMAC(ctx, domain.PurposeEvidence, kid, input, mac)
+}
+
 func newGCM(key []byte) (cipher.AEAD, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {

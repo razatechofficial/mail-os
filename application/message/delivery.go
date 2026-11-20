@@ -125,19 +125,19 @@ func (s *Service) Deliver(ctx context.Context, tenantID, id string) error {
 		}
 	}
 	var res SendResult
+	var digest domainmsg.SentDigest
 	var sendErr error
-	if out.DKIM, sendErr = s.signingKey(ctx, tenantID, m); sendErr == nil {
-		res, sendErr = s.d.Sender.Send(ctx, out)
+	if digest, sendErr = s.evidence(ctx, m, out); sendErr == nil {
+		if out.DKIM, sendErr = s.signingKey(ctx, tenantID, m); sendErr == nil {
+			res, sendErr = s.d.Sender.Send(ctx, out)
+		}
 	}
 	now = s.now()
 	if sendErr == nil {
 		if err := m.MarkSent(res.ProviderID, res.ProviderMessageID, now); err != nil {
 			return err
 		}
-		if len(s.cfg.DigestKey) > 0 {
-			// Evidence of what was sent: of the full content, never stored.
-			m.SentDigest = domainmsg.NewSentDigest(s.cfg.DigestKey, out.Subject, out.Text, out.HTML)
-		}
+		m.SentDigest = digest
 		if _, err := s.update(ctx, m, domainmsg.StatusSending); err != nil {
 			return err
 		}
@@ -225,6 +225,23 @@ func (s *Service) openSecrets(ctx context.Context, m domainmsg.Message, now time
 		return nil, false, err
 	}
 	return live, true, nil
+}
+
+// evidence is the keyed per-part hash of what the provider is handed,
+// computed before the send so no message goes out without it. A key
+// manager that cannot answer is a transient send failure, like a DKIM key.
+func (s *Service) evidence(ctx context.Context, m domainmsg.Message, out domainmsg.Outgoing) (domainmsg.SentDigest, error) {
+	if s.d.Evidence == nil {
+		return domainmsg.SentDigest{}, &domainmsg.SendError{Provider: "evidence", Reason: domainmsg.ReasonConfig,
+			Detail: "the evidence key is not configured"}
+	}
+	d, err := domainmsg.NewSentDigest(ctx, s.d.Evidence, out.Subject, out.Text, out.HTML)
+	if err != nil {
+		logger.FromContext(ctx).Warn("evidence key unavailable; the send waits for it", logger.String("message_id", m.ID), logger.Err(err))
+		return domainmsg.SentDigest{}, &domainmsg.SendError{Provider: "evidence", Reason: domainmsg.ReasonUnavailable,
+			Detail: "the evidence key could not be used", Err: err}
+	}
+	return d, nil
 }
 
 // signingKey is the DKIM key for the message's sender, or nil when the
