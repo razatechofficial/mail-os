@@ -75,6 +75,14 @@ type sesSimple struct {
 	Headers []sesHeader `json:"Headers,omitempty"`
 }
 
+// sesOverrides are SendEmail's per-message configuration overrides.
+type sesOverrides struct {
+	Tracking struct {
+		ClickTrackingEnabled string `json:"ClickTrackingEnabled"`
+		OpenTrackingEnabled  string `json:"OpenTrackingEnabled"`
+	} `json:"Tracking"`
+}
+
 type sesRequest struct {
 	FromEmailAddress string `json:"FromEmailAddress"`
 	Destination      struct {
@@ -90,6 +98,10 @@ type sesRequest struct {
 	} `json:"Content"`
 	EmailTags            []sesTag `json:"EmailTags,omitempty"`
 	ConfigurationSetName string   `json:"ConfigurationSetName,omitempty"`
+	// ConfigurationOverrides turns tracking off for this message whatever
+	// configuration set applies (NoTracking). The sending IAM principal
+	// needs ses:ApplyTrackingConfigurationOverrides, or SES refuses it.
+	ConfigurationOverrides *sesOverrides `json:"ConfigurationOverrides,omitempty"`
 }
 
 // sesTagValue keeps the characters SES allows in tags.
@@ -140,6 +152,11 @@ func (s *SES) Send(ctx context.Context, out message.Outgoing) (Result, error) {
 		body.EmailTags = append(body.EmailTags, sesTag{Name: "tag_" + sesTagValue(t), Value: "1"})
 	}
 	body.ConfigurationSetName = s.cfgSet
+	if out.NoTracking {
+		body.ConfigurationOverrides = &sesOverrides{}
+		body.ConfigurationOverrides.Tracking.ClickTrackingEnabled = "DISABLED"
+		body.ConfigurationOverrides.Tracking.OpenTrackingEnabled = "DISABLED"
+	}
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return Result{}, message.NewSendError(string(provider.KindSES), message.ReasonInvalid, 0, "the message cannot be encoded")

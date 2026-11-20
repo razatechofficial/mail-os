@@ -458,3 +458,88 @@ func TestNewBuildsNewKinds(t *testing.T) {
 		t.Fatal("Graph without a secret built")
 	}
 }
+
+// Authentication mail (NoTracking) carries each provider's per-message
+// tracking switch, as its API reference names it; ordinary mail carries
+// none, so the account's settings apply.
+func TestProvidersTurnTrackingOff(t *testing.T) {
+	acsKey := base64.StdEncoding.EncodeToString([]byte("acs-access-key-0123456789"))
+	cases := []struct {
+		kind  provider.Kind
+		build func(Options) (Sender, error)
+		ok    http.HandlerFunc
+		want  []string
+	}{
+		{provider.KindSendGrid, func(o Options) (Sender, error) {
+			return NewSendGrid(provider.Settings{}, provider.Credentials{APIKey: "SG.key"}, o)
+		}, reply(202, ``, "X-Message-Id", "sg-1"),
+			[]string{`"tracking_settings":{"click_tracking":{"enable":false,"enable_text":false},"open_tracking":{"enable":false},"subscription_tracking":{"enable":false}}`}},
+		{provider.KindMailgun, func(o Options) (Sender, error) {
+			return NewMailgun(provider.Settings{Domain: "mg.bank.example"}, provider.Credentials{APIKey: "k"}, o)
+		}, reply(200, `{"id":"<mg-1>","message":"Queued"}`),
+			[]string{"o%3Atracking=no", "o%3Atracking-clicks=no", "o%3Atracking-opens=no"}},
+		{provider.KindPostmark, func(o Options) (Sender, error) {
+			return NewPostmark(provider.Settings{}, provider.Credentials{ServerToken: "t"}, o)
+		}, reply(200, `{"ErrorCode":0,"Message":"OK","MessageID":"pm-1"}`),
+			[]string{`"TrackOpens":false`, `"TrackLinks":"None"`}},
+		{provider.KindSparkPost, func(o Options) (Sender, error) {
+			return NewSparkPost(provider.Settings{}, provider.Credentials{APIKey: "k"}, o)
+		}, reply(200, `{"results":{"total_rejected_recipients":0,"total_accepted_recipients":1,"id":"tx-1"}}`),
+			[]string{`"open_tracking":false`, `"click_tracking":false`, `"initial_open":false`}},
+		{provider.KindMandrill, func(o Options) (Sender, error) {
+			return NewMandrill(provider.Settings{}, provider.Credentials{APIKey: "k"}, o)
+		}, reply(200, `[{"email":"zoe@example.com","status":"sent","_id":"md-1"}]`),
+			[]string{`"track_opens":false`, `"track_clicks":false`}},
+		{provider.KindMailjet, func(o Options) (Sender, error) {
+			return NewMailjet(provider.Settings{}, provider.Credentials{APIKey: "a", APISecret: "b"}, o)
+		}, reply(200, `{"Messages":[{"Status":"success","To":[{"Email":"zoe@example.com","MessageUUID":"u-1","MessageID":1}]}]}`),
+			[]string{`"TrackOpens":"disabled"`, `"TrackClicks":"disabled"`}},
+		{provider.KindSES, func(o Options) (Sender, error) {
+			return NewSES(provider.Settings{Region: "eu-west-1"}, provider.Credentials{AccessKeyID: "AKIATEST", SecretAccessKey: "s"}, o)
+		}, reply(200, `{"MessageId":"010001-ses"}`),
+			[]string{`"ConfigurationOverrides":{"Tracking":{"ClickTrackingEnabled":"DISABLED","OpenTrackingEnabled":"DISABLED"}}`}},
+		{provider.KindACS, func(o Options) (Sender, error) {
+			return NewACS(provider.Settings{Endpoint: "https://bank.unitedstates.communication.azure.com"}, provider.Credentials{AccessKey: acsKey}, o)
+		}, reply(202, `{"id":"op-1","status":"Running"}`, "Operation-Location", "https://x/emails/operations/op-1"),
+			[]string{`"userEngagementTrackingDisabled":true`}},
+	}
+	for _, c := range cases {
+		t.Run(string(c.kind), func(t *testing.T) {
+			if !TracksOff(c.kind) {
+				t.Fatalf("%s not declared able to turn tracking off", c.kind)
+			}
+			srv := newAPIServer(t)
+			var body string
+			srv.handle(func(w http.ResponseWriter, r *http.Request) {
+				raw, _ := io.ReadAll(r.Body)
+				body = string(raw)
+				c.ok(w, r)
+			})
+			snd, err := c.build(srv.opts(c.kind))
+			if err != nil {
+				t.Fatal(err)
+			}
+			out := sampleOutgoing()
+			out.NoTracking = true
+			if _, err := snd.Send(context.Background(), out); err != nil {
+				t.Fatal(err)
+			}
+			for _, w := range c.want {
+				if !strings.Contains(body, w) {
+					t.Errorf("untracked body lacks %q:\n%.800s", w, body)
+				}
+			}
+			if _, err := snd.Send(context.Background(), sampleOutgoing()); err != nil {
+				t.Fatal(err)
+			}
+			if c.kind == provider.KindACS {
+				return // ACS always sends with engagement tracking off
+			}
+			for _, w := range c.want {
+				if strings.Contains(body, w) {
+					t.Errorf("ordinary mail carries %q", w)
+				}
+			}
+		})
+	}
+}
