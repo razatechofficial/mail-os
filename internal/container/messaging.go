@@ -111,7 +111,8 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 	domainRepo := postgres.NewSendingDomainRepository(c.DB)
 	webhookRepo := postgres.NewWebhookRepository(c.DB)
 	secretRepo := postgres.NewMessageSecretRepository(c.DB)
-	c.Keys.Register(providerRepo.SealedColumn(), domainRepo.SealedColumn(), webhookRepo.SealedColumn(), secretRepo.SealedColumn())
+	c.Keys.Register(providerRepo.SealedColumn(), domainRepo.SealedColumn(), webhookRepo.SealedColumn(), secretRepo.SealedColumn(),
+		postgres.NewMessageRepository(c.DB).EvidenceColumn())
 
 	queue := worker.NewMessageQueue(c.Enqueuer, cfg.Worker.MaxRetry, cfg.Worker.SendTimeout)
 	providers := appprovider.NewService(providerRepo, c.Keys.Cipher(domainkm.PurposeProvider), c.Audit,
@@ -152,7 +153,7 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 	deps := appmessage.Deps{Applications: c.Apps, Repo: postgres.NewMessageRepository(c.DB), Queue: queue, Suppressions: suppressions, Tenants: c.Tenants,
 		Render: renderContent, Sender: routerSender{router}, Signer: c.SendingDomains, Webhooks: webhooks, Stats: stats, Audit: c.Audit,
 		Events: postgres.NewMessageEventRepository(c.DB), Feedback: suppressions,
-		Secrets: secretRepo, SecretCipher: c.Keys.Cipher(domainkm.PurposeMessageSecret)}
+		Secrets: secretRepo, SecretCipher: c.Keys.Cipher(domainkm.PurposeMessageSecret), Evidence: c.Keys.Evidence()}
 	if c.Templates != nil {
 		deps.Templates, deps.Versions, deps.Branding = c.Templates, c.Templates, c.Templates
 	}
@@ -168,14 +169,7 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 		deps.Unsubscribe = unsub
 		c.PublicRoutes = append(c.PublicRoutes, handler.NewUnsubscribeHandler(unsub, c.Redis, cfg.Unsubscribe.RatePerMinute))
 	}
-	digestKey, err := cfg.Retention.DigestKey()
-	if err != nil {
-		return err
-	}
-	if digestKey == nil {
-		logger.Warn("MESSAGE_DIGEST_KEY is not set: no evidence digest is kept of what messages were sent with")
-	}
-	c.Messages = appmessage.NewService(deps, appmessage.Config{MaxAttempts: cfg.Worker.MaxRetry + 1, DigestKey: digestKey,
+	c.Messages = appmessage.NewService(deps, appmessage.Config{MaxAttempts: cfg.Worker.MaxRetry + 1,
 		RetentionDays: cfg.Retention.MessageDays, PurgeBatch: cfg.Retention.PurgeBatch, DefaultFrom: cfg.SMTP.FromAddr,
 		StaleSending: 3*cfg.Worker.SendTimeout + time.Minute,
 		Attachments: domainmsg.AttachmentLimits{MaxBytes: cfg.Attachments.MaxBytes, MaxTotalBytes: cfg.Attachments.MaxTotalBytes,

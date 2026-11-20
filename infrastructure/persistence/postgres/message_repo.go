@@ -12,7 +12,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	appkm "github.com/razatechofficial/mail-os/application/keymanager"
 	app "github.com/razatechofficial/mail-os/application/message"
+	domainkm "github.com/razatechofficial/mail-os/domain/keymanager"
 	domain "github.com/razatechofficial/mail-os/domain/message"
 )
 
@@ -438,4 +440,26 @@ func (r *MessageRepository) SaveRedacted(ctx context.Context, m domain.Message) 
 		WHERE id = $1 AND org_id = $2`,
 		m.ID, m.OrgID, m.Subject, m.HTMLBody, m.TextBody, jsonOrNil(m.TemplateData), m.LastError)
 	return err
+}
+
+// EvidenceColumn is messages.sent_digest for the key schedule: it counts
+// the hashes each evidence key made, so a retired key is kept while any
+// hash names it. A hash cannot be recomputed under a new key (the content
+// it covers is not stored), so nothing is re-encrypted.
+func (r *MessageRepository) EvidenceColumn() appkm.SealedColumn { return evidenceColumn{db: r.db} }
+
+type evidenceColumn struct{ db *Pool }
+
+func (evidenceColumn) Purpose() domainkm.Purpose { return domainkm.PurposeEvidence }
+func (evidenceColumn) Name() string              { return "messages.sent_digest" }
+
+func (c evidenceColumn) CountByKID(ctx context.Context, kid string) (int, error) {
+	var n int
+	err := QuerierFromContext(ctx, c.db).QueryRow(ctx,
+		`SELECT count(*) FROM messages WHERE sent_digest IS NOT NULL AND sent_digest->>'kid' = $1`, kid).Scan(&n)
+	return n, err
+}
+
+func (evidenceColumn) Reencrypt(context.Context, string, int, func(string) (string, error)) (int, error) {
+	return 0, nil
 }
