@@ -327,8 +327,8 @@ func TestSendRetryAndPurge(t *testing.T) {
 		t.Fatal("secrets kept after the send")
 	}
 	stored, _ = postgres.NewMessageRepository(e.db).Get(ctx, e.tenant, m.ID)
-	if !domainmsg.VerifySentDigest(digestKey, stored.SentDigest, got[0].Subject, got[0].Text, got[0].HTML) {
-		t.Fatalf("sent digest %q does not verify", stored.SentDigest)
+	if !stored.SentDigest.Verify(digestKey, got[0].Subject, got[0].Text, got[0].HTML) || stored.TemplateVersionID == "" || stored.TemplateID == "" {
+		t.Fatalf("sent digest %+v does not verify, or no template version", stored.SentDigest)
 	}
 	v, _ := svc.Get(ctx, e.tenant, m.ID)
 	if !v.AuthClass || v.TemplateData["code"] != "[redacted: code, 6 characters]" {
@@ -357,7 +357,7 @@ func TestSendRetryAndPurge(t *testing.T) {
 	if v := e.raw(t, `SELECT to_email FROM messages WHERE id = $1`, m.ID); v != to {
 		t.Fatal("envelope not kept")
 	}
-	if v := e.raw(t, `SELECT sent_digest FROM messages WHERE id = $1`, m.ID); v != stored.SentDigest {
+	if v := e.raw(t, `SELECT sent_digest->>'text' FROM messages WHERE id = $1`, m.ID); v == "" || v != stored.SentDigest.Text {
 		t.Fatal("purge dropped the evidence digest")
 	}
 	// Message retention never deletes audit rows, however old.

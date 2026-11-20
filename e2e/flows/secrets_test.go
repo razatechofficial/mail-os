@@ -111,7 +111,7 @@ func TestNoLiveSecretAtRest(t *testing.T) {
 	for id, want := range map[string]string{codeID: "[redacted: code,", resetID: "https://iam.example.com/reset-password/[redacted]"} {
 		view := operator.Expect(t, http.StatusOK, http.MethodGet, "/api/v1/messages/"+id, nil)
 		if !strings.Contains(view.String(), want) || !strings.Contains(view.String(), `"auth_class":true`) ||
-			!strings.HasPrefix(harness.Str(view.Data(), "sent_digest"), "hmac-sha256:") {
+			harness.Str(view.Data(), "sent_digest.alg") != "hmac-sha256" || harness.Str(view.Data(), "template_version_id") == "" {
 			t.Fatalf("view of %s: %s", id, view)
 		}
 		body := operator.Expect(t, http.StatusOK, http.MethodGet, "/api/v1/messages/"+id+"/body", nil)
