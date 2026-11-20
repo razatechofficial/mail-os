@@ -261,6 +261,9 @@ type Config struct {
 	// SecretTTL is the longest an authentication-class message's live
 	// secrets are kept for retries (at most and by default an hour).
 	SecretTTL time.Duration
+	// DigestKey keys the evidence digest of what each message was sent
+	// with (MESSAGE_DIGEST_KEY); nil records none.
+	DigestKey []byte
 }
 
 func (c Config) withDefaults() Config {

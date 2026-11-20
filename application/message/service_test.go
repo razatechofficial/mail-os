@@ -28,6 +28,8 @@ import (
 
 const tenant = "0192f0c4-0000-7000-8000-000000000001"
 
+var testDigestKey = []byte("0123456789abcdef0123456789abcdef")
+
 type fixture struct {
 	svc      *Service
 	repo     *memRepo
@@ -61,7 +63,7 @@ func newFixture(t *testing.T) *fixture {
 	f.svc = NewService(Deps{Applications: appstest.New(f.core, f.sandbox), Repo: f.repo, Queue: f.queue, Suppressions: f.sups, Tenants: memTenants{}, Templates: tpls,
 		Versions: tpls, Branding: tpls, Render: fakeRender, Sender: f.sender, Signer: memSigner{},
 		Webhooks: f.notifier, Stats: f.stats, Audit: f.audit, Secrets: f.secrets, SecretCipher: fakeCipher{}},
-		Config{MaxAttempts: 3, RetentionDays: 30})
+		Config{MaxAttempts: 3, RetentionDays: 30, DigestKey: testDigestKey})
 	return f
 }
 
@@ -256,6 +258,18 @@ func TestDeliverRendersSignsAndCounts(t *testing.T) {
 	}
 	if f.secrets.has(m.ID) {
 		t.Fatal("secrets kept after the message was sent")
+	}
+	// The evidence digest is of what the relay got, with the template
+	// version that reproduces it; the redacted copy alone does not verify.
+	if !domainmsg.VerifySentDigest(testDigestKey, got.SentDigest, out.Subject, out.Text, out.HTML) || got.TemplateVersionID != "ver-3" ||
+		domainmsg.VerifySentDigest(testDigestKey, got.SentDigest, got.Subject, got.TextBody, got.HTMLBody) {
+		t.Fatalf("sent digest %q", got.SentDigest)
+	}
+	// It survives the retention purge with the envelope.
+	purged := got
+	purged.PurgeBody(time.Now())
+	if purged.SentDigest != got.SentDigest {
+		t.Fatal("purge dropped the sent digest")
 	}
 	if f.stats.counts["sent"] != 1 || f.notifier.events[0] != "message.sent" {
 		t.Fatal(f.stats.counts, f.notifier.events)
