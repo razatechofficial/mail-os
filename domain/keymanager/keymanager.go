@@ -28,10 +28,14 @@ const (
 	// PurposeMessageSecret seals the live codes and links of
 	// authentication-class messages while they wait to be sent.
 	PurposeMessageSecret Purpose = "message_secret"
+	// PurposeEvidence keys the HMAC-SHA-256 kept as evidence of what each
+	// message was sent with. Its keys rotate like the others but are kept
+	// while a stored hash names them, so a custodian can verify old mail.
+	PurposeEvidence Purpose = "evidence"
 )
 
 // Purposes lists every purpose.
-var Purposes = []Purpose{PurposeProvider, PurposeDKIM, PurposeWebhook, PurposeMessageSecret}
+var Purposes = []Purpose{PurposeProvider, PurposeDKIM, PurposeWebhook, PurposeMessageSecret, PurposeEvidence}
 
 // Valid reports whether p is a known purpose.
 func (p Purpose) Valid() bool {

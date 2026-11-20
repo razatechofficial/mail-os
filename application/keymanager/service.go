@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"sync"
@@ -35,6 +37,9 @@ type Config struct {
 type loaded struct {
 	key  domain.EncryptionKey
 	aead cipher.AEAD
+	// macKey is an evidence key's HMAC key, derived from the data key;
+	// nil for every other purpose.
+	macKey []byte
 }
 
 // Service is the keyring and its schedule.
@@ -132,11 +137,15 @@ func (s *Service) Reload(ctx context.Context) error {
 				return fmt.Errorf("unwrap key %s: %w", k.KID, err)
 			}
 			aead, err := newGCM(raw)
+			var macKey []byte
+			if k.Purpose == domain.PurposeEvidence {
+				macKey = deriveMACKey(raw)
+			}
 			clear(raw)
 			if err != nil {
 				return err
 			}
-			keys[k.KID] = loaded{key: k, aead: aead}
+			keys[k.KID] = loaded{key: k, aead: aead, macKey: macKey}
 		}
 		if k.State == domain.StateActive {
 			active[k.Purpose] = k.KID
@@ -146,6 +155,78 @@ func (s *Service) Reload(ctx context.Context) error {
 	s.keys, s.active, s.lastReload = keys, active, s.now()
 	s.mu.Unlock()
 	return nil
+}
+
+// deriveMACKey is the HMAC key of an evidence data key, under a label of
+// its own so the key is never used raw.
+func deriveMACKey(raw []byte) []byte {
+	m := hmac.New(sha256.New, raw)
+	m.Write([]byte("mailos evidence hmac-sha256 v1"))
+	return m.Sum(nil)
+}
+
+// ErrNotEvidence refuses MAC for a purpose other than evidence.
+var ErrNotEvidence = errors.New("only evidence keys compute MACs")
+
+// MAC computes HMAC-SHA-256 of each input with the active evidence key and
+// returns that key's id with them: one key for every input, so a record's
+// parts verify together. The key never leaves the service.
+func (s *Service) MAC(ctx context.Context, p domain.Purpose, inputs ...[]byte) (string, [][]byte, error) {
+	if p != domain.PurposeEvidence {
+		return "", nil, ErrNotEvidence
+	}
+	s.mu.RLock()
+	kid, ok := s.active[p]
+	k := s.keys[kid]
+	s.mu.RUnlock()
+	if !ok {
+		if err := s.Reload(ctx); err != nil {
+			return "", nil, err
+		}
+		s.mu.RLock()
+		kid, ok = s.active[p]
+		k = s.keys[kid]
+		s.mu.RUnlock()
+		if !ok {
+			return "", nil, ErrNoActiveKey
+		}
+	}
+	out := make([][]byte, len(inputs))
+	for i, in := range inputs {
+		m := hmac.New(sha256.New, k.macKey)
+		m.Write(in)
+		out[i] = m.Sum(nil)
+	}
+	return kid, out, nil
+}
+
+// VerifyMAC reports whether mac is HMAC-SHA-256 of input under the evidence
+// key kid, active or retired (evidence keys are kept while a value names
+// them). An unknown kid is an error.
+func (s *Service) VerifyMAC(ctx context.Context, p domain.Purpose, kid string, input, mac []byte) (bool, error) {
+	if p != domain.PurposeEvidence {
+		return false, ErrNotEvidence
+	}
+	s.mu.RLock()
+	k, ok := s.keys[kid]
+	s.mu.RUnlock()
+	if !ok {
+		if err := s.Reload(ctx); err != nil {
+			return false, err
+		}
+		s.mu.RLock()
+		k, ok = s.keys[kid]
+		s.mu.RUnlock()
+	}
+	if !ok {
+		return false, fmt.Errorf("unknown evidence key %q", kid)
+	}
+	if k.key.Purpose != p {
+		return false, ErrWrongPurpose
+	}
+	m := hmac.New(sha256.New, k.macKey)
+	m.Write(input)
+	return hmac.Equal(m.Sum(nil), mac), nil
 }
 
 func newGCM(key []byte) (cipher.AEAD, error) {

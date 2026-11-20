@@ -3,6 +3,7 @@ package keymanager_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"sort"
@@ -256,5 +257,50 @@ func TestWrongMasterKeyCannotLoad(t *testing.T) {
 	newService(t, store, &auditLog{})
 	if err := app.New(keks(t, masterKey(t, 'x'), nil), store, nil, app.Config{}).Bootstrap(context.Background()); err == nil {
 		t.Fatal("keys unwrapped with another master key")
+	}
+}
+
+// Evidence MACs: one active key for every input, verifiable by kid after a
+// rotation, refused for any other purpose, and not reproducible without
+// the key: neither a bare SHA-256 nor another deployment's key gives them.
+func TestEvidenceMAC(t *testing.T) {
+	ctx := context.Background()
+	s := newService(t, &memStore{}, &auditLog{})
+	kid, macs, err := s.MAC(ctx, domain.PurposeEvidence, []byte("subject"), []byte("Your code is 482913"))
+	if err != nil || kid == "" || len(macs) != 2 || len(macs[1]) != sha256.Size {
+		t.Fatalf("mac %q %d %v", kid, len(macs), err)
+	}
+	if ok, err := s.VerifyMAC(ctx, domain.PurposeEvidence, kid, []byte("Your code is 482913"), macs[1]); !ok || err != nil {
+		t.Fatalf("verify %v %v", ok, err)
+	}
+	if ok, _ := s.VerifyMAC(ctx, domain.PurposeEvidence, kid, []byte("Your code is 482914"), macs[1]); ok {
+		t.Fatal("another code verified")
+	}
+	bare := sha256.Sum256([]byte("Your code is 482913"))
+	if bytes.Equal(bare[:], macs[1]) {
+		t.Fatal("the MAC is a bare hash")
+	}
+	other := app.New(keks(t, masterKey(t, 'o'), nil), &memStore{}, nil, app.Config{})
+	if err := other.Bootstrap(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, theirs, _ := other.MAC(ctx, domain.PurposeEvidence, []byte("Your code is 482913")); bytes.Equal(theirs[0], macs[1]) {
+		t.Fatal("another key reproduced the MAC")
+	}
+	if _, err := other.VerifyMAC(ctx, domain.PurposeEvidence, kid, []byte("Your code is 482913"), macs[1]); err == nil {
+		t.Fatal("a deployment without the key verified")
+	}
+	if _, err := s.Rotate(ctx, domain.PurposeEvidence, "test"); err != nil {
+		t.Fatal(err)
+	}
+	newKid, _, _ := s.MAC(ctx, domain.PurposeEvidence, []byte("x"))
+	if newKid == kid {
+		t.Fatal("rotation kept the key")
+	}
+	if ok, err := s.VerifyMAC(ctx, domain.PurposeEvidence, kid, []byte("Your code is 482913"), macs[1]); !ok || err != nil {
+		t.Fatalf("a retired key no longer verifies: %v %v", ok, err)
+	}
+	if _, _, err := s.MAC(ctx, domain.PurposeProvider, []byte("x")); !errors.Is(err, app.ErrNotEvidence) {
+		t.Fatalf("MAC under the provider purpose: %v", err)
 	}
 }
