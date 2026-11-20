@@ -159,7 +159,7 @@ func TestProviderCredentialsAreNeverReturned(t *testing.T) {
 	admin := fx.Admin(t)
 	secret := "SG.top-secret-" + harness.Unique()
 	created := admin.Expect(t, http.StatusCreated, http.MethodPost, "/api/v1/providers", map[string]any{
-		"name": "SendGrid", "type": "sendgrid", "is_active": false, "configuration": map[string]any{"api_key": secret, "from_email": "a@example.com"},
+		"name": "SendGrid", "type": "sendgrid", "is_active": false, "settings": map[string]any{"from_email": "a@example.com"}, "credentials": map[string]any{"api_key": secret},
 	})
 	id := harness.Str(created.Data(), "id")
 	if created.Data()["has_credentials"] != true {
@@ -178,7 +178,7 @@ func TestProviderCredentialsAreNeverReturned(t *testing.T) {
 		t.Fatalf("a rename dropped the credentials: %s", updated)
 	}
 	admin.ExpectError(t, http.StatusUnprocessableEntity, "", http.MethodPost, "/api/v1/providers", map[string]any{
-		"name": "Bad", "type": "sendgrid", "configuration": map[string]any{"api_key": 42}})
+		"name": "Bad", "type": "sendgrid", "credentials": map[string]any{"api_key": 42}})
 	admin.Expect(t, http.StatusNoContent, http.MethodDelete, "/api/v1/providers/"+id, nil)
 	admin.ExpectError(t, http.StatusNotFound, "", http.MethodGet, "/api/v1/providers/"+id, nil)
 }

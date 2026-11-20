@@ -40,7 +40,7 @@ func build(t *testing.T) world {
 		"to_email": w.recipient, "subject": "A's message", "text_body": "for A only",
 	}).Data(), "message_id")
 	w.provider = harness.Str(a.Expect(t, http.StatusCreated, http.MethodPost, "/api/v1/providers", map[string]any{
-		"name": "A relay", "type": "sendgrid", "is_active": false, "configuration": map[string]any{"api_key": "SG.tenant-a-secret-" + harness.Unique()},
+		"name": "A relay", "type": "sendgrid", "is_active": false, "credentials": map[string]any{"api_key": "SG.tenant-a-secret-" + harness.Unique()},
 	}).Data(), "id")
 	w.domain = harness.Str(a.Expect(t, http.StatusCreated, http.MethodPost, "/api/v1/sending-domains",
 		map[string]any{"domain": "a-" + harness.Unique() + ".example.com"}).Data(), "id")
