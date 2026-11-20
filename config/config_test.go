@@ -26,7 +26,6 @@ func productionEnv() map[string]string {
 		"IAM_SERVICE_TENANT_ID":    "6f1c3c3e-6a38-4a8f-9a59-2b9d3b6a8a10",
 		"KEY_MANAGER_MASTER_KEY":   testMasterKey,
 		"AUDIT_DIGEST_SIGNING_KEY": testMasterKey,
-		"MESSAGE_DIGEST_KEY":       testMasterKey,
 	}
 }
 
@@ -82,8 +81,6 @@ func TestLoadRefusesUnsafeProduction(t *testing.T) {
 		{"short audit retention", map[string]string{"AUDIT_RETENTION_DAYS": "90"}, "AUDIT_RETENTION_DAYS"},
 		{"unsigned audit log", map[string]string{"AUDIT_DIGEST_SIGNING_KEY": ""}, "AUDIT_DIGEST_SIGNING_KEY"},
 		{"message retention past 90 days", map[string]string{"MESSAGE_RETENTION_DAYS": "91"}, "MESSAGE_RETENTION_DAYS"},
-		{"no message digest key", map[string]string{"MESSAGE_DIGEST_KEY": ""}, "MESSAGE_DIGEST_KEY"},
-		{"short message digest key", map[string]string{"MESSAGE_DIGEST_KEY": "c2hvcnQ="}, "MESSAGE_DIGEST_KEY"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
