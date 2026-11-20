@@ -7,8 +7,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	app "github.com/razatechofficial/mail-os/application/message"
 	appkm "github.com/razatechofficial/mail-os/application/keymanager"
+	app "github.com/razatechofficial/mail-os/application/message"
 	domainkm "github.com/razatechofficial/mail-os/domain/keymanager"
 )
 

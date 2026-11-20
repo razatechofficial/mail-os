@@ -22,8 +22,8 @@ func TestDescriptor(t *testing.T) {
 		"https://iam.example.com:8443/reset-password/tok-123#x=1":  "https://iam.example.com:8443/reset-password/[redacted]",
 		"https://iam.example.com/other/tok-123":                    "https://iam.example.com/[redacted]",
 		"https://user:pw@iam.example.com/reset-password?token=abc": "https://iam.example.com/reset-password/[redacted]",
-		"not a url tok-123":                                        "[redacted: reset_link]",
-		"javascript:alert(1)":                                      "[redacted: reset_link]",
+		"not a url tok-123":   "[redacted: reset_link]",
+		"javascript:alert(1)": "[redacted: reset_link]",
 	} {
 		if got := Descriptor(reset, raw); got != want {
 			t.Errorf("%s = %q, want %q", raw, got, want)
