@@ -8,7 +8,8 @@ package integrations
 import (
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/hex"
+	"encoding/base64"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -69,27 +70,38 @@ func (r *receiver) deliveries() []delivery {
 	return append([]delivery(nil), r.got...)
 }
 
-// verify checks "t=<unix>,v1=<hex HMAC-SHA256(secret, t.body)>".
+// verify checks the Standard Webhooks signature: webhook-signature holds
+// "v1,<base64 HMAC-SHA256(key, "<webhook-id>.<webhook-timestamp>.<body>")>",
+// the key being the base64 after "whsec_".
 func verify(secret string, d delivery) bool {
-	var ts, sig string
-	for _, part := range strings.Split(d.header.Get("X-MailOS-Signature"), ",") {
-		k, v, _ := strings.Cut(part, "=")
-		switch k {
-		case "t":
-			ts = v
-		case "v1":
-			sig = v
-		}
-	}
+	id, ts := d.header.Get("webhook-id"), d.header.Get("webhook-timestamp")
 	n, err := strconv.ParseInt(ts, 10, 64)
 	if err != nil || time.Since(time.Unix(n, 0)).Abs() > 5*time.Minute {
 		return false
 	}
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(ts + "."))
+	key, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(secret, "whsec_"))
+	if err != nil || !strings.HasPrefix(secret, "whsec_") {
+		key = []byte(secret)
+	}
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(id + "." + ts + "."))
 	mac.Write(d.body)
-	want, _ := hex.DecodeString(sig)
-	return hmac.Equal(mac.Sum(nil), want)
+	want := "v1," + base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	for _, sig := range strings.Fields(d.header.Get("webhook-signature")) {
+		if hmac.Equal([]byte(sig), []byte(want)) {
+			return true
+		}
+	}
+	return false
+}
+
+// eventType is the delivery body's type.
+func eventType(d delivery) string {
+	var p struct {
+		Type string `json:"type"`
+	}
+	_ = json.Unmarshal(d.body, &p)
+	return p.Type
 }
 
 func TestWebhookIsSignedRetriedAndSecretShownOnce(t *testing.T) {
@@ -115,16 +127,16 @@ func TestWebhookIsSignedRetriedAndSecretShownOnce(t *testing.T) {
 	ds := rcv.deliveries()
 	for _, d := range ds {
 		if !verify(secret, d) {
-			t.Fatalf("signature does not verify: %q", d.header.Get("X-MailOS-Signature"))
+			t.Fatalf("signature does not verify: %q", d.header.Get("webhook-signature"))
 		}
 		if verify("whsec_wrong", d) {
 			t.Fatal("a wrong secret verifies")
 		}
-		if d.header.Get("X-MailOS-Event") != "message.sent" || !strings.Contains(string(d.body), msg) {
+		if eventType(d) != "message.sent" || !strings.Contains(string(d.body), msg) {
 			t.Fatalf("delivery: %v %s", d.header, d.body)
 		}
 	}
-	if ds[0].header.Get("X-MailOS-Delivery") != ds[1].header.Get("X-MailOS-Delivery") {
+	if ds[0].header.Get("webhook-id") == "" || ds[0].header.Get("webhook-id") != ds[1].header.Get("webhook-id") {
 		t.Fatal("the retry is a different delivery")
 	}
 
