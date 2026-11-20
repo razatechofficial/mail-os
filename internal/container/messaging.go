@@ -168,7 +168,14 @@ func (c *Container) buildMessaging(ctx context.Context) error {
 		deps.Unsubscribe = unsub
 		c.PublicRoutes = append(c.PublicRoutes, handler.NewUnsubscribeHandler(unsub, c.Redis, cfg.Unsubscribe.RatePerMinute))
 	}
-	c.Messages = appmessage.NewService(deps, appmessage.Config{MaxAttempts: cfg.Worker.MaxRetry + 1,
+	digestKey, err := cfg.Retention.DigestKey()
+	if err != nil {
+		return err
+	}
+	if digestKey == nil {
+		logger.Warn("MESSAGE_DIGEST_KEY is not set: no evidence digest is kept of what messages were sent with")
+	}
+	c.Messages = appmessage.NewService(deps, appmessage.Config{MaxAttempts: cfg.Worker.MaxRetry + 1, DigestKey: digestKey,
 		RetentionDays: cfg.Retention.MessageDays, PurgeBatch: cfg.Retention.PurgeBatch, DefaultFrom: cfg.SMTP.FromAddr,
 		StaleSending: 3*cfg.Worker.SendTimeout + time.Minute,
 		Attachments: domainmsg.AttachmentLimits{MaxBytes: cfg.Attachments.MaxBytes, MaxTotalBytes: cfg.Attachments.MaxTotalBytes,
