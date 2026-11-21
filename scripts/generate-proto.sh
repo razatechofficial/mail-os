@@ -24,4 +24,11 @@ protoc \
   --go-grpc_out="${OUT_DIR}" --go-grpc_opt=paths=source_relative \
   "${PROTO_DIR}"/*.proto
 
+# The ACS client's copy of ACS's acs.v1 contract (infrastructure/acs).
+protoc \
+  --proto_path=api/proto \
+  --go_out=api/proto --go_opt=paths=source_relative \
+  --go-grpc_out=api/proto --go-grpc_opt=paths=source_relative \
+  api/proto/acs/v1/*.proto
+
 echo "protobuf generation complete"
