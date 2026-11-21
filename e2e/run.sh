@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Black-box e2e suite: build and start the real MailOS binaries against the
-# test stack (docker-compose.test.yaml, or any Postgres/Redis named below)
-# and a fake IAM (e2e/cmd/fakeiam), then run the e2e packages against them.
+# test stack (docker-compose.test.yaml, or any Postgres/Redis named below),
+# a fake IAM (e2e/cmd/fakeiam) and a fake ACS (e2e/cmd/fakeacs), then run
+# the e2e packages against them.
 #
 #   e2e/run.sh up     build, write keys and env, start fake IAM, migrate, start server and worker
 #   e2e/run.sh test   run the e2e packages (skipgate: a skipped test fails)
@@ -27,8 +28,11 @@ HTTP_PORT="${MAILOS_E2E_HTTP_PORT:-18180}"
 GRPC_PORT="${MAILOS_E2E_GRPC_PORT:-18181}"
 IAM_PORT="${MAILOS_E2E_IAM_PORT:-18190}"
 METRICS_PORT="${MAILOS_E2E_METRICS_PORT:-18182}"
+ACS_PORT="${MAILOS_E2E_ACS_PORT:-18184}"
 WORKER_METRICS_PORT="${MAILOS_E2E_WORKER_METRICS_PORT:-18183}"
 CONSOLE_ORIGIN="${MAILOS_E2E_CONSOLE_ORIGIN:-http://localhost:3200}"
+# The platform console (CONSOLE_PLANE=platform) its Playwright suite runs.
+PLATFORM_CONSOLE_ORIGIN="${MAILOS_E2E_PLATFORM_CONSOLE_ORIGIN:-http://localhost:3201}"
 PKGS="${MAILOS_E2E_PKGS:-./e2e/...}"
 BASE_URL="http://127.0.0.1:${HTTP_PORT}"
 IAM_URL="http://127.0.0.1:${IAM_PORT}"
@@ -37,6 +41,11 @@ IAM_URL="http://127.0.0.1:${IAM_PORT}"
 IAM_SERVICE_CLIENT="mailos-iam"
 # The console's OIDC client at the fake IAM (its Playwright suite signs in through it).
 OIDC_CLIENT="mailos-console"
+# The platform console's OIDC client (platform_web: platform accounts only,
+# resource mailos-platform, platform tokens).
+PLATFORM_OIDC_CLIENT="mailos-platform-console"
+# MailOS's client at ACS (client-credentials tokens for api://acs).
+ACS_CLIENT="mailos-acs"
 # How long to wait for each process to answer (a fresh binary can start slowly).
 READY_SECONDS="${MAILOS_E2E_READY_SECONDS:-60}"
 
@@ -48,7 +57,7 @@ secret() { head -c "${1:-32}" /dev/urandom | base64 | tr -d '\n'; }
 build() {
   echo "e2e: building binaries"
   go build -o "$WORK/bin/" ./cmd/server ./cmd/worker ./cmd/migrate-postgres
-  go build -tags e2e -o "$WORK/bin/" ./e2e/cmd/fakeiam
+  go build -tags e2e -o "$WORK/bin/" ./e2e/cmd/fakeiam ./e2e/cmd/fakeacs
   go build -o "$WORK/bin/" ./scripts/ci/skipgate
 }
 
@@ -60,6 +69,7 @@ keys() {
   [ -f "$k/hooks.token" ] || secret 36 > "$k/hooks.token"
   [ -f "$k/iam-mint.token" ] || secret 36 > "$k/iam-mint.token"
   [ -f "$k/oidc-client.secret" ] || secret 36 > "$k/oidc-client.secret"
+  [ -f "$k/platform-oidc-client.secret" ] || secret 36 > "$k/platform-oidc-client.secret"
   chmod 600 "$k"/*
 }
 
@@ -96,8 +106,12 @@ IAM_JWKS_CACHE_TTL=1m
 IAM_SERVICE_CLIENT_ID=$IAM_SERVICE_CLIENT
 IAM_SERVICE_TENANT_ID=$(cat "$k/iam-tenant")
 IAM_SERVICE_TOPICS=iam.*
+ACS_ENDPOINT=127.0.0.1:$ACS_PORT
+ACS_CLIENT_ID=$ACS_CLIENT
+ACS_TOKEN_URL=$IAM_URL/oauth/token
+ACS_INSECURE=true
 KEY_MANAGER_MASTER_KEY=$(cat "$k/master.key")
-CORS_ORIGINS=$CONSOLE_ORIGIN
+CORS_ORIGINS=$CONSOLE_ORIGIN,$PLATFORM_CONSOLE_ORIGIN
 FEATURE_PUBSUB_INGEST=false
 FEATURE_AUDIT_STREAM=false
 FEATURE_RAW_HTML_BLOCKS=true
@@ -129,6 +143,19 @@ wait_http() {
   echo "e2e: $name not ready at $url"; tail -30 "$log"; exit 1
 }
 
+# wait_tcp waits for a TCP port (the fake ACS speaks gRPC, not HTTP).
+wait_tcp() {
+  local name="$1" port="$2" pidfile="$3" log="$4"
+  for _ in $(seq 1 $((READY_SECONDS * 2))); do
+    if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then return 0; fi
+    if ! kill -0 "$(cat "$pidfile")" 2>/dev/null; then
+      echo "e2e: $name exited:"; tail -30 "$log"; exit 1
+    fi
+    sleep 0.5
+  done
+  echo "e2e: $name not listening on $port"; tail -30 "$log"; exit 1
+}
+
 start() {
   local name="$1"; shift
   "$@" > "$WORK/$name.log" 2>&1 &
@@ -144,8 +171,15 @@ up() {
   echo "e2e: starting the fake IAM on $IAM_URL"
   start fakeiam "$WORK/bin/fakeiam" -addr "127.0.0.1:$IAM_PORT" -mint-token-file "$WORK/keys/iam-mint.token" \
     -oidc-client-id "$OIDC_CLIENT" -oidc-client-secret-file "$WORK/keys/oidc-client.secret" \
-    -oidc-redirect-uris "$CONSOLE_ORIGIN/api/auth/callback" -oidc-post-logout-uris "$CONSOLE_ORIGIN/"
+    -oidc-redirect-uris "$CONSOLE_ORIGIN/api/auth/callback" -oidc-post-logout-uris "$CONSOLE_ORIGIN/" \
+    -platform-oidc-client-id "$PLATFORM_OIDC_CLIENT" -platform-oidc-client-secret-file "$WORK/keys/platform-oidc-client.secret" \
+    -platform-oidc-redirect-uris "$PLATFORM_CONSOLE_ORIGIN/api/auth/callback" -platform-oidc-post-logout-uris "$PLATFORM_CONSOLE_ORIGIN/" \
+    -acs-client-id "$ACS_CLIENT" -mailos-url "$BASE_URL"
   wait_http "fake IAM" "$IAM_URL/.well-known/openid-configuration" "$WORK/fakeiam.pid" "$WORK/fakeiam.log"
+
+  echo "e2e: starting the fake ACS on 127.0.0.1:$ACS_PORT"
+  start fakeacs "$WORK/bin/fakeacs" -addr "127.0.0.1:$ACS_PORT" -iam-issuer "$IAM_URL"
+  wait_tcp "fake ACS" "$ACS_PORT" "$WORK/fakeacs.pid" "$WORK/fakeacs.log"
 
   load_env
   echo "e2e: migrating $PG_HOST:$PG_PORT/$PG_DB"
@@ -172,6 +206,9 @@ print_env() {
   echo "MAILOS_E2E_IAM_TENANT=$(cat "$WORK/keys/iam-tenant")"
   echo "MAILOS_E2E_OIDC_CLIENT_ID=$OIDC_CLIENT"
   echo "MAILOS_E2E_OIDC_CLIENT_SECRET=$(cat "$WORK/keys/oidc-client.secret")"
+  echo "MAILOS_E2E_PLATFORM_OIDC_CLIENT_ID=$PLATFORM_OIDC_CLIENT"
+  echo "MAILOS_E2E_PLATFORM_OIDC_CLIENT_SECRET=$(cat "$WORK/keys/platform-oidc-client.secret")"
+  echo "MAILOS_E2E_ACS_ADDR=127.0.0.1:$ACS_PORT"
   # The secrets canary reads the stores and logs directly.
   echo "MAILOS_E2E_PG_DSN=postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable"
   echo "MAILOS_E2E_REDIS_ADDR=$REDIS_HOST:$REDIS_PORT"
@@ -199,6 +236,7 @@ stop() {
 down() {
   stop worker
   stop server
+  stop fakeacs
   stop fakeiam
 }
 
