@@ -1,0 +1,151 @@
+syntax = "proto3";
+
+// The part of ACS's public contract (package acs.v1, ACS repository
+// api/proto/acs/v1) MailOS calls: Check and CheckBulk, ReadRelationships
+// and WriteRelationships. Copied, not imported: the ACS module is private.
+// Names, field numbers and types are ACS's, so the wire format is the
+// same; fields MailOS never sets or reads are left out (proto3 skips
+// unknown fields). When ACS changes one of these messages, copy the change.
+package acs.v1;
+
+option go_package = "github.com/razatechofficial/mail-os/api/proto/acs/v1;acsv1";
+
+import "google/protobuf/timestamp.proto";
+
+service AuthorizationService {
+  rpc Check(CheckRequest) returns (CheckResponse);
+  rpc CheckBulk(CheckBulkRequest) returns (CheckBulkResponse);
+}
+
+service RelationshipService {
+  rpc ReadRelationships(ReadRelationshipsRequest) returns (ReadRelationshipsResponse);
+  rpc WriteRelationships(WriteRelationshipsRequest) returns (WriteRelationshipsResponse);
+}
+
+message ObjectRef {
+  string object_type = 1;
+  string object_id = 2;
+}
+
+message SubjectRef {
+  ObjectRef object = 1;
+  string optional_relation = 2;
+}
+
+message Relationship {
+  ObjectRef resource = 1;
+  string relation = 2;
+  SubjectRef subject = 3;
+  // 4: optional_caveat (not used by MailOS).
+  google.protobuf.Timestamp optional_expires_at = 5;
+}
+
+message ZedToken {
+  string token = 1;
+}
+
+message Consistency {
+  oneof requirement {
+    bool minimize_latency = 1;
+    ZedToken at_least_as_fresh = 2;
+  }
+}
+
+enum Decision {
+  DECISION_UNSPECIFIED = 0;
+  DECISION_ALLOWED = 1;
+  DECISION_DENIED = 2;
+  DECISION_DENIED_MISSING_CONTEXT = 3;
+}
+
+// tenant_id "platform" is the platform scope (MailOS's platform binding).
+message TenantSelector {
+  string tenant_id = 1;
+}
+
+message RelationshipUpdate {
+  enum Operation {
+    OPERATION_UNSPECIFIED = 0;
+    OPERATION_TOUCH = 1;
+    OPERATION_DELETE = 2;
+  }
+  Operation operation = 1;
+  Relationship relationship = 2;
+}
+
+message SubjectFilter {
+  string subject_type = 1;
+  string optional_subject_id = 2;
+  string optional_relation = 3;
+}
+
+message RelationshipFilter {
+  string resource_type = 1;
+  string optional_resource_id = 2;
+  string optional_relation = 3;
+  SubjectFilter optional_subject = 4;
+}
+
+message ErrorDetail {
+  string reason = 1;
+  string message = 2;
+  map<string, string> metadata = 3;
+}
+
+message CheckRequest {
+  TenantSelector tenant = 1;
+  ObjectRef resource = 2;
+  string permission = 3;
+  SubjectRef subject = 4;
+  // 5: context, 7: explain, 8: end_user_token (not used by MailOS).
+  Consistency consistency = 6;
+}
+
+message CheckResponse {
+  Decision decision = 1;
+  repeated string missing_context = 2;
+  ZedToken checked_at = 3;
+  string decision_id = 4;
+}
+
+message CheckBulkRequest {
+  TenantSelector tenant = 1;
+  repeated CheckRequest items = 2;
+  Consistency consistency = 3;
+}
+
+message CheckBulkResponse {
+  message Item {
+    oneof result {
+      CheckResponse response = 1;
+      ErrorDetail error = 2;
+    }
+  }
+  repeated Item items = 1;
+  ZedToken checked_at = 2;
+}
+
+message ReadRelationshipsRequest {
+  TenantSelector tenant = 1;
+  RelationshipFilter filter = 2;
+  Consistency consistency = 3;
+  uint32 page_size = 4;
+  string cursor = 5;
+}
+
+message ReadRelationshipsResponse {
+  repeated Relationship relationships = 1;
+  string next_cursor = 2;
+  ZedToken read_at = 3;
+}
+
+message WriteRelationshipsRequest {
+  TenantSelector tenant = 1;
+  repeated RelationshipUpdate updates = 2;
+  // 3: preconditions, 4: object_versions, 5: approval_ref (not used by MailOS).
+  string idempotency_key = 6;
+}
+
+message WriteRelationshipsResponse {
+  ZedToken written_at = 1;
+}
