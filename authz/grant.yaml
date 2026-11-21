@@ -11,12 +11,13 @@ quota_tier: S
 # MailOS narrows the owner, template publisher and key custodian further
 # (4 h) before it writes.
 expiry:
-  mailos/platform#platform_owner: {max_expiry: 8h, expiry_required: true}
-  mailos/platform#platform_operator: {max_expiry: 8h, expiry_required: true}
-  mailos/platform#platform_template_editor: {max_expiry: 8h, expiry_required: true}
-  mailos/platform#platform_template_publisher: {max_expiry: 8h, expiry_required: true}
-  mailos/platform#platform_key_custodian: {max_expiry: 8h, expiry_required: true}
-  mailos/platform#platform_abuse_analyst: {max_expiry: 8h, expiry_required: true}
-  mailos/platform#platform_support: {max_expiry: 8h, expiry_required: true}
-  mailos/platform#platform_log_admin: {max_expiry: 8h, expiry_required: true}
-  mailos/platform#platform_auditor: {max_expiry: 8h, expiry_required: true}
+  mailos/platform:
+    platform_owner: {max_expiry: 8h, expiry_required: true}
+    platform_operator: {max_expiry: 8h, expiry_required: true}
+    platform_template_editor: {max_expiry: 8h, expiry_required: true}
+    platform_template_publisher: {max_expiry: 8h, expiry_required: true}
+    platform_key_custodian: {max_expiry: 8h, expiry_required: true}
+    platform_abuse_analyst: {max_expiry: 8h, expiry_required: true}
+    platform_support: {max_expiry: 8h, expiry_required: true}
+    platform_log_admin: {max_expiry: 8h, expiry_required: true}
+    platform_auditor: {max_expiry: 8h, expiry_required: true}
