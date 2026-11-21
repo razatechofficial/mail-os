@@ -1,6 +1,6 @@
 # Black-box e2e suite and test stack
 
-The suite in `e2e/` drives the real MailOS binaries over HTTP, the way IAM's e2e suite does. It never imports the server's packages to reach inside. The only product code it uses is `internal/testutil/fakeiam`, which the fake IAM binary wraps.
+The suite in `e2e/` drives the real MailOS binaries over HTTP, the way IAM's e2e suite does. It never imports the server's packages to reach inside. The only product code it uses is `internal/testutil/fakeiam` and `internal/testutil/fakeacs`, which the fake IAM and fake ACS binaries wrap.
 
 ## Running it
 
@@ -16,22 +16,22 @@ docker compose -f docker-compose.test.yaml down -v
 
 | Command | What it does |
 |---|---|
-| `e2e/run.sh up` | Builds `cmd/server`, `cmd/worker`, `cmd/migrate-postgres`, `e2e/cmd/fakeiam` and skipgate. Writes the run's secrets and `server.env`. Starts the fake IAM and waits for its discovery document. Migrates. Starts the server and the worker, and waits for `GET /ready` |
+| `e2e/run.sh up` | Builds `cmd/server`, `cmd/worker`, `cmd/migrate-postgres`, `e2e/cmd/fakeiam`, `e2e/cmd/fakeacs` and skipgate. Writes the run's secrets and `server.env`. Starts the fake IAM and waits for its discovery document, then the fake ACS. Migrates. Starts the server and the worker, and waits for `GET /ready` |
 | `e2e/run.sh test` | Runs `go test -tags e2e ./e2e/...` through `skipgate`: a skipped test fails. `MAILOS_E2E_PKGS=./e2e/smoke/...` narrows it |
 | `e2e/run.sh env` | Prints the variables the harness reads (below), including `MAILOS_E2E_IAM_CLIENT` and `MAILOS_E2E_IAM_TENANT`, for running `go test` by hand or for a console Playwright suite |
-| `e2e/run.sh down` | Stops the worker, the server and the fake IAM |
+| `e2e/run.sh down` | Stops the worker, the server, the fake ACS and the fake IAM |
 
 **Iterating.** Run `e2e/run.sh up` once, then `e2e/run.sh test` or `go test -tags e2e ./e2e/smoke/` with `eval "$(e2e/run.sh env)"` exported.
 
-**Where things live.** Binaries, secrets, `server.env` and the logs (`server.log`, `worker.log`, `fakeiam.log`) go to `e2e/.work`, which is git-ignored. Set `MAILOS_E2E_WORK` to move it; CI uses `ci-reports/e2e-work`.
+**Where things live.** Binaries, secrets, `server.env` and the logs (`server.log`, `worker.log`, `fakeiam.log`, `fakeacs.log`) go to `e2e/.work`, which is git-ignored. Set `MAILOS_E2E_WORK` to move it; CI uses `ci-reports/e2e-work`.
 
 **The database must be fresh.** The CI stack is always fresh. Locally, run `make stack-fresh`.
 
 **Pointing at another stack.** These variables override the defaults:
 - `MAILOS_E2E_PG_HOST`, `MAILOS_E2E_PG_PORT` (default 5434), `MAILOS_E2E_PG_USER`, `MAILOS_E2E_PG_PASSWORD`, `MAILOS_E2E_PG_DB` (default `mail_os`)
 - `MAILOS_E2E_REDIS_HOST`, `MAILOS_E2E_REDIS_PORT` (default 6381)
-- `MAILOS_E2E_HTTP_PORT` (18180), `MAILOS_E2E_GRPC_PORT` (18181), `MAILOS_E2E_IAM_PORT` (18190), `MAILOS_E2E_METRICS_PORT` (18182), `MAILOS_E2E_WORKER_METRICS_PORT` (18183)
-- `MAILOS_E2E_CONSOLE_ORIGIN` (default `http://localhost:3200`), the CORS origin
+- `MAILOS_E2E_HTTP_PORT` (18180), `MAILOS_E2E_GRPC_PORT` (18181), `MAILOS_E2E_IAM_PORT` (18190), `MAILOS_E2E_METRICS_PORT` (18182), `MAILOS_E2E_WORKER_METRICS_PORT` (18183), `MAILOS_E2E_ACS_PORT` (18184)
+- `MAILOS_E2E_CONSOLE_ORIGIN` (default `http://localhost:3200`) and `MAILOS_E2E_PLATFORM_CONSOLE_ORIGIN` (default `http://localhost:3201`): the consoles' origins (CORS, and the OIDC clients' redirect URIs)
 
 ## The server's environment
 
@@ -43,6 +43,7 @@ docker compose -f docker-compose.test.yaml down -v
 | `IAM_ISSUER` | the fake IAM, `http://127.0.0.1:18190` | Tokens and signatures verify against its discovery document and JWKS over HTTP |
 | `IAM_AUDIENCE`, `IAM_CONSOLE_AUDIENCES` | `mailos`, `mailos-console` | The fake IAM's defaults for `aud` and `client_id` |
 | `IAM_SERVICE_CLIENT_ID`, `IAM_SERVICE_TENANT_ID`, `IAM_SERVICE_TOPICS` | `mailos-iam`, a new UUID per `up`, `iam.*` | IAM's own client, seeded as the system application of that tenant (contract §1). Every other caller is an application a test registers |
+| `ACS_ENDPOINT`, `ACS_CLIENT_ID`, `ACS_TOKEN_URL`, `ACS_INSECURE` | the fake ACS (`127.0.0.1:18184`), `mailos-acs`, the fake IAM's `/oauth/token`, `true` | The platform API's checks and role writes go to the fake ACS over plaintext gRPC with a client-credentials token |
 | `KEY_MANAGER_MASTER_KEY` | random per work dir | Required everywhere |
 | `MAILOS_E2E_HOOKS`, `MAILOS_E2E_HOOKS_TOKEN` | `true`, random 48 characters | Capture mail, serve `/e2e/v1` |
 | `FEATURE_PUBSUB_INGEST`, `FEATURE_AUDIT_STREAM` | `false` | There is no broker in the stack (yet) |
@@ -72,6 +73,17 @@ The suite never needs a running IAM. `e2e/cmd/fakeiam` (build tag `e2e`) wraps `
 Tokens live 10 minutes. `extra` overrides any claim, for example an `exp` in the past.
 
 **OIDC provider mode** (`-oidc-client-id`, needs the mint routes; `e2e/run.sh` always turns it on for `mailos-console`, with the redirect URI `$MAILOS_E2E_CONSOLE_ORIGIN/api/auth/callback`): the console's BFF signs in through the fake IAM in its Playwright suite. Register a persona with `POST /test/oidc/users` (`{login_hint, sub, tid, org_id, roles, acr, email, name, auth_age_seconds}`), then send the browser to the console's `/api/auth/login?login_hint=<hint>`: authorize answers with a code at once (PKCE S256 required, exact redirect URIs, one-time codes), and the token endpoint, refresh rotation, userinfo, revocation, logout and IAM's step-up route (`{"mfa_code":"000000"}`) behave as IAM's do. `e2e/run.sh env` prints `MAILOS_E2E_OIDC_CLIENT_ID` and `MAILOS_E2E_OIDC_CLIENT_SECRET`. `MAILOS_E2E_READY_SECONDS` (default 60) is how long `up` waits for each process.
+
+**The platform plane** (contract C2, C5). The fake IAM also:
+- publishes an ACS approval key of its own at `/.well-known/acs-approval-jwks.json` and signs role attestations with it: `POST /test/attestations` signs any claims (`iss`, `aud mailos`, `iat`, `exp` +5 min and `jti` filled in; `null` removes one);
+- plays the IAM's PIM with `-mailos-url` (always on in `e2e/run.sh`): `POST /test/platform/roles` `{sub, role, action, active_seconds}` signs `add`/`remove` (eligibility) or `activate`/`end` (activation, `active_seconds` default 3600) for a platform account, delivers it to MailOS's `POST /api/platform/v1/role-attestations`, and answers `{status, body, attestation, record_id}` with MailOS's status (204 when applied);
+- mints platform tokens: `POST /test/tokens/platform` `{sub, acr, auth_age_seconds, client_id, email, jkt, extra}` (aud `mailos-platform`, no `tid`, `org_id`, `act` or roles);
+- issues `-acs-client-id` (`mailos-acs`) a token for `api://acs` at `POST /oauth/token` (`grant_type=client_credentials`);
+- signs the platform console in, with `-platform-oidc-client-id` (`e2e/run.sh`: `mailos-platform-console`, redirect URI `$MAILOS_E2E_PLATFORM_CONSOLE_ORIGIN/api/auth/callback`, post-logout URI `$MAILOS_E2E_PLATFORM_CONSOLE_ORIGIN/`). It is a `platform_web` client: register a platform persona with `POST /test/oidc/users` `{login_hint, sub, email, name, acr, "platform": true}` (no `tid`, `org_id` or roles); the authorization request must carry `resource=mailos-platform` (else `error=invalid_target`), a persona with a `tid` gets `error=access_denied` ("only platform administrator accounts sign in to platform applications"), and the access token (also after refresh) is a platform token for `mailos-platform`. `e2e/run.sh env` prints `MAILOS_E2E_PLATFORM_OIDC_CLIENT_ID` and `MAILOS_E2E_PLATFORM_OIDC_CLIENT_SECRET`. Give the persona a role with `/test/platform/roles` (`add`, then `activate`) before it calls a guarded route.
+
+## The fake ACS (`e2e/cmd/fakeacs`)
+
+`e2e/cmd/fakeacs` (build tag `e2e`) serves the acs.v1 calls MailOS makes (`Check`, `CheckBulk`, `ReadRelationships`, `WriteRelationships`) over plaintext gRPC on loopback, in memory. Like ACS it answers only in the platform scope (tenant selector `platform`) for `mailos/` types, takes `user` subjects only, requires an expiry no more than 8 h ahead on the activation relations, and lets an expired relationship grant nothing. Permissions follow `domain/platformrole` (the same table as `authz/module.zed`). Each call needs a bearer token the fake IAM issued for `api://acs`.
 
 ## How a test package is built
 
