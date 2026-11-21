@@ -1,8 +1,11 @@
 // Package fakeiam is a stand-in for IAM in tests: it serves a discovery
 // document and a JWKS, and signs access tokens and message signatures the
 // way IAM does (at+jwt access tokens, mailos-msg+jwt message signatures,
-// PS256 and ES256 keys with kid and alg). Tests never depend on a running
-// IAM. The e2e harness runs it as a binary (e2e/cmd/fakeiam).
+// PS256 and ES256 keys with kid and alg). It also signs platform tokens
+// (aud mailos-platform, no tenant) and the role attestations of the IAM's
+// ACS approval key, a key of its own published at
+// /.well-known/acs-approval-jwks.json (contract C5). Tests never depend on
+// a running IAM. The e2e harness runs it as a binary (e2e/cmd/fakeiam).
 package fakeiam
 
 import (
@@ -39,6 +42,9 @@ type IAM struct {
 	Keys []Key
 	// Unpublished keys sign but are absent from the JWKS (forgery tests).
 	Unpublished Key
+	// Approval is the ACS approval key: it signs attestations only and is
+	// published in its own key set, never in the token JWKS.
+	Approval Key
 }
 
 // New creates an IAM with a PS256 and an ES256 key for issuer.
@@ -47,6 +53,7 @@ func New(issuer string) *IAM {
 		Issuer:      strings.TrimRight(issuer, "/"),
 		Keys:        []Key{newKey(jose.PS256), newKey(jose.ES256)},
 		Unpublished: newKey(jose.PS256),
+		Approval:    newKey(jose.ES256),
 	}
 }
 
@@ -89,7 +96,19 @@ func (f *IAM) JWKS() jose.JSONWebKeySet {
 	return set
 }
 
-// Handler serves discovery and the JWKS.
+// ApprovalJWKS is the ACS approval key set.
+func (f *IAM) ApprovalJWKS() jose.JSONWebKeySet {
+	k := f.Approval
+	return jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: k.Signer.Public(), KeyID: k.KID, Algorithm: string(k.Algorithm), Use: "sig"}}}
+}
+
+// ApprovalJWKSURL is where the approval key set is published.
+func (f *IAM) ApprovalJWKSURL() string { return f.Issuer + ApprovalJWKSPath }
+
+// ApprovalJWKSPath is the approval key set's path under the issuer.
+const ApprovalJWKSPath = "/.well-known/acs-approval-jwks.json"
+
+// Handler serves discovery, the JWKS and the approval JWKS.
 func (f *IAM) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
@@ -97,6 +116,9 @@ func (f *IAM) Handler() http.Handler {
 	})
 	mux.HandleFunc("/.well-known/jwks.json", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, f.JWKS())
+	})
+	mux.HandleFunc(ApprovalJWKSPath, func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, f.ApprovalJWKS())
 	})
 	return mux
 }
@@ -205,4 +227,77 @@ func (f *IAM) MessageSignature(clientID, topic string, value []byte) string {
 		"iat": now.Unix(), "exp": now.Add(5 * time.Minute).Unix(), "jti": uuid.NewString(),
 		"topic": topic, "body_sha256": base64.RawURLEncoding.EncodeToString(sum[:]),
 	})
+}
+
+// PlatformAudience is the platform API's resource.
+const PlatformAudience = "mailos-platform"
+
+// PlatformConsoleClient is the platform console's OIDC client.
+const PlatformConsoleClient = "mailos-platform-console"
+
+// PlatformUser describes a platform account's access token (contract C2).
+type PlatformUser struct {
+	Subject  string        // defaults to a new UUID
+	ACR      string        // defaults to urn:iam:acr:phishing-resistant
+	AuthAge  time.Duration // default 1 minute
+	ClientID string        // defaults to PlatformConsoleClient
+	Email    string
+	JKT      string // cnf.jkt for a DPoP-bound token
+	// Extra claims override the defaults (a tid, an act, another aud).
+	Extra map[string]any
+}
+
+// PlatformToken signs a platform account's access token: aud
+// mailos-platform, no tid or org_id, no act, no roles.
+func (f *IAM) PlatformToken(u PlatformUser) string {
+	now := time.Now()
+	if u.Subject == "" {
+		u.Subject = uuid.NewString()
+	}
+	if u.ACR == "" {
+		u.ACR = "urn:iam:acr:phishing-resistant"
+	}
+	if u.AuthAge == 0 {
+		u.AuthAge = time.Minute
+	}
+	if u.ClientID == "" {
+		u.ClientID = PlatformConsoleClient
+	}
+	claims := map[string]any{
+		"iss": f.Issuer, "sub": u.Subject, "aud": PlatformAudience, "client_id": u.ClientID,
+		"iat": now.Unix(), "exp": now.Add(10 * time.Minute).Unix(), "jti": uuid.NewString(),
+		"auth_time": now.Add(-u.AuthAge).Unix(), "acr": u.ACR, "amr": []string{"hwk", "user"},
+		"sid": uuid.NewString(), "scope": "openid profile email",
+	}
+	if u.Email != "" {
+		claims["email"], claims["email_verified"] = u.Email, true
+	}
+	if u.JKT != "" {
+		claims["cnf"] = map[string]any{"jkt": u.JKT}
+	}
+	for k, v := range u.Extra {
+		claims[k] = v
+	}
+	return f.Sign(f.Keys[0], "at+jwt", claims)
+}
+
+// AttestationType is the JWS typ of an ACS approval attestation.
+const AttestationType = "acs-approval+jwt"
+
+// Attestation signs a MailOS role attestation (contract C5) with the
+// approval key. claims are the attestation's own (op, action, sub, role,
+// active_until, activation_id or eligibility_id, requested_by,
+// approved_by); iss, aud "mailos", iat, exp (iat + 5 min) and jti are
+// filled in unless claims set them (nil removes one).
+func (f *IAM) Attestation(claims map[string]any) string {
+	now := time.Now()
+	c := map[string]any{"iss": f.Issuer, "aud": "mailos", "iat": now.Unix(), "exp": now.Add(5 * time.Minute).Unix(), "jti": uuid.NewString()}
+	for k, v := range claims {
+		if v == nil {
+			delete(c, k)
+			continue
+		}
+		c[k] = v
+	}
+	return f.Sign(f.Approval, AttestationType, c)
 }
