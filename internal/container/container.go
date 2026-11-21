@@ -69,6 +69,13 @@ type Container struct {
 	Auth     *middleware.Auth
 	Guard    middleware.Guard
 	GRPCAuth *grpctransport.Auth
+	// PlatformAuth and PlatformGuard protect the platform API
+	// (platform.go); PlatformRoutes are its route sets.
+	PlatformAuth   *middleware.PlatformAuth
+	PlatformGuard  middleware.PlatformGuard
+	PlatformRoutes []transporthttp.PlatformRoutes
+	// iamHTTP reaches the IAM (discovery, JWKS, approval keys).
+	iamHTTP *http.Client
 
 	// Platform is the default sender (the platform relay, or the e2e sink).
 	Platform mailer.Sender
@@ -126,6 +133,7 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 		c.buildEvents,
 		c.buildMarketing,
 		c.buildSMTP,
+		c.buildPlatform,
 	} {
 		if err := build(ctx); err != nil {
 			c.Close()
@@ -187,6 +195,7 @@ func (c *Container) buildInfrastructure(ctx context.Context) error {
 		}
 		httpClient.Transport = &http.Transport{TLSClientConfig: tc}
 	}
+	c.iamHTTP = httpClient
 	c.Verifier = jwt.NewVerifier(jwt.Config{Issuer: cfg.IAM.Issuer, Audience: cfg.IAM.Audience,
 		ConsoleAudiences: cfg.IAM.ConsoleAudiences, CacheTTL: cfg.IAM.JWKSCacheTTL, ClockSkew: cfg.IAM.ClockSkew, HTTPClient: httpClient})
 
