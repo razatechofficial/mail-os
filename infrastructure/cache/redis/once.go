@@ -30,3 +30,15 @@ func (c *Client) CountWindow(ctx context.Context, key string, window time.Durati
 	}
 	return incr.Val(), nil
 }
+
+// Forget removes a key ClaimOnce recorded, so a claim whose work failed
+// can be made again.
+func (c *Client) Forget(ctx context.Context, key string) error {
+	return c.Del(ctx, key).Err()
+}
+
+// Seen reports whether key is recorded.
+func (c *Client) Seen(ctx context.Context, key string) (bool, error) {
+	n, err := c.Exists(ctx, key).Result()
+	return n > 0, err
+}
