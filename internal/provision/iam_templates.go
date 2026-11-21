@@ -164,6 +164,22 @@ func contentFor(t domaintemplate.Topic) content {
 	return content{Name: t.Name, Subject: t.Name, Heading: t.Name, Paragraphs: []string{"Hello {{user.name}},", t.Description + "."}}
 }
 
+// Default is an IAM topic's platform default template (ADR 0001 §3.11):
+// the wording SeedTemplates publishes, with the placeholders MailOS fills
+// at send time. The platform API serves it read-only.
+type Default struct {
+	Name, Subject, Preheader, HTML, Text string
+	// Variables are the variables the content uses.
+	Variables []string
+}
+
+// DefaultFor returns the topic's platform default.
+func DefaultFor(t domaintemplate.Topic) Default {
+	c := contentFor(t)
+	htmlBody, textBody, vars := compile(c)
+	return Default{Name: c.Name, Subject: c.Subject, Preheader: c.Preheader, HTML: htmlBody, Text: textBody, Variables: vars}
+}
+
 var varRe = regexp.MustCompile(`\{\{\s*([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*)\s*\}\}`)
 
 const brandColor = "#2563eb"

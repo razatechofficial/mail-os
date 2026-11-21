@@ -305,3 +305,14 @@ func TestDefaultContentRenders(t *testing.T) {
 		t.Errorf("notice subject: %q", out.Subject)
 	}
 }
+
+// DefaultFor is what SeedTemplates publishes, for every IAM topic.
+func TestDefaultFor(t *testing.T) {
+	for _, topic := range iamTopics() {
+		d := DefaultFor(topic)
+		htmlBody, textBody, vars := compile(contentFor(topic))
+		if d.HTML != htmlBody || d.Text != textBody || len(d.Variables) != len(vars) || d.Subject == "" || d.Name == "" {
+			t.Errorf("%s: %+v", topic.Key, d.Name)
+		}
+	}
+}
