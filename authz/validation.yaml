@@ -1,0 +1,229 @@
+# Assertions for MailOS's ACS module (contract C4, plan 1.9). ACS runs them
+# against the composed schema (core + every module) on each module change;
+# its schemaFile is not read. To run them by hand, compose the core and the
+# module into one file and point zed at it:
+#   { echo 'use expiration'; cat <ACS>/schema/core/<root>.zed; grep -v '^use ' module.zed; } > /tmp/c.zed
+#   zed validate validation.yaml --schema-file /tmp/c.zed   (or set schemaFile)
+#
+# Each role is held by its own user (an activation expiring far ahead):
+# the full matrix below is the table of contract C4. The rule "no role
+# reaches content, keys and logs together" (CCM IAM-09) follows from it and
+# is spelled out per role: content = view/edit/publish_templates, keys =
+# manage_keys, logs = view/verify/export_audit. Eligibility alone and an
+# expired activation reach nothing.
+relationships: |-
+  mailos/platform:global#eligible_platform_owner@user:owner
+  mailos/platform:global#platform_owner@user:owner[expiration:2999-01-01T00:00:00Z]
+  mailos/platform:global#eligible_platform_owner@user:eligible_only
+  mailos/platform:global#platform_owner@user:expired[expiration:2001-01-01T00:00:00Z]
+  mailos/platform:global#eligible_platform_operator@user:operator
+  mailos/platform:global#platform_operator@user:operator[expiration:2999-01-01T00:00:00Z]
+  mailos/platform:global#eligible_platform_operator@user:eligible_only
+  mailos/platform:global#platform_operator@user:expired[expiration:2001-01-01T00:00:00Z]
+  mailos/platform:global#eligible_platform_template_editor@user:template_editor
+  mailos/platform:global#platform_template_editor@user:template_editor[expiration:2999-01-01T00:00:00Z]
+  mailos/platform:global#eligible_platform_template_editor@user:eligible_only
+  mailos/platform:global#platform_template_editor@user:expired[expiration:2001-01-01T00:00:00Z]
+  mailos/platform:global#eligible_platform_template_publisher@user:template_publisher
+  mailos/platform:global#platform_template_publisher@user:template_publisher[expiration:2999-01-01T00:00:00Z]
+  mailos/platform:global#eligible_platform_template_publisher@user:eligible_only
+  mailos/platform:global#platform_template_publisher@user:expired[expiration:2001-01-01T00:00:00Z]
+  mailos/platform:global#eligible_platform_key_custodian@user:key_custodian
+  mailos/platform:global#platform_key_custodian@user:key_custodian[expiration:2999-01-01T00:00:00Z]
+  mailos/platform:global#eligible_platform_key_custodian@user:eligible_only
+  mailos/platform:global#platform_key_custodian@user:expired[expiration:2001-01-01T00:00:00Z]
+  mailos/platform:global#eligible_platform_abuse_analyst@user:abuse_analyst
+  mailos/platform:global#platform_abuse_analyst@user:abuse_analyst[expiration:2999-01-01T00:00:00Z]
+  mailos/platform:global#eligible_platform_abuse_analyst@user:eligible_only
+  mailos/platform:global#platform_abuse_analyst@user:expired[expiration:2001-01-01T00:00:00Z]
+  mailos/platform:global#eligible_platform_support@user:support
+  mailos/platform:global#platform_support@user:support[expiration:2999-01-01T00:00:00Z]
+  mailos/platform:global#eligible_platform_support@user:eligible_only
+  mailos/platform:global#platform_support@user:expired[expiration:2001-01-01T00:00:00Z]
+  mailos/platform:global#eligible_platform_log_admin@user:log_admin
+  mailos/platform:global#platform_log_admin@user:log_admin[expiration:2999-01-01T00:00:00Z]
+  mailos/platform:global#eligible_platform_log_admin@user:eligible_only
+  mailos/platform:global#platform_log_admin@user:expired[expiration:2001-01-01T00:00:00Z]
+  mailos/platform:global#eligible_platform_auditor@user:auditor
+  mailos/platform:global#platform_auditor@user:auditor[expiration:2999-01-01T00:00:00Z]
+  mailos/platform:global#eligible_platform_auditor@user:eligible_only
+  mailos/platform:global#platform_auditor@user:expired[expiration:2001-01-01T00:00:00Z]
+assertions:
+  assertTrue:
+    - mailos/platform:global#view_overview@user:owner
+    - mailos/platform:global#view_tenants@user:owner
+    - mailos/platform:global#view_connectors@user:owner
+    - mailos/platform:global#view_templates@user:owner
+    - mailos/platform:global#view_config@user:owner
+    - mailos/platform:global#view_audit@user:owner
+    - mailos/platform:global#view_overview@user:operator
+    - mailos/platform:global#view_tenants@user:operator
+    - mailos/platform:global#manage_tenants@user:operator
+    - mailos/platform:global#stop_send@user:operator
+    - mailos/platform:global#view_connectors@user:operator
+    - mailos/platform:global#view_templates@user:operator
+    - mailos/platform:global#view_config@user:operator
+    - mailos/platform:global#propose_config@user:operator
+    - mailos/platform:global#approve_config@user:operator
+    - mailos/platform:global#view_overview@user:template_editor
+    - mailos/platform:global#view_templates@user:template_editor
+    - mailos/platform:global#edit_templates@user:template_editor
+    - mailos/platform:global#view_overview@user:template_publisher
+    - mailos/platform:global#view_templates@user:template_publisher
+    - mailos/platform:global#publish_templates@user:template_publisher
+    - mailos/platform:global#view_overview@user:key_custodian
+    - mailos/platform:global#view_config@user:key_custodian
+    - mailos/platform:global#propose_config@user:key_custodian
+    - mailos/platform:global#approve_config@user:key_custodian
+    - mailos/platform:global#manage_keys@user:key_custodian
+    - mailos/platform:global#view_overview@user:abuse_analyst
+    - mailos/platform:global#view_tenants@user:abuse_analyst
+    - mailos/platform:global#stop_send@user:abuse_analyst
+    - mailos/platform:global#view_overview@user:support
+    - mailos/platform:global#view_tenants@user:support
+    - mailos/platform:global#view_overview@user:log_admin
+    - mailos/platform:global#view_audit@user:log_admin
+    - mailos/platform:global#verify_audit@user:log_admin
+    - mailos/platform:global#export_audit@user:log_admin
+    - mailos/platform:global#view_overview@user:auditor
+    - mailos/platform:global#view_tenants@user:auditor
+    - mailos/platform:global#view_connectors@user:auditor
+    - mailos/platform:global#view_templates@user:auditor
+    - mailos/platform:global#view_config@user:auditor
+    - mailos/platform:global#view_audit@user:auditor
+  assertFalse:
+    # owner: no keys
+    - mailos/platform:global#manage_tenants@user:owner
+    - mailos/platform:global#stop_send@user:owner
+    - mailos/platform:global#edit_templates@user:owner
+    - mailos/platform:global#publish_templates@user:owner
+    - mailos/platform:global#propose_config@user:owner
+    - mailos/platform:global#approve_config@user:owner
+    - mailos/platform:global#manage_keys@user:owner
+    - mailos/platform:global#verify_audit@user:owner
+    - mailos/platform:global#export_audit@user:owner
+    # operator: no keys and no logs
+    - mailos/platform:global#edit_templates@user:operator
+    - mailos/platform:global#publish_templates@user:operator
+    - mailos/platform:global#manage_keys@user:operator
+    - mailos/platform:global#view_audit@user:operator
+    - mailos/platform:global#verify_audit@user:operator
+    - mailos/platform:global#export_audit@user:operator
+    # template_editor: no keys and no logs
+    - mailos/platform:global#view_tenants@user:template_editor
+    - mailos/platform:global#manage_tenants@user:template_editor
+    - mailos/platform:global#stop_send@user:template_editor
+    - mailos/platform:global#view_connectors@user:template_editor
+    - mailos/platform:global#publish_templates@user:template_editor
+    - mailos/platform:global#view_config@user:template_editor
+    - mailos/platform:global#propose_config@user:template_editor
+    - mailos/platform:global#approve_config@user:template_editor
+    - mailos/platform:global#manage_keys@user:template_editor
+    - mailos/platform:global#view_audit@user:template_editor
+    - mailos/platform:global#verify_audit@user:template_editor
+    - mailos/platform:global#export_audit@user:template_editor
+    # template_publisher: no keys and no logs
+    - mailos/platform:global#view_tenants@user:template_publisher
+    - mailos/platform:global#manage_tenants@user:template_publisher
+    - mailos/platform:global#stop_send@user:template_publisher
+    - mailos/platform:global#view_connectors@user:template_publisher
+    - mailos/platform:global#edit_templates@user:template_publisher
+    - mailos/platform:global#view_config@user:template_publisher
+    - mailos/platform:global#propose_config@user:template_publisher
+    - mailos/platform:global#approve_config@user:template_publisher
+    - mailos/platform:global#manage_keys@user:template_publisher
+    - mailos/platform:global#view_audit@user:template_publisher
+    - mailos/platform:global#verify_audit@user:template_publisher
+    - mailos/platform:global#export_audit@user:template_publisher
+    # key_custodian: no content and no logs
+    - mailos/platform:global#view_tenants@user:key_custodian
+    - mailos/platform:global#manage_tenants@user:key_custodian
+    - mailos/platform:global#stop_send@user:key_custodian
+    - mailos/platform:global#view_connectors@user:key_custodian
+    - mailos/platform:global#view_templates@user:key_custodian
+    - mailos/platform:global#edit_templates@user:key_custodian
+    - mailos/platform:global#publish_templates@user:key_custodian
+    - mailos/platform:global#view_audit@user:key_custodian
+    - mailos/platform:global#verify_audit@user:key_custodian
+    - mailos/platform:global#export_audit@user:key_custodian
+    # abuse_analyst: no content and no keys and no logs
+    - mailos/platform:global#manage_tenants@user:abuse_analyst
+    - mailos/platform:global#view_connectors@user:abuse_analyst
+    - mailos/platform:global#view_templates@user:abuse_analyst
+    - mailos/platform:global#edit_templates@user:abuse_analyst
+    - mailos/platform:global#publish_templates@user:abuse_analyst
+    - mailos/platform:global#view_config@user:abuse_analyst
+    - mailos/platform:global#propose_config@user:abuse_analyst
+    - mailos/platform:global#approve_config@user:abuse_analyst
+    - mailos/platform:global#manage_keys@user:abuse_analyst
+    - mailos/platform:global#view_audit@user:abuse_analyst
+    - mailos/platform:global#verify_audit@user:abuse_analyst
+    - mailos/platform:global#export_audit@user:abuse_analyst
+    # support: no content and no keys and no logs
+    - mailos/platform:global#manage_tenants@user:support
+    - mailos/platform:global#stop_send@user:support
+    - mailos/platform:global#view_connectors@user:support
+    - mailos/platform:global#view_templates@user:support
+    - mailos/platform:global#edit_templates@user:support
+    - mailos/platform:global#publish_templates@user:support
+    - mailos/platform:global#view_config@user:support
+    - mailos/platform:global#propose_config@user:support
+    - mailos/platform:global#approve_config@user:support
+    - mailos/platform:global#manage_keys@user:support
+    - mailos/platform:global#view_audit@user:support
+    - mailos/platform:global#verify_audit@user:support
+    - mailos/platform:global#export_audit@user:support
+    # log_admin: no content and no keys
+    - mailos/platform:global#view_tenants@user:log_admin
+    - mailos/platform:global#manage_tenants@user:log_admin
+    - mailos/platform:global#stop_send@user:log_admin
+    - mailos/platform:global#view_connectors@user:log_admin
+    - mailos/platform:global#view_templates@user:log_admin
+    - mailos/platform:global#edit_templates@user:log_admin
+    - mailos/platform:global#publish_templates@user:log_admin
+    - mailos/platform:global#view_config@user:log_admin
+    - mailos/platform:global#propose_config@user:log_admin
+    - mailos/platform:global#approve_config@user:log_admin
+    - mailos/platform:global#manage_keys@user:log_admin
+    # auditor: no keys
+    - mailos/platform:global#manage_tenants@user:auditor
+    - mailos/platform:global#stop_send@user:auditor
+    - mailos/platform:global#edit_templates@user:auditor
+    - mailos/platform:global#publish_templates@user:auditor
+    - mailos/platform:global#propose_config@user:auditor
+    - mailos/platform:global#approve_config@user:auditor
+    - mailos/platform:global#manage_keys@user:auditor
+    - mailos/platform:global#verify_audit@user:auditor
+    - mailos/platform:global#export_audit@user:auditor
+    # eligible only: nothing
+    - mailos/platform:global#view_overview@user:eligible_only
+    - mailos/platform:global#view_tenants@user:eligible_only
+    - mailos/platform:global#manage_tenants@user:eligible_only
+    - mailos/platform:global#stop_send@user:eligible_only
+    - mailos/platform:global#view_connectors@user:eligible_only
+    - mailos/platform:global#view_templates@user:eligible_only
+    - mailos/platform:global#edit_templates@user:eligible_only
+    - mailos/platform:global#publish_templates@user:eligible_only
+    - mailos/platform:global#view_config@user:eligible_only
+    - mailos/platform:global#propose_config@user:eligible_only
+    - mailos/platform:global#approve_config@user:eligible_only
+    - mailos/platform:global#manage_keys@user:eligible_only
+    - mailos/platform:global#view_audit@user:eligible_only
+    - mailos/platform:global#verify_audit@user:eligible_only
+    - mailos/platform:global#export_audit@user:eligible_only
+    # expired: nothing
+    - mailos/platform:global#view_overview@user:expired
+    - mailos/platform:global#view_tenants@user:expired
+    - mailos/platform:global#manage_tenants@user:expired
+    - mailos/platform:global#stop_send@user:expired
+    - mailos/platform:global#view_connectors@user:expired
+    - mailos/platform:global#view_templates@user:expired
+    - mailos/platform:global#edit_templates@user:expired
+    - mailos/platform:global#publish_templates@user:expired
+    - mailos/platform:global#view_config@user:expired
+    - mailos/platform:global#propose_config@user:expired
+    - mailos/platform:global#approve_config@user:expired
+    - mailos/platform:global#manage_keys@user:expired
+    - mailos/platform:global#view_audit@user:expired
+    - mailos/platform:global#verify_audit@user:expired
+    - mailos/platform:global#export_audit@user:expired
