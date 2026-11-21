@@ -185,3 +185,108 @@ func TestDiscoveryMustNameIssuer(t *testing.T) {
 		t.Fatalf("discovery for another issuer accepted: %v", err)
 	}
 }
+
+// TestPlanesMatrix is ADR 0001 §3.3's mutual rejection, every token shape
+// against every plane: a platform token (aud exactly mailos-platform, no
+// tenant, no act) is accepted on the platform plane only, and every tenant
+// plane token is refused there.
+func TestPlanesMatrix(t *testing.T) {
+	iam, v := newVerifier(t)
+	now := time.Now()
+	person := "0d6f3a7e-5b1c-4c55-9f61-2f8f1c9b6a11"
+	claims := func(kv ...any) map[string]any {
+		c := map[string]any{"iss": iam.Issuer, "sub": person, "iat": now.Unix(), "exp": now.Add(time.Minute).Unix(),
+			"client_id": "mailos-platform-console", "acr": access.ACRPhishingResistant, "auth_time": now.Unix()}
+		for i := 0; i < len(kv); i += 2 {
+			if kv[i+1] == nil {
+				delete(c, kv[i].(string))
+				continue
+			}
+			c[kv[i].(string)] = kv[i+1]
+		}
+		return c
+	}
+	sign := func(c map[string]any) string { return iam.Sign(iam.Keys[0], "at+jwt", c) }
+	const (
+		none = iota
+		tenantPlane
+		platformPlane
+	)
+	cases := []struct {
+		name   string
+		token  string
+		accept int
+	}{
+		{"platform user", sign(claims("aud", "mailos-platform")), platformPlane},
+		{"platform user, aud array", sign(claims("aud", []string{"mailos-platform"})), platformPlane},
+		{"platform user, DPoP-bound", sign(claims("aud", "mailos-platform", "cnf", map[string]any{"jkt": "thumb"})), platformPlane},
+		{"platform aud with tid", sign(claims("aud", "mailos-platform", "tid", tenant)), none},
+		{"platform aud with tenant_id", sign(claims("aud", "mailos-platform", "tenant_id", tenant)), none},
+		{"platform aud with empty tid", sign(claims("aud", "mailos-platform", "tid", "")), none},
+		{"platform aud with org_id", sign(claims("aud", "mailos-platform", "org_id", tenant)), none},
+		{"platform aud with organization_uuid", sign(claims("aud", "mailos-platform", "organization_uuid", tenant)), none},
+		{"platform aud with act", sign(claims("aud", "mailos-platform", "act", map[string]any{"sub": "op"})), none},
+		{"platform and tenant audiences", sign(claims("aud", []string{"mailos-platform", "mailos"})), none},
+		{"platform and send audiences", sign(claims("aud", []string{"mailos-platform", "mailos-send"})), none},
+		{"platform and another resource", sign(claims("aud", []string{"mailos-platform", "xdr"})), none},
+		{"platform and console audience", sign(claims("aud", []string{"mailos-platform", "mailos-console"})), none},
+		{"platform service token", sign(claims("aud", "mailos-platform", "sub", "client:x", "client_id", "x")), none},
+		{"platform sub not a UUID", sign(claims("aud", "mailos-platform", "sub", "alice")), none},
+		{"platform token expired", sign(claims("aud", "mailos-platform", "exp", now.Add(-time.Hour).Unix())), none},
+		{"platform token other issuer", sign(claims("aud", "mailos-platform", "iss", "https://evil.example")), none},
+		{"platform token unpublished key", iam.Sign(iam.Unpublished, "at+jwt", claims("aud", "mailos-platform")), none},
+		{"platform token wrong typ", iam.Sign(iam.Keys[0], "JWT", claims("aud", "mailos-platform")), none},
+		{"platform security event", sign(claims("aud", "mailos-platform", "events", map[string]any{})), none},
+		{"no audience", sign(claims("aud", nil)), none},
+
+		{"tenant user", iam.UserToken(fakeiam.User{Tenant: tenant, Roles: []string{"mailos_admin"}}), tenantPlane},
+		{"tenant user, console audience", iam.UserToken(fakeiam.User{Tenant: tenant, Audience: []string{"mailos-console"}}), tenantPlane},
+		{"tenant user with org", iam.UserToken(fakeiam.User{Tenant: tenant, Org: tenant}), tenantPlane},
+		{"service", iam.ServiceToken("mailos-iam", tenant), tenantPlane},
+		{"service without tenant", iam.ServiceToken("mailos-iam", ""), tenantPlane},
+		{"delegated tenant user", iam.UserToken(fakeiam.User{Tenant: tenant, Extra: map[string]any{"act": map[string]any{"sub": "op"}}}), tenantPlane},
+		{"tenant and send audiences", iam.UserToken(fakeiam.User{Tenant: tenant, Audience: []string{"mailos", "mailos-send"}}), none},
+		{"tenant and tenant-plane audiences", iam.UserToken(fakeiam.User{Tenant: tenant, Audience: []string{"mailos", "mailos-tenant"}}), none},
+		{"send audience only", iam.UserToken(fakeiam.User{Tenant: tenant, Audience: "mailos-send"}), none},
+		{"tenant user without tid", sign(claims("aud", "mailos")), none},
+	}
+	for _, c := range cases {
+		_, terr := v.Principal(context.Background(), c.token)
+		pp, perr := v.PlatformPrincipal(context.Background(), c.token)
+		if (terr == nil) != (c.accept == tenantPlane) {
+			t.Errorf("%s on the tenant plane: err = %v", c.name, terr)
+		}
+		if (perr == nil) != (c.accept == platformPlane) {
+			t.Errorf("%s on the platform plane: err = %v", c.name, perr)
+		}
+		for _, err := range []error{terr, perr} {
+			if err != nil && !errors.Is(err, jwt.ErrInvalid) {
+				t.Errorf("%s: %v is not ErrInvalid", c.name, err)
+			}
+		}
+		if perr == nil {
+			if pp.Kind != access.KindPlatform || pp.Subject != person || pp.TenantID != "" || pp.OrgID != "" ||
+				len(pp.Roles) != 0 || pp.Delegated || pp.ClientID != "mailos-platform-console" || pp.ACR != access.ACRPhishingResistant {
+				t.Errorf("%s: principal %+v", c.name, pp)
+			}
+		}
+	}
+}
+
+// A platform principal carries the token's binding and sign-in facts.
+func TestPlatformPrincipalFields(t *testing.T) {
+	iam, v := newVerifier(t)
+	now := time.Now()
+	raw := iam.Sign(iam.Keys[1], "at+jwt", map[string]any{"iss": iam.Issuer, "sub": "0D6F3A7E-5B1C-4C55-9F61-2F8F1C9B6A11",
+		"aud": "mailos-platform", "iat": now.Unix(), "exp": now.Add(time.Minute).Unix(), "azp": "pc",
+		"auth_time": now.Add(-time.Minute).Unix(), "sid": "s1", "jti": "j1", "email": "ops@example.com",
+		"amr": []string{"hwk"}, "scope": "openid email", "cnf": map[string]any{"jkt": "thumb"}, "roles": []string{"mailos_admin"}})
+	p, err := v.PlatformPrincipal(context.Background(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Subject != "0d6f3a7e-5b1c-4c55-9f61-2f8f1c9b6a11" || p.ClientID != "pc" || p.SessionID != "s1" || p.TokenID != "j1" ||
+		p.Email != "ops@example.com" || p.DPoPThumbprint != "thumb" || p.AuthTime.IsZero() || len(p.Roles) != 0 || !p.HasScope("email") {
+		t.Fatalf("principal %+v", p)
+	}
+}

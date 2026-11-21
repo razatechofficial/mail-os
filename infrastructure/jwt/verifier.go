@@ -180,37 +180,57 @@ func (v *Verifier) CheckTimes(claims map[string]any) error {
 // accessTokenTypes are RFC 9068's access token typ values; IAM issues at+jwt.
 var accessTokenTypes = []string{"at+jwt", "application/at+jwt"}
 
-// Principal verifies an IAM access token and returns who it names.
-//
-//   - A service token (client credentials) has sub "client:<client_id>" and
-//     must carry aud = Audience exactly (contract §1).
-//   - A user token must name the MailOS audience or one of the console's
-//     client IDs, and carry the tenant (tid).
-//
-// A security event token presented as an access token is refused.
-func (v *Verifier) Principal(ctx context.Context, raw string) (access.Principal, error) {
+// PlatformAudience is the platform API's resource (ADR 0001 §3.3, contract
+// C2): a token for it is a platform account's and is accepted on
+// /api/platform/v1 only.
+const PlatformAudience = "mailos-platform"
+
+// mailosAudiences are every audience the IAM issues for MailOS, today's
+// and the cutover's. A token names at most one of them.
+var mailosAudiences = []string{"mailos", "mailos-tenant", "mailos-send", PlatformAudience}
+
+// tenantClaims are the claims that place a token in a tenant; a platform
+// token carries none of them, not even empty.
+var tenantClaims = []string{"tid", "tenant_id", "org_id", "organization_uuid"}
+
+// accessClaims verifies an IAM access token's signature, type, issuer,
+// times and subject, the checks every plane shares, and returns its claims
+// and audiences. A token naming two MailOS audiences is refused on every
+// plane.
+func (v *Verifier) accessClaims(ctx context.Context, raw string) (map[string]any, []string, error) {
 	claims, err := v.Verify(ctx, raw, accessTokenTypes...)
 	if err != nil {
-		return access.Principal{}, err
+		return nil, nil, err
 	}
 	if _, isSET := claims["events"]; isSET {
-		return access.Principal{}, invalid("security event token presented as an access token")
+		return nil, nil, invalid("security event token presented as an access token")
 	}
 	if iss, _ := claims["iss"].(string); strings.TrimRight(iss, "/") != v.issuer {
-		return access.Principal{}, invalid("issuer %q", iss)
+		return nil, nil, invalid("issuer %q", iss)
 	}
 	if err := v.CheckTimes(claims); err != nil {
-		return access.Principal{}, err
+		return nil, nil, err
 	}
-	sub := String(claims, "sub")
-	if sub == "" {
-		return access.Principal{}, invalid("no sub")
+	if String(claims, "sub") == "" {
+		return nil, nil, invalid("no sub")
 	}
 	aud := Audiences(claims)
+	known := map[string]bool{}
+	for _, a := range aud {
+		if a == v.audience || slices.Contains(mailosAudiences, a) {
+			known[a] = true
+		}
+	}
+	if len(known) > 1 {
+		return nil, nil, invalid("audience %v names more than one MailOS audience", aud)
+	}
+	return claims, aud, nil
+}
+
+// identity fills what every principal shares from the token's claims.
+func identity(claims map[string]any) access.Principal {
 	p := access.Principal{
-		Subject:   sub,
-		TenantID:  strings.ToLower(String(claims, "tid", "tenant_id")),
-		OrgID:     strings.ToLower(String(claims, "org_id", "organization_uuid")),
+		Subject:   String(claims, "sub"),
 		ClientID:  String(claims, "client_id", "azp"),
 		ACR:       String(claims, "acr"),
 		AMR:       Strings(claims, "amr"),
@@ -227,6 +247,31 @@ func (v *Verifier) Principal(ctx context.Context, raw string) (access.Principal,
 		p.DPoPThumbprint, _ = cnf["jkt"].(string)
 	}
 	_, p.Delegated = claims["act"]
+	return p
+}
+
+// Principal verifies an IAM access token for the tenant plane (/api/v1,
+// gRPC) and returns who it names.
+//
+//   - A service token (client credentials) has sub "client:<client_id>" and
+//     must carry aud = Audience exactly (contract §1).
+//   - A user token must name the MailOS audience or one of the console's
+//     client IDs, and carry the tenant (tid).
+//
+// A platform token (aud mailos-platform) and a security event token
+// presented as an access token are refused.
+func (v *Verifier) Principal(ctx context.Context, raw string) (access.Principal, error) {
+	claims, aud, err := v.accessClaims(ctx, raw)
+	if err != nil {
+		return access.Principal{}, err
+	}
+	if slices.Contains(aud, PlatformAudience) {
+		return access.Principal{}, invalid("a platform token is not accepted on the tenant plane")
+	}
+	p := identity(claims)
+	sub := p.Subject
+	p.TenantID = strings.ToLower(String(claims, "tid", "tenant_id"))
+	p.OrgID = strings.ToLower(String(claims, "org_id", "organization_uuid"))
 	// IAM's tenant and organization ids are UUIDs; anything else is not an
 	// IAM token and must not become a tenant here.
 	for name, v := range map[string]string{"tid": p.TenantID, "org_id": p.OrgID} {
@@ -261,6 +306,38 @@ func (v *Verifier) Principal(ctx context.Context, raw string) (access.Principal,
 			p.Roles = append(p.Roles, role)
 		}
 	}
+	return p, nil
+}
+
+// PlatformPrincipal verifies an IAM access token for the platform plane
+// (/api/platform/v1, contract C2) and returns the platform account it
+// names. The token's aud is exactly mailos-platform (a string or a
+// one-element array); it names a person (sub a user UUID, never a client);
+// it carries no tenant or organization claim and no act. Every other token,
+// tenant user, service, lockbox operator, is refused. Roles are not read
+// from the token: ACS decides.
+func (v *Verifier) PlatformPrincipal(ctx context.Context, raw string) (access.Principal, error) {
+	claims, aud, err := v.accessClaims(ctx, raw)
+	if err != nil {
+		return access.Principal{}, err
+	}
+	if len(aud) != 1 || aud[0] != PlatformAudience {
+		return access.Principal{}, invalid("platform token audience %v is not exactly %s", aud, PlatformAudience)
+	}
+	for _, k := range tenantClaims {
+		if _, has := claims[k]; has {
+			return access.Principal{}, invalid("a platform token carries %s", k)
+		}
+	}
+	if _, has := claims["act"]; has {
+		return access.Principal{}, invalid("a platform token carries act")
+	}
+	p := identity(claims)
+	if uuid.Validate(p.Subject) != nil {
+		return access.Principal{}, invalid("platform token sub is not a user UUID")
+	}
+	p.Subject = strings.ToLower(p.Subject)
+	p.Kind = access.KindPlatform
 	return p, nil
 }
 
