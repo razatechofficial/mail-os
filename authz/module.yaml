@@ -1,0 +1,31 @@
+# MailOS's ACS module metadata (ADR 0001 §3.4, contract C4). The
+# activations are written by MailOS from the IAM's signed PIM attestations
+# (op mailos.role_activation / mailos.role_eligibility), in the platform
+# scope of MailOS's platform binding (tenant selector "platform").
+prefix: mailos
+version: 1
+owner_team: mailos
+contact: mailos-oncall@mailos.example
+# Access reviews (every six months, IAM) cover who is eligible and who is
+# active.
+reviewable_relations:
+  - mailos/platform#eligible_platform_owner
+  - mailos/platform#eligible_platform_operator
+  - mailos/platform#eligible_platform_template_editor
+  - mailos/platform#eligible_platform_template_publisher
+  - mailos/platform#eligible_platform_key_custodian
+  - mailos/platform#eligible_platform_abuse_analyst
+  - mailos/platform#eligible_platform_support
+  - mailos/platform#eligible_platform_log_admin
+  - mailos/platform#eligible_platform_auditor
+# Separation of duties: the person who holds the keys never also holds
+# the logs that record their use (CCM IAM-09).
+sod_pairs:
+  - [mailos/platform#eligible_platform_key_custodian, mailos/platform#eligible_platform_log_admin]
+# Every check of these is a decision ACS records.
+sensitive_permissions:
+  - mailos/platform#manage_keys
+  - mailos/platform#publish_templates
+  - mailos/platform#export_audit
+  - mailos/platform#manage_tenants
+  - mailos/platform#stop_send

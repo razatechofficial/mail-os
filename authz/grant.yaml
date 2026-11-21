@@ -1,0 +1,22 @@
+# What MailOS may do in ACS (ADR 0001 §3.4, contract C3/C4). MailOS checks
+# a route's permission on every platform request, reads a person's roles
+# for GET /api/platform/v1/me, and writes the eligibility and activation
+# relations from the IAM's signed attestations. All of it runs in the
+# platform scope (tenant selector "platform"), which needs MailOS's
+# platform binding (registry change platform.bind).
+apis: [check, check_bulk, read, write]
+quota_tier: S
+# Expiry horizon per relation (ACS plan 1.6): an activation is written
+# with optional_expires_at no more than 8 h ahead, and never without one.
+# MailOS narrows the owner, template publisher and key custodian further
+# (4 h) before it writes.
+expiry:
+  mailos/platform#platform_owner: {max_expiry: 8h, expiry_required: true}
+  mailos/platform#platform_operator: {max_expiry: 8h, expiry_required: true}
+  mailos/platform#platform_template_editor: {max_expiry: 8h, expiry_required: true}
+  mailos/platform#platform_template_publisher: {max_expiry: 8h, expiry_required: true}
+  mailos/platform#platform_key_custodian: {max_expiry: 8h, expiry_required: true}
+  mailos/platform#platform_abuse_analyst: {max_expiry: 8h, expiry_required: true}
+  mailos/platform#platform_support: {max_expiry: 8h, expiry_required: true}
+  mailos/platform#platform_log_admin: {max_expiry: 8h, expiry_required: true}
+  mailos/platform#platform_auditor: {max_expiry: 8h, expiry_required: true}
