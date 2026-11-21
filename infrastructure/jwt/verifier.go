@@ -28,6 +28,11 @@ type Config struct {
 	ClockSkew        time.Duration
 	// MinRefresh limits JWKS refetches for unknown kids (default 5s).
 	MinRefresh time.Duration
+	// JWKSURL reads keys from this key set instead of the discovery
+	// document's jwks_uri: the IAM's ACS approval keys
+	// ({Issuer}/.well-known/acs-approval-jwks.json), which sign
+	// attestations and nothing else.
+	JWKSURL string
 	HTTPClient *http.Client
 	// Now overrides the clock (tests).
 	Now func() time.Time
@@ -72,7 +77,7 @@ func NewVerifier(cfg Config) *Verifier {
 		audience:         cfg.Audience,
 		consoleAudiences: cfg.ConsoleAudiences,
 		skew:             skew,
-		keys:             newKeySet(issuer, ttl, minRefresh, client),
+		keys:             newKeySet(issuer, cfg.JWKSURL, ttl, minRefresh, client),
 		now:              now,
 	}
 }

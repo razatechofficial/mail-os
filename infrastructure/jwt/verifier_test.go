@@ -2,6 +2,7 @@ package jwt_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -288,5 +289,34 @@ func TestPlatformPrincipalFields(t *testing.T) {
 	if p.Subject != "0d6f3a7e-5b1c-4c55-9f61-2f8f1c9b6a11" || p.ClientID != "pc" || p.SessionID != "s1" || p.TokenID != "j1" ||
 		p.Email != "ops@example.com" || p.DPoPThumbprint != "thumb" || p.AuthTime.IsZero() || len(p.Roles) != 0 || !p.HasScope("email") {
 		t.Fatalf("principal %+v", p)
+	}
+}
+
+// With JWKSURL the verifier reads that key set only: the IAM's approval
+// keys verify an attestation, and a token signed with the IAM's token key
+// (published in the discovery document's JWKS) does not.
+func TestFixedJWKSURL(t *testing.T) {
+	tokenKeys := fakeiam.New("http://unused")
+	approval := fakeiam.New("http://unused")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/acs-approval-jwks.json":
+			_ = json.NewEncoder(w).Encode(approval.JWKS())
+		case "/.well-known/jwks.json":
+			_ = json.NewEncoder(w).Encode(tokenKeys.JWKS())
+		case "/.well-known/openid-configuration":
+			t.Error("a fixed JWKS URL must not read the discovery document")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	v := jwt.NewVerifier(jwt.Config{Issuer: srv.URL, JWKSURL: srv.URL + "/.well-known/acs-approval-jwks.json", MinRefresh: time.Millisecond})
+	claims := map[string]any{"iss": srv.URL, "aud": "mailos", "iat": time.Now().Unix(), "exp": time.Now().Add(time.Minute).Unix()}
+	if _, err := v.Verify(context.Background(), approval.Sign(approval.Keys[1], "acs-approval+jwt", claims), "acs-approval+jwt"); err != nil {
+		t.Fatalf("attestation: %v", err)
+	}
+	if _, err := v.Verify(context.Background(), tokenKeys.Sign(tokenKeys.Keys[1], "acs-approval+jwt", claims), "acs-approval+jwt"); !errors.Is(err, jwt.ErrUnknownKey) {
+		t.Fatalf("token key accepted for an attestation: %v", err)
 	}
 }

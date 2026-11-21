@@ -49,8 +49,10 @@ type keySet struct {
 	lastAttempt time.Time
 }
 
-func newKeySet(issuer string, cacheTTL, minRefresh time.Duration, client *http.Client) *keySet {
-	return &keySet{issuer: issuer, cacheTTL: cacheTTL, minRefresh: minRefresh, client: client, keys: map[string]jose.JSONWebKey{}}
+// newKeySet reads the issuer's keys; jwksURL, when set, is used as is
+// (no discovery).
+func newKeySet(issuer, jwksURL string, cacheTTL, minRefresh time.Duration, client *http.Client) *keySet {
+	return &keySet{issuer: issuer, jwksURL: jwksURL, cacheTTL: cacheTTL, minRefresh: minRefresh, client: client, keys: map[string]jose.JSONWebKey{}}
 }
 
 // key returns the key for kid, refreshing when the cache is stale or the
