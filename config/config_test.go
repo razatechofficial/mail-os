@@ -132,3 +132,56 @@ func TestSystemApplicationDefaults(t *testing.T) {
 		t.Fatalf("%+v %+v", cfg.IAM, cfg.Idempotency)
 	}
 }
+
+// ACS is optional (the platform API answers 503 without it); configured,
+// it needs MailOS's client certificate and an https token endpoint, and
+// plaintext only where the deployment allows it.
+func TestACS(t *testing.T) {
+	acs := map[string]string{"ACS_ENDPOINT": "acs.internal:9443", "ACS_CLIENT_ID": "mailos-acs",
+		"ACS_TOKEN_URL": "https://iam.example.com/oauth/token", "ACS_CERT_FILE": "/tls/acs.crt", "ACS_KEY_FILE": "/tls/acs.key"}
+	with := func(base map[string]string, set map[string]string) map[string]string {
+		out := map[string]string{}
+		for k, v := range base {
+			out[k] = v
+		}
+		for k, v := range set {
+			out[k] = v
+		}
+		return out
+	}
+	cfg, err := load(t, productionEnv())
+	if err != nil || cfg.ACS.Enabled() {
+		t.Fatalf("ACS is optional: %v %+v", err, cfg.ACS)
+	}
+	cfg, err = load(t, with(productionEnv(), acs))
+	if err != nil || !cfg.ACS.Enabled() || cfg.ACS.Timeout.Seconds() != 3 || cfg.ACS.Insecure {
+		t.Fatalf("configured ACS: %v %+v", err, cfg.ACS)
+	}
+	for name, c := range map[string]struct {
+		set  map[string]string
+		want string
+	}{
+		"endpoint without port":  {map[string]string{"ACS_ENDPOINT": "acs.internal"}, "host:port"},
+		"no client":              {map[string]string{"ACS_CLIENT_ID": ""}, "ACS_CLIENT_ID"},
+		"no token endpoint":      {map[string]string{"ACS_TOKEN_URL": ""}, "ACS_TOKEN_URL"},
+		"plaintext token":        {map[string]string{"ACS_TOKEN_URL": "http://iam.example.com/oauth/token"}, "https"},
+		"no client certificate":  {map[string]string{"ACS_KEY_FILE": ""}, "ACS_CERT_FILE"},
+		"insecure in production": {map[string]string{"ACS_INSECURE": "true"}, "ACS_INSECURE"},
+		"timeout":                {map[string]string{"ACS_TIMEOUT": "1m"}, "ACS_TIMEOUT"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := load(t, with(with(productionEnv(), acs), c.set))
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %v, want %q", err, c.want)
+			}
+		})
+	}
+	t.Run("insecure locally", func(t *testing.T) {
+		_, err := load(t, map[string]string{"APP_ENV": "local", "CONFIG_DIR": "testdata/none", "IAM_ISSUER": "http://127.0.0.1:8080",
+			"KEY_MANAGER_MASTER_KEY": testMasterKey, "ACS_ENDPOINT": "127.0.0.1:9090", "ACS_CLIENT_ID": "mailos-acs",
+			"ACS_TOKEN_URL": "http://127.0.0.1:8080/oauth/token", "ACS_INSECURE": "true"})
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}

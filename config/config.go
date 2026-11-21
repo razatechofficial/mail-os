@@ -26,6 +26,7 @@ type Config struct {
 	Postgres    Postgres    `yaml:"postgres"`
 	Redis       Redis       `yaml:"redis"`
 	IAM         IAM         `yaml:"iam"`
+	ACS         ACS         `yaml:"acs"`
 	Idempotency Idempotency `yaml:"idempotency"`
 	StepUp      StepUp      `yaml:"step_up"`
 	Kafka       Kafka       `yaml:"kafka"`
@@ -457,6 +458,9 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("IAM_CLOCK_SKEW must be between 0 and 5m")
 	}
 	if err := c.IAM.validateSystemApplication(plaintext); err != nil {
+		return err
+	}
+	if err := c.ACS.validate(plaintext); err != nil {
 		return err
 	}
 	if c.Idempotency.TTL < time.Hour || c.Idempotency.TTL > 7*24*time.Hour {
