@@ -324,3 +324,32 @@ func TestUnavailable(t *testing.T) {
 		t.Fatalf("replay guard down: %v", err)
 	}
 }
+
+// The IAM may end an activation it never delivered, and sends an
+// eligibility removal of its own (no requester, no approver): both are
+// applied (deleting what is not there is success), and the ended record
+// stays closed if its activation arrives late.
+func TestEndWithoutActivateAndUnattributedRemoval(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	id := uuid.NewString()
+	end := map[string]any{"op": platformroles.OpActivation, "action": "end", "sub": alice, "role": "platform_operator", "activation_id": id}
+	if res, err := e.svc.Apply(ctx, e.iam.Attestation(end)); err != nil || res.Replayed {
+		t.Fatalf("end before activate: %+v %v", res, err)
+	}
+	if _, err := e.svc.Apply(ctx, e.iam.Attestation(eligibility(platformrole.Operator, "add", uuid.NewString()))); err != nil {
+		t.Fatal(err)
+	}
+	late := activation(platformrole.Operator, time.Hour, map[string]any{"activation_id": id})
+	if res, err := e.svc.Apply(ctx, e.iam.Attestation(late)); err != nil || !res.Replayed {
+		t.Fatalf("late activation of an ended record: %+v %v", res, err)
+	}
+	if e.allowed(t, platformrole.ViewTenants) {
+		t.Fatal("a late activation granted")
+	}
+	remove := map[string]any{"op": platformroles.OpEligibility, "action": "remove", "sub": alice, "role": "platform_operator",
+		"eligibility_id": uuid.NewString(), "requested_by": "", "approved_by": ""}
+	if _, err := e.svc.Apply(ctx, e.iam.Attestation(remove)); err != nil {
+		t.Fatalf("removal without requester or approver: %v", err)
+	}
+}
