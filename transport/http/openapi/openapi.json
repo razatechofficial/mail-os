@@ -919,6 +919,245 @@
             "$ref": "#/components/schemas/SMTPEndpoint"
           }
         }
+      },
+      "PlatformRole": {
+        "enum": [
+          "platform_owner",
+          "platform_operator",
+          "platform_template_editor",
+          "platform_template_publisher",
+          "platform_key_custodian",
+          "platform_abuse_analyst",
+          "platform_support",
+          "platform_log_admin",
+          "platform_auditor"
+        ],
+        "type": "string"
+      },
+      "PlatformMe": {
+        "properties": {
+          "subject": {
+            "description": "The platform account's IAM user UUID.",
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "roles": {
+            "description": "Roles active now, with the end of each activation.",
+            "items": {
+              "properties": {
+                "role": {
+                  "$ref": "#/components/schemas/PlatformRole"
+                },
+                "expires_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "eligible": {
+            "description": "Roles the account may activate in the IAM.",
+            "items": {
+              "$ref": "#/components/schemas/PlatformRole"
+            },
+            "type": "array"
+          },
+          "permissions": {
+            "description": "Permissions the active roles give now.",
+            "items": {
+              "enum": [
+                "view_overview",
+                "view_tenants",
+                "manage_tenants",
+                "stop_send",
+                "view_connectors",
+                "view_templates",
+                "edit_templates",
+                "publish_templates",
+                "view_config",
+                "propose_config",
+                "approve_config",
+                "manage_keys",
+                "view_audit",
+                "verify_audit",
+                "export_audit"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "PlatformTenant": {
+        "description": "A tenant as the platform sees it: counts only, never a subject, recipient, body or template.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "applications": {
+            "type": "integer"
+          },
+          "domains": {
+            "description": "Sending domains not deleted.",
+            "type": "integer"
+          },
+          "messages_30d": {
+            "description": "Messages created in the last 30 days.",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PlatformTenantPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlatformTenant"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "description": "Pass as cursor for the next page; empty on the last page.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PlatformConnector": {
+        "properties": {
+          "kind": {
+            "description": "A provider kind tenants may configure, or platform_relay.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tracking_off_supported": {
+            "description": "Can send with click and open tracking off (so it may carry authentication mail).",
+            "type": "boolean"
+          },
+          "platform_relay": {
+            "type": "boolean"
+          },
+          "configured": {
+            "description": "The relay is set up; a provider kind has an active provider in at least one tenant.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "PlatformTemplateSummary": {
+        "properties": {
+          "topic": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "auth_class": {
+            "description": "Carries a secret or secret link: stored redacted, never resent, sent without tracking.",
+            "type": "boolean"
+          },
+          "variables": {
+            "items": {
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "text",
+                    "url",
+                    "email",
+                    "datetime",
+                    "number",
+                    "secret",
+                    "secret_url"
+                  ],
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "PlatformTemplate": {
+        "properties": {
+          "topic": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "auth_class": {
+            "description": "Carries a secret or secret link: stored redacted, never resent, sent without tracking.",
+            "type": "boolean"
+          },
+          "variables": {
+            "items": {
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "text",
+                    "url",
+                    "email",
+                    "datetime",
+                    "number",
+                    "secret",
+                    "secret_url"
+                  ],
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "html": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "description": "A platform topic's platform default (never a tenant's override), with the placeholders MailOS fills at send time."
+      },
+      "RoleAttestationInput": {
+        "properties": {
+          "attestation": {
+            "description": "Compact JWS, typ acs-approval+jwt, signed with the IAM's ACS approval key (JWKS at {IAM issuer}/.well-known/acs-approval-jwks.json). Claims: iss, aud mailos, iat, exp (at most 10 minutes later), jti, op (mailos.role_activation or mailos.role_eligibility), action (activate, end; add, remove), sub, role, active_until (activate), activation_id or eligibility_id, requested_by, approved_by.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attestation"
+        ],
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -927,11 +1166,17 @@
         "description": "IAM access token (aud mailos or the console client).",
         "scheme": "bearer",
         "type": "http"
+      },
+      "platformBearer": {
+        "bearerFormat": "JWT",
+        "description": "IAM access token of a platform account for the platform API: aud exactly mailos-platform, no tid, org_id or act (Bearer, or DPoP when the token carries cnf.jkt). Refused on /api/v1, as every /api/v1 token is refused here.",
+        "scheme": "bearer",
+        "type": "http"
       }
     }
   },
   "info": {
-    "description": "Transactional email for IAM and the MailOS console. Every /api/v1 operation needs an IAM access token (Bearer, or DPoP for sender-constrained tokens). Console users need a MailOS role (mailos_admin, mailos_template_editor, mailos_template_publisher, mailos_operator, mailos_auditor, mailos_viewer); sensitive operations need a sign-in no older than 5 minutes with a second factor and answer 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge otherwise.",
+    "description": "Transactional email for IAM and the MailOS console. Every /api/v1 operation needs an IAM access token (Bearer, or DPoP for sender-constrained tokens). Console users need a MailOS role (mailos_admin, mailos_template_editor, mailos_template_publisher, mailos_operator, mailos_auditor, mailos_viewer); sensitive operations need a sign-in no older than 5 minutes with a second factor and answer 403 STEP_UP_REQUIRED with an RFC 9470 WWW-Authenticate challenge otherwise. The platform API (/api/platform/v1) takes only platform tokens (aud mailos-platform, no tenant); each of its routes is guarded by a permission of the MailOS ACS module, checked in ACS on every request: 403 FORBIDDEN without an active platform role, 503 when ACS cannot answer.",
     "title": "MailOS API",
     "version": "2.0.0"
   },
@@ -3857,6 +4102,274 @@
             }
           }
         ]
+      }
+    },
+    "/api/platform/v1/me": {
+      "get": {
+        "operationId": "get_platform_me",
+        "summary": "Who am I (platform)",
+        "tags": [
+          "platform"
+        ],
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "description": "The platform account the token names, its roles active now (with their end) and eligible, and the permissions they give. Needs a platform token only.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PlatformMe"
+                    },
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/platform/v1/tenants": {
+      "get": {
+        "operationId": "get_platform_tenants",
+        "summary": "List tenants (aggregates)",
+        "tags": [
+          "platform"
+        ],
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "x-permission": "view_tenants",
+        "description": "Tenants with counts only: applications, sending domains and messages of the last 30 days. No subject, recipient, body or template data. Ordered by creation. Permission: `view_tenants` (ACS).",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PlatformTenantPage"
+                    },
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/platform/v1/connectors": {
+      "get": {
+        "operationId": "get_platform_connectors",
+        "summary": "Connector catalogue",
+        "tags": [
+          "platform"
+        ],
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "x-permission": "view_connectors",
+        "description": "The provider kinds MailOS supports and the platform relay. Never a credential. Permission: `view_connectors` (ACS).",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "items": {
+                          "items": {
+                            "$ref": "#/components/schemas/PlatformConnector"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/platform/v1/templates": {
+      "get": {
+        "operationId": "get_platform_templates",
+        "summary": "List platform templates",
+        "tags": [
+          "platform"
+        ],
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "x-permission": "view_templates",
+        "description": "The platform topics (the IAM's), with their variables. Permission: `view_templates` (ACS).",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "items": {
+                          "items": {
+                            "$ref": "#/components/schemas/PlatformTemplateSummary"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/platform/v1/templates/{topic}": {
+      "get": {
+        "operationId": "get_platform_templates_topic",
+        "summary": "Get a platform template",
+        "tags": [
+          "platform"
+        ],
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "x-permission": "view_templates",
+        "description": "A platform topic's platform default: subject, HTML and text. 404 for a topic that is not a platform topic. Permission: `view_templates` (ACS).",
+        "parameters": [
+          {
+            "name": "topic",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PlatformTemplate"
+                    },
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/platform/v1/role-attestations": {
+      "post": {
+        "operationId": "post_platform_role_attestations",
+        "summary": "Deliver a role attestation (IAM)",
+        "tags": [
+          "platform"
+        ],
+        "security": [],
+        "description": "The IAM delivers its privileged-access decisions for MailOS platform roles here (no bearer token: the signed attestation is the credential). MailOS verifies it and writes the activation (expiring at active_until) or the eligibility in ACS's platform scope. 204 when applied, or when the same attestation or its closed record was seen before (nothing changes); 401 when it does not verify; 400 when it cannot be applied; 403 when the person is not eligible for the role; 503 when the IAM's keys or ACS cannot be reached.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleAttestationInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Applied"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
       }
     }
   },

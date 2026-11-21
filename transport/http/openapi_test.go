@@ -24,7 +24,7 @@ import (
 	"github.com/razatechofficial/mail-os/transport/http/openapi"
 )
 
-var updateOpenAPI = flag.Bool("update-openapi", false, "add stubs for undocumented /api/v1 routes to openapi/openapi.json and drop removed ones")
+var updateOpenAPI = flag.Bool("update-openapi", false, "add stubs for undocumented /api/v1 and /api/platform/v1 routes to openapi/openapi.json and drop removed ones")
 
 // allRoutes is every feature's route set with empty handlers: the test
 // only reads the routes and probes them without credentials.
@@ -48,13 +48,35 @@ func allRoutes() []Routes {
 	}
 }
 
-// fullRouter mounts every route.
+// fullRouter mounts every route: both planes and the public routes.
 func fullRouter(t *testing.T) *gin.Engine {
 	t.Helper()
 	_ = logger.InitSimple("fatal", "console")
 	cfg := &config.Config{}
-	auth := &middleware.Auth{Verifier: jwt.NewVerifier(jwt.Config{Issuer: "http://127.0.0.1:9", Audience: "mailos"})}
-	return NewRouter(cfg, Deps{Auth: auth}, allRoutes()...)
+	v := jwt.NewVerifier(jwt.Config{Issuer: "http://127.0.0.1:9", Audience: "mailos"})
+	return NewRouter(cfg, Deps{Auth: &middleware.Auth{Verifier: v}, PlatformAuth: &middleware.PlatformAuth{Verifier: v},
+		Platform: allPlatformRoutes(), Public: allPublicRoutes()}, allRoutes()...)
+}
+
+// documentedPrefixes are the route groups the document covers.
+var documentedPrefixes = []string{TenantPrefix + "/", PlatformPrefix + "/"}
+
+func documented(path string) bool {
+	for _, p := range documentedPrefixes {
+		if strings.HasPrefix(path, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// relative is the path under its group, and the operationId prefix that
+// keeps the platform's ids apart from the tenant's.
+func relative(path string) (rest, idPrefix string) {
+	if rest, ok := strings.CutPrefix(path, PlatformPrefix+"/"); ok {
+		return rest, "platform_"
+	}
+	return strings.TrimPrefix(path, TenantPrefix+"/"), ""
 }
 
 var ginParam = regexp.MustCompile(`[:*]([A-Za-z0-9_]+)`)
@@ -90,9 +112,10 @@ func stubOperation(rt gin.RouteInfo, path string, secured bool) map[string]any {
 	if m := handlerName.FindStringSubmatch(rt.Handler); m != nil {
 		summary = humanize(m[2]) + " (" + strings.TrimSuffix(m[1], "Handler") + ")"
 	}
-	segs := strings.Split(strings.TrimPrefix(path, "/api/v1/"), "/")
+	rest, idPrefix := relative(path)
+	segs := strings.Split(rest, "/")
 	op := map[string]any{
-		"operationId": strings.ToLower(rt.Method) + "_" + strings.Trim(regexp.MustCompile(`[^A-Za-z0-9]+`).ReplaceAllString(strings.TrimPrefix(path, "/api/v1/"), "_"), "_"),
+		"operationId": strings.ToLower(rt.Method) + "_" + idPrefix + strings.Trim(regexp.MustCompile(`[^A-Za-z0-9]+`).ReplaceAllString(rest, "_"), "_"),
 		"summary":     summary,
 		"tags":        []any{segs[0]},
 		"x-stub":      true,
@@ -116,8 +139,8 @@ func stubOperation(rt gin.RouteInfo, path string, secured bool) map[string]any {
 }
 
 // TestOpenAPISpec keeps openapi.json and the router in step: every /api/v1
-// route is documented with the authentication it really requires, and
-// nothing documented is missing from the router.
+// and /api/platform/v1 route is documented with the authentication it
+// really requires, and nothing documented is missing from the router.
 func TestOpenAPISpec(t *testing.T) {
 	r := fullRouter(t)
 	specPath := filepath.Join("openapi", "openapi.json")
@@ -139,7 +162,7 @@ func TestOpenAPISpec(t *testing.T) {
 
 	routes := map[string]gin.RouteInfo{}
 	for _, rt := range r.Routes() {
-		if strings.HasPrefix(rt.Path, "/api/v1/") {
+		if documented(rt.Path) {
 			routes[strings.ToLower(rt.Method)+" "+openAPIPath(rt.Path)] = rt
 		}
 	}
