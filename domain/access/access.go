@@ -149,13 +149,18 @@ func PermissionsOf(roles []Role) []Permission {
 	return out
 }
 
-// Kind is who is calling: a person through the console, or a service.
+// Kind is who is calling: a person through the tenant console, a service,
+// or a platform account through the platform console.
 type Kind string
 
 // Principal kinds.
 const (
 	KindUser    Kind = "user"
 	KindService Kind = "service"
+	// KindPlatform is a platform account on the platform API (ADR 0001
+	// §3.3): a token for aud mailos-platform with no tenant. It holds no
+	// tenant permission at all; ACS decides each platform route.
+	KindPlatform Kind = "platform"
 )
 
 // Principal is the verified identity behind a request.
@@ -197,10 +202,17 @@ type Principal struct {
 // IsService reports a service caller.
 func (p Principal) IsService() bool { return p.Kind == KindService }
 
+// IsPlatform reports a platform account (the platform API's only caller).
+func (p Principal) IsPlatform() bool { return p.Kind == KindPlatform }
+
 // Can reports whether the principal's roles allow perm. A service holds
 // PermEventsDispatch and PermMessagesSend, narrowed by its application; a
-// browser user of a spa application holds only PermMessagesSendSelf.
+// browser user of a spa application holds only PermMessagesSendSelf; a
+// platform account holds no tenant permission, whatever its token says.
 func (p Principal) Can(perm Permission) bool {
+	if p.IsPlatform() {
+		return false
+	}
 	if p.IsService() {
 		return perm == PermEventsDispatch || perm == PermMessagesSend
 	}

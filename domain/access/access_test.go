@@ -138,3 +138,33 @@ func TestServiceAndSelfServicePermissions(t *testing.T) {
 		t.Fatal("step-up for applications")
 	}
 }
+
+// A platform account holds no tenant permission at all: not through roles
+// a token might carry, not as a service, not as a self-service user.
+func TestPlatformPrincipalHasNoTenantPermission(t *testing.T) {
+	for _, p := range []Principal{
+		{Kind: KindPlatform, Subject: "u1"},
+		{Kind: KindPlatform, Subject: "u1", Roles: Roles},
+		{Kind: KindPlatform, Subject: "u1", Roles: []Role{RoleAdmin}, SelfService: true, TenantID: "t1"},
+	} {
+		if !p.IsPlatform() || p.IsService() {
+			t.Fatalf("kind of %+v", p)
+		}
+		for _, perm := range PermissionsOf(Roles) {
+			if p.Can(perm) {
+				t.Errorf("platform principal %+v can %s", p, perm)
+			}
+		}
+		for _, perm := range []Permission{PermEventsDispatch, PermMessagesSend, PermMessagesSendSelf} {
+			if p.Can(perm) {
+				t.Errorf("platform principal can %s", perm)
+			}
+		}
+		if p.Actor() != "u1" {
+			t.Errorf("actor %q", p.Actor())
+		}
+	}
+	if (Principal{Kind: KindUser}).IsPlatform() || (Principal{Kind: KindService}).IsPlatform() {
+		t.Fatal("tenant principals reported as platform")
+	}
+}
