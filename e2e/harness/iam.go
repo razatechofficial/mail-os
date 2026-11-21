@@ -76,3 +76,43 @@ func (e *Env) MessageSignature(t T, clientID, topic string, value []byte) string
 	}
 	return sig
 }
+
+// PlatformToken mints a platform account's access token (contract C2: aud
+// mailos-platform, no tid, org_id, act or roles) for sub; extra claims
+// override the defaults (a tid or an act, to prove they are refused).
+func (e *Env) PlatformToken(t T, sub string, extra map[string]any) string {
+	t.Helper()
+	out := e.iamClient().Expect(t, http.StatusOK, http.MethodPost, "/test/tokens/platform",
+		map[string]any{"sub": sub, "email": "platform-" + Unique() + "@" + EmailDomain, "extra": extra}).JSON()
+	tok := Str(out, "access_token")
+	if tok == "" {
+		t.Fatalf("fake IAM minted no platform token: %v", out)
+	}
+	return tok
+}
+
+// Platform returns a client calling the platform API as platform account sub.
+func (e *Env) Platform(t T, sub string) *Client {
+	t.Helper()
+	return e.NewClient().WithBearer(e.PlatformToken(t, sub, nil))
+}
+
+// PlatformRole has the fake IAM's PIM sign a MailOS role attestation for
+// sub (action add or remove an eligibility, activate for activeSeconds or
+// end the activation) and deliver it to MailOS, and returns the status
+// MailOS answered.
+func (e *Env) PlatformRole(t T, sub, role, action string, activeSeconds int) int {
+	t.Helper()
+	out := e.iamClient().Expect(t, http.StatusOK, http.MethodPost, "/test/platform/roles",
+		map[string]any{"sub": sub, "role": role, "action": action, "active_seconds": activeSeconds}).JSON()
+	status, _ := out["status"].(float64)
+	return int(status)
+}
+
+// Attestation signs claims with the fake IAM's ACS approval key (iss, aud,
+// iat, exp and jti filled in unless set; nil removes one).
+func (e *Env) Attestation(t T, claims map[string]any) string {
+	t.Helper()
+	out := e.iamClient().Expect(t, http.StatusOK, http.MethodPost, "/test/attestations", claims).JSON()
+	return Str(out, "attestation")
+}
