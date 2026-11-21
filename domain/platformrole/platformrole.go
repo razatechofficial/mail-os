@@ -55,6 +55,12 @@ func (r Role) NeedsSecondApprover() bool {
 	return r == Owner || r == TemplatePublisher || r == KeyCustodian
 }
 
+// Holding is an active role and when its activation ends.
+type Holding struct {
+	Role      Role
+	ExpiresAt time.Time
+}
+
 // Relation is the activation relation; EligibleRelation the eligibility
 // relation.
 func (r Role) Relation() string         { return string(r) }

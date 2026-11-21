@@ -46,15 +46,9 @@ func (p Platform) AllowedEach(ctx context.Context, subject string, perms []platf
 	return out, translate(err)
 }
 
-// Holding is an active role and when it ends.
-type Holding struct {
-	Role      platformrole.Role
-	ExpiresAt time.Time
-}
-
 // Holdings lists the person's active roles and the roles they are eligible
 // for. ACS never returns an expired relationship.
-func (p Platform) Holdings(ctx context.Context, subject string) (active []Holding, eligible []platformrole.Role, err error) {
+func (p Platform) Holdings(ctx context.Context, subject string) (active []platformrole.Holding, eligible []platformrole.Role, err error) {
 	rels, err := p.Client.Read(ctx, PlatformTenant, Filter{ResourceType: platformObject.Type, ResourceID: platformObject.ID, Subject: User(subject)})
 	if err != nil {
 		return nil, nil, translate(err)
@@ -66,7 +60,7 @@ func (p Platform) Holdings(ctx context.Context, subject string) (active []Holdin
 		case isEligibility:
 			eligible = append(eligible, role)
 		default:
-			active = append(active, Holding{Role: role, ExpiresAt: r.ExpiresAt})
+			active = append(active, platformrole.Holding{Role: role, ExpiresAt: r.ExpiresAt})
 		}
 	}
 	return active, eligible, nil
