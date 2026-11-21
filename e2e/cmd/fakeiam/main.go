@@ -17,9 +17,25 @@
 //	POST /test/tokens/user                   {"sub","tid","org_id","roles","acr","auth_age_seconds","aud","client_id","jkt","extra"} -> {"access_token","sub"}
 //	POST /test/tokens/service                {"client_id","tid"} -> {"access_token"}
 //	POST /test/signatures                    {"client_id","topic","value"(base64)} -> {"signature"}
+//	POST /test/tokens/platform               {"sub","acr","auth_age_seconds","client_id","email","jkt","extra"} -> {"access_token","sub"}
+//	POST /test/attestations                  {claims} -> {"attestation"} (the ACS approval key; iss, aud, iat, exp, jti filled in)
+//	POST /test/platform/roles                {"sub","role","action","active_seconds"} -> {"status","attestation","record_id"} (needs -mailos-url)
 //
-// With -oidc-client-id (and the mint routes) it is also an OIDC provider for
-// the console's Playwright suite: see oidc.go.
+// It publishes its ACS approval keys at /.well-known/acs-approval-jwks.json
+// (contract C5): a key of its own, never in the token JWKS. /test/platform/roles
+// signs a role attestation as the IAM's PIM would (action add or remove an
+// eligibility, activate for active_seconds or end an activation; the record
+// ids are kept per sub and role, so an end names the activation it ends)
+// and delivers it to MailOS's POST /api/platform/v1/role-attestations,
+// answering MailOS's status.
+//
+// With -acs-client-id, POST /oauth/token also issues that client a token
+// for ACS (grant_type client_credentials, resource api://acs; no client
+// authentication: the real IAM binds it to the client's certificate).
+//
+// With -oidc-client-id and/or -platform-oidc-client-id (and the mint
+// routes) it is also an OIDC provider for the consoles' Playwright suites:
+// see oidc.go.
 package main
 
 import (
@@ -56,6 +72,12 @@ func main() {
 	oidcSecretFile := flag.String("oidc-client-secret-file", "", "file holding the OIDC client's secret")
 	oidcRedirects := flag.String("oidc-redirect-uris", "", "comma-separated redirect URIs registered for the OIDC client")
 	oidcLogout := flag.String("oidc-post-logout-uris", "", "comma-separated post-logout redirect URIs")
+	platformClient := flag.String("platform-oidc-client-id", "", "serve the OIDC provider routes for this platform console client (platform_web; needs -mint-token-file)")
+	platformSecretFile := flag.String("platform-oidc-client-secret-file", "", "file holding the platform console client's secret")
+	platformRedirects := flag.String("platform-oidc-redirect-uris", "", "comma-separated redirect URIs of the platform console client")
+	platformLogout := flag.String("platform-oidc-post-logout-uris", "", "comma-separated post-logout redirect URIs of the platform console client")
+	acsClient := flag.String("acs-client-id", "", "issue this client tokens for api://acs (client credentials)")
+	mailosURL := flag.String("mailos-url", "", "MailOS origin /test/platform/roles delivers attestations to")
 	flag.Parse()
 
 	host, _, err := net.SplitHostPort(*addr)
@@ -74,6 +96,22 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/.well-known/", f.Handler())
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	var oidc *provider
+	mux.HandleFunc("POST /oauth/token", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		if err := r.ParseForm(); err != nil {
+			oauthError(w, http.StatusBadRequest, "invalid_request", "bad form")
+			return
+		}
+		switch {
+		case r.PostForm.Get("grant_type") == "client_credentials" && *acsClient != "":
+			acsToken(w, r, f, *acsClient)
+		case oidc != nil:
+			oidc.token(w, r)
+		default:
+			oauthError(w, http.StatusBadRequest, "unsupported_grant_type", "no client is registered for this grant")
+		}
+	})
 	if *mintFile != "" {
 		raw, err := os.ReadFile(*mintFile)
 		if err != nil {
@@ -87,15 +125,26 @@ func main() {
 		mux.HandleFunc("POST /test/tokens/user", m.guard(m.user))
 		mux.HandleFunc("POST /test/tokens/service", m.guard(m.service))
 		mux.HandleFunc("POST /test/signatures", m.guard(m.signature))
-		if *oidcClient != "" {
-			secret, err := os.ReadFile(*oidcSecretFile)
-			if err != nil || len(strings.TrimSpace(string(secret))) < minMintTokenLen {
-				log.Fatalf("fakeiam: -oidc-client-secret-file must hold at least %d characters: %v", minMintTokenLen, err)
-			}
-			newProvider(f, *oidcClient, []byte(strings.TrimSpace(string(secret))), splitList(*oidcRedirects), splitList(*oidcLogout)).mount(mux, m)
+		mux.HandleFunc("POST /test/tokens/platform", m.guard(m.platformToken))
+		mux.HandleFunc("POST /test/attestations", m.guard(m.attestation))
+		if *mailosURL != "" {
+			pim := &pim{iam: f, mailos: strings.TrimRight(*mailosURL, "/"), records: map[string]string{}}
+			mux.HandleFunc("POST /test/platform/roles", m.guard(pim.deliver))
 		}
-	} else if *oidcClient != "" {
-		log.Fatalf("fakeiam: -oidc-client-id needs -mint-token-file (personas are registered through it)")
+		if *oidcClient != "" || *platformClient != "" {
+			oidc = newProvider(f)
+			if *oidcClient != "" {
+				oidc.add(&client{id: *oidcClient, secret: readSecret(*oidcSecretFile, "-oidc-client-secret-file"),
+					redirects: splitList(*oidcRedirects), logoutURIs: splitList(*oidcLogout)})
+			}
+			if *platformClient != "" {
+				oidc.add(&client{id: *platformClient, secret: readSecret(*platformSecretFile, "-platform-oidc-client-secret-file"),
+					redirects: splitList(*platformRedirects), logoutURIs: splitList(*platformLogout), platform: true})
+			}
+			oidc.mount(mux, m)
+		}
+	} else if *oidcClient != "" || *platformClient != "" || *mailosURL != "" {
+		log.Fatalf("fakeiam: -oidc-client-id, -platform-oidc-client-id and -mailos-url need -mint-token-file")
 	}
 
 	srv := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
@@ -190,6 +239,14 @@ func (m *minter) signature(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"signature": m.iam.MessageSignature(req.ClientID, req.Topic, value)})
+}
+
+func readSecret(file, flagName string) []byte {
+	secret, err := os.ReadFile(file) // #nosec G304 -- the test harness's own key file
+	if err != nil || len(strings.TrimSpace(string(secret))) < minMintTokenLen {
+		log.Fatalf("fakeiam: %s must hold at least %d characters: %v", flagName, minMintTokenLen, err)
+	}
+	return []byte(strings.TrimSpace(string(secret)))
 }
 
 func splitList(s string) []string {
