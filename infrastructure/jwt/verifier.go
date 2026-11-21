@@ -32,7 +32,7 @@ type Config struct {
 	// document's jwks_uri: the IAM's ACS approval keys
 	// ({Issuer}/.well-known/acs-approval-jwks.json), which sign
 	// attestations and nothing else.
-	JWKSURL string
+	JWKSURL    string
 	HTTPClient *http.Client
 	// Now overrides the clock (tests).
 	Now func() time.Time
