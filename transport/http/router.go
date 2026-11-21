@@ -20,9 +20,24 @@ type Routes interface {
 	Mount(api *gin.RouterGroup, g middleware.Guard)
 }
 
+// PlatformRoutes are the platform API's route sets (ADR 0001 §3.1): each
+// mounts its routes on the authenticated /api/platform/v1 group, guarding
+// each with its ACS permission.
+type PlatformRoutes interface {
+	MountPlatform(api *gin.RouterGroup, g middleware.PlatformGuard)
+}
+
+// Route group prefixes. Each authenticated route is in exactly one: the
+// tenant plane's or the platform plane's, each behind its own token rules.
+const (
+	TenantPrefix   = "/api/v1"
+	PlatformPrefix = "/api/platform/v1"
+)
+
 // PublicRoutes are routes served without IAM authentication, outside
-// /api/v1: each guards itself (provider webhook signatures, signed
-// unsubscribe links).
+// the authenticated groups: each guards itself (provider webhook
+// signatures, signed unsubscribe links, the IAM's signed role
+// attestations).
 type PublicRoutes interface {
 	MountPublic(r gin.IRouter)
 }
@@ -38,11 +53,19 @@ type Deps struct {
 	Hooks func(r *gin.Engine)
 	// Public are the unauthenticated route sets.
 	Public []PublicRoutes
+	// PlatformAuth authenticates the platform API (platform tokens only);
+	// PlatformGuard checks each platform route's permission in ACS.
+	PlatformAuth  *middleware.PlatformAuth
+	PlatformGuard middleware.PlatformGuard
+	// Platform are the platform API's route sets.
+	Platform []PlatformRoutes
 }
 
 // NewRouter builds the engine: global middleware, health, the OpenAPI
-// document, then every feature's routes under /api/v1 behind
-// authentication and the tenant rate limit.
+// document, then every feature's routes under /api/v1 behind tenant-plane
+// authentication and the tenant rate limit, and the platform API under
+// /api/platform/v1 behind platform authentication (ADR 0001 §3.3: a token
+// accepted by one group is refused by the other).
 func NewRouter(cfg *config.Config, d Deps, routes ...Routes) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -67,7 +90,7 @@ func NewRouter(cfg *config.Config, d Deps, routes ...Routes) *gin.Engine {
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
-	r.GET("/api/v1/openapi.json", func(c *gin.Context) { c.Data(http.StatusOK, "application/json", openapi.Spec()) })
+	r.GET(TenantPrefix+"/openapi.json", func(c *gin.Context) { c.Data(http.StatusOK, "application/json", openapi.Spec()) })
 	if d.Hooks != nil {
 		d.Hooks(r)
 	}
@@ -75,12 +98,22 @@ func NewRouter(cfg *config.Config, d Deps, routes ...Routes) *gin.Engine {
 		p.MountPublic(r)
 	}
 
-	api := r.Group("/api/v1", d.Auth.Required())
+	api := r.Group(TenantPrefix, d.Auth.Required())
 	if cfg.RateLimit.Enabled {
 		api.Use(middleware.RateLimit(d.Limiter, "api", middleware.PerTenant, cfg.RateLimit.PerTenant+cfg.RateLimit.Burst, time.Second))
 	}
 	for _, rt := range routes {
 		rt.Mount(api, d.Guard)
+	}
+	if d.PlatformAuth != nil {
+		papi := r.Group(PlatformPrefix, d.PlatformAuth.Required())
+		if cfg.RateLimit.Enabled {
+			// A platform account has no tenant: the limit is per person.
+			papi.Use(middleware.RateLimit(d.Limiter, "platform", middleware.PerUser, cfg.RateLimit.PerTenant+cfg.RateLimit.Burst, time.Second))
+		}
+		for _, rt := range d.Platform {
+			rt.MountPlatform(papi, d.PlatformGuard)
+		}
 	}
 	return r
 }
