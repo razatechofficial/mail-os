@@ -1,0 +1,356 @@
+# mailos-p1-cross: MailOS Phase 1 slice 1 end to end with the real
+# components (run.sh up|test|down|all; README.md). Every process uses the
+# host network and listens on 127.0.0.1:276xx only, so the IAM issuer, the
+# consoles' origins and the redirect URIs are the same for the browser and
+# the servers. Sources are in $CROSS_HOME/src, secrets in
+# $CROSS_HOME/secrets (gen-secrets.sh), run state in $CROSS_HOME/work.
+#
+#   pg, spicedb, redis   the IAM's and ACS's stores (one SpiceDB, shared)
+#   redis-ms             MailOS's Redis
+#   iam                  the IAM server (iam.sh main), 27680
+#   iam-lenient          a second IAM server without the passkey rule (setup only), 27688
+#   iam-tls              TLS in front of the IAM (client certificates), 27643
+#   ic                   the IAM console: the hosted sign-in, 27675
+#   acs-*                ACS: migrate db, schema write, acs-core 27691, applier, gateway 27690
+#   ms                   the MailOS server (ms.sh), 27681      profile mailos
+#   mc                   the MailOS Platform Console, 27685    profile mailos
+#   pw                   Playwright (setup and specs)          profile test
+name: mailos-p1-cross
+
+x-go: &go
+  image: golang:1.26.10-bookworm
+  network_mode: host
+  user: "${CROSS_UID:-1001}:${CROSS_GID:-1001}"
+  environment: &goenv
+    HOME: /gocache/home
+    GOCACHE: /gocache/build
+    GOMODCACHE: /gocache/mod
+    GOFLAGS: -buildvcs=false
+    CGO_ENABLED: "0"
+
+x-node: &node
+  image: mcr.microsoft.com/playwright:v1.64.1-noble
+  network_mode: host
+  user: "${CROSS_UID:-1001}:${CROSS_GID:-1001}"
+
+x-acs: &acs
+  image: mailos-p1-cross/acs:local
+  build:
+    context: ${CROSS_HOME:-/opt/mailos-p1-test/cross}/src/acs
+    dockerfile: Dockerfile
+    args: {VERSION: cross, COMMIT: "${ACS_COMMIT:-unknown}"}
+  network_mode: host
+  restart: unless-stopped
+  mem_limit: 256m
+
+# The real IAM's issuer, and its key sets through its TLS terminator.
+x-acs-env: &acs-env
+  APP_ENV: e2e
+  APP_LOG_FORMAT: json
+  SPICEDB_ENDPOINT: 127.0.0.1:27651
+  SPICEDB_INSECURE: "true"
+  OPS_HOST: 127.0.0.1
+  AUTHZEN_HOST: 127.0.0.1
+  ACS_APPROVAL_ISSUER: http://127.0.0.1:27680
+  ACS_APPROVAL_JWKS_URL: https://127.0.0.1:27643/.well-known/acs-approval-jwks.json
+  ACS_APPROVAL_JWKS_CA_FILE: /etc/acs/tls/ca.pem
+
+x-acs-volumes: &acs-volumes
+  volumes:
+    - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/acs:/etc/acs/tls:ro
+
+services:
+  pg:
+    image: postgres:18.7-alpine
+    network_mode: host
+    command: ["postgres", "-c", "listen_addresses=127.0.0.1", "-c", "track_commit_timestamp=on", "-c", "max_connections=300"]
+    env_file: [{path: "${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/env/pg.env"}]
+    volumes:
+      - ./pg-init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+    tmpfs: [/var/lib/postgresql]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 27632 -U postgres -d acs"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+    mem_limit: 1g
+
+  spicedb-migrate:
+    image: authzed/spicedb:v1.57.1
+    network_mode: host
+    command: ["datastore", "migrate", "head", "--datastore-engine=postgres"]
+    env_file: [{path: "${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/env/spicedb.env"}]
+    depends_on: {pg: {condition: service_healthy}}
+    restart: on-failure
+
+  spicedb:
+    image: authzed/spicedb:v1.57.1
+    network_mode: host
+    command: ["serve", "--datastore-engine=postgres", "--grpc-addr=127.0.0.1:27651", "--http-enabled=false",
+              "--metrics-addr=127.0.0.1:27652", "--telemetry-endpoint="]
+    env_file: [{path: "${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/env/spicedb.env"}]
+    depends_on: {spicedb-migrate: {condition: service_completed_successfully}}
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=127.0.0.1:27651"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+    mem_limit: 512m
+
+  redis:
+    image: redis:7.4-alpine
+    network_mode: host
+    entrypoint: ["/bin/sh", "-c"]
+    command: ['exec redis-server --bind 127.0.0.1 --port 27679 --requirepass "$$REDIS_PASSWORD" --maxmemory 128mb --save "" --appendonly no']
+    env_file: [{path: "${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/env/redis.env"}]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli -p 27679 ping | grep -q PONG"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    mem_limit: 192m
+
+  redis-ms:
+    image: redis:7.4-alpine
+    network_mode: host
+    command: ["redis-server", "--bind", "127.0.0.1", "--port", "27678", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "27678", "ping"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    mem_limit: 128m
+
+  iam:
+    <<: *go
+    working_dir: /src/iam-server
+    command: ["bash", "/cross/iam.sh", "main"]
+    volumes:
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/src/iam-server:/src/iam-server:ro
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/go:/gocache
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/work/iam:/work
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/iam:/secrets/iam:ro
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/env:/secrets/env:ro
+      - ./iam.sh:/cross/iam.sh:ro
+    depends_on:
+      pg: {condition: service_healthy}
+      spicedb: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:27680/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 200
+      start_period: 600s
+    mem_limit: 3g
+
+  iam-lenient:
+    <<: *go
+    profiles: [lenient]
+    working_dir: /src/iam-server
+    command: ["bash", "/cross/iam.sh", "lenient"]
+    volumes:
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/src/iam-server:/src/iam-server:ro
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/work/iam:/work
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/iam:/secrets/iam:ro
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/env:/secrets/env:ro
+      - ./iam.sh:/cross/iam.sh:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:27688/ready"]
+      interval: 3s
+      timeout: 5s
+      retries: 60
+    mem_limit: 1g
+
+  iam-tls:
+    image: nginx:1.27-alpine
+    network_mode: host
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/nginx:/etc/iam-tls:ro
+    depends_on: {iam: {condition: service_healthy}}
+    mem_limit: 64m
+
+  ic:
+    <<: *node
+    working_dir: /src/iam-console
+    command: ["npx", "next", "start", "-H", "127.0.0.1", "-p", "27675"]
+    environment:
+      HOME: /tmp/home
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      IAM_API_URL: http://127.0.0.1:27680/api/v1
+      IAM_ISSUER_URL: http://127.0.0.1:27680
+      IAM_CLIENT_URL: http://localhost:27675
+      FEATURE_BRANDING: "true"
+    volumes:
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/src/iam-console:/src/iam-console
+    depends_on: {iam: {condition: service_healthy}}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:27675/login"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+    mem_limit: 1g
+
+  acs-migrate-db:
+    <<: [*acs, *acs-volumes]
+    restart: "no"
+    entrypoint: ["/app/acs-migrate"]
+    command: ["db", "up"]
+    environment: {<<: *acs-env, OPS_PORT: "27697"}
+    env_file: [{path: "${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/env/acs-migrate.env"}]
+    depends_on: {pg: {condition: service_healthy}}
+
+  # acs-migrate schema write: as acs_applier, ACS's core composed with the
+  # applied modules, written over the IAM's core (the IAM writes its own
+  # first, at start). acs-core starts only after it and never writes it.
+  acs-migrate-schema:
+    <<: [*acs, *acs-volumes]
+    restart: "no"
+    entrypoint: ["/app/acs-migrate"]
+    command: ["schema", "write"]
+    environment: {<<: *acs-env, OPS_PORT: "27698"}
+    env_file: [{path: "${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/env/acs-applier.env"}]
+    depends_on:
+      acs-migrate-db: {condition: service_completed_successfully}
+      iam-tls: {condition: service_started}
+
+  # acs-migrate apply loop: re-verifies each queued change's attestation
+  # against the IAM's approval key set and applies it (every 2 s here).
+  acs-applier:
+    <<: [*acs, *acs-volumes]
+    entrypoint: ["/app/acs-migrate"]
+    command: ["apply", "loop"]
+    environment: {<<: *acs-env, OPS_PORT: "27695", ACS_APPLY_EVERY: 2s}
+    env_file: [{path: "${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/env/acs-applier.env"}]
+    depends_on:
+      acs-migrate-schema: {condition: service_completed_successfully}
+
+  acs-core:
+    <<: [*acs, *acs-volumes]
+    entrypoint: ["/app/acs"]
+    environment:
+      <<: *acs-env
+      ACS_ROLE: core
+      GRPC_HOST: 127.0.0.1
+      GRPC_PORT: "27691"
+      OPS_PORT: "27692"
+      AUTHZEN_PORT: "27696"
+      GRPC_TLS_CERT_FILE: /etc/acs/tls/acs-server.crt
+      GRPC_TLS_KEY_FILE: /etc/acs/tls/acs-server.key
+      GRPC_TLS_CLIENT_CA_FILE: /etc/acs/tls/ca.pem
+      GRPC_TLS_CLIENT_AUTH: require
+      ACS_CORE_CLIENT_SANS: spiffe://mailos-p1-cross/iam
+      ACS_AUDIT_SIGNING_KEY_FILE: /etc/acs/tls/audit-signing.pem
+      ACS_GRANTS_RESYNC: 10s
+    env_file: [{path: "${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/env/acs-core.env"}]
+    depends_on:
+      acs-migrate-schema: {condition: service_completed_successfully}
+
+  # The app gateway: MailOS calls it over gRPC with its client certificate
+  # and an IAM token for api://acs bound to it.
+  acs:
+    <<: [*acs, *acs-volumes]
+    entrypoint: ["/app/acs"]
+    environment:
+      <<: *acs-env
+      ACS_ROLE: apps
+      GRPC_HOST: 127.0.0.1
+      GRPC_PORT: "27690"
+      OPS_PORT: "27694"
+      AUTHZEN_PORT: "27693"
+      GRPC_TLS_CERT_FILE: /etc/acs/tls/acs-server.crt
+      GRPC_TLS_KEY_FILE: /etc/acs/tls/acs-server.key
+      GRPC_TLS_CLIENT_CA_FILE: /etc/acs/tls/ca.pem
+      GRPC_TLS_CLIENT_AUTH: require
+      ACS_OAUTH_ISSUER: http://127.0.0.1:27680
+      ACS_OAUTH_JWKS_URL: https://127.0.0.1:27643/.well-known/jwks.json
+      ACS_OAUTH_JWKS_CA_FILE: /etc/acs/tls/ca.pem
+      ACS_OAUTH_JWKS_MIN_REFETCH: 2s
+      REDIS_ADDR: 127.0.0.1:27679
+      REDIS_DB: "1"
+      ACS_QUOTA_REPLICAS: "1"
+      ACS_AUDIT_SIGNING_KEY_FILE: /etc/acs/tls/audit-signing.pem
+      ACS_REGISTRY_CI_SUBMIT: "true"
+      ACS_GRANTS_RESYNC: 10s
+    env_file: [{path: "${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/env/acs.env"}]
+    depends_on:
+      acs-core: {condition: service_started}
+      redis: {condition: service_healthy}
+
+  ms:
+    <<: *go
+    profiles: [mailos]
+    working_dir: /src/mailos-server
+    command: ["bash", "/cross/ms.sh"]
+    volumes:
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/src/mailos-server:/src/mailos-server:ro
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/go:/gocache
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/work/ms:/work
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/ms:/secrets/ms:ro
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/env:/secrets/env:ro
+      - ./ms.sh:/cross/ms.sh:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:27681/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 120
+      start_period: 300s
+    mem_limit: 2g
+
+  # The MailOS console in its platform plane (CONSOLE_PLANE=platform), its
+  # OIDC client the IAM's platform_web connection (/work/mc.env from setup).
+  mc:
+    <<: *node
+    profiles: [mailos]
+    working_dir: /src/mailos-console
+    entrypoint: ["bash", "-c"]
+    command: ['set -a; . /work/mc.env; set +a; exec npx next start -H 127.0.0.1 -p 27685']
+    environment:
+      HOME: /tmp/home
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      CONSOLE_PLANE: platform
+      APP_URL: http://localhost:27685
+      IAM_ISSUER: http://127.0.0.1:27680
+      OAUTH_SCOPES: openid profile email offline_access
+      MAILOS_API_URL: http://127.0.0.1:27681
+      IAM_CONSOLE_URL: http://localhost:27675
+    volumes:
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/src/mailos-console:/src/mailos-console
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/work/mc:/work:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:27685/api/health"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+    mem_limit: 1g
+
+  # Playwright: e2e/cross of the MailOS console (setup and specs).
+  pw:
+    <<: *node
+    profiles: [test]
+    working_dir: /src/mailos-console
+    environment:
+      HOME: /tmp/home
+      CI: "1"
+      NEXT_TELEMETRY_DISABLED: "1"
+      CROSS_IAM_URL: http://127.0.0.1:27680
+      CROSS_IAM_LENIENT_URL: http://127.0.0.1:27688
+      CROSS_IAM_TLS_URL: https://127.0.0.1:27643
+      CROSS_IAM_CONSOLE_URL: http://localhost:27675
+      CROSS_MC_URL: http://localhost:27685
+      CROSS_MS_URL: http://127.0.0.1:27681
+      CROSS_ACS_GATEWAY: 127.0.0.1:27690
+      CROSS_CI_PORT: "27670"
+      CROSS_SECRETS: /secrets/pw
+      CROSS_WORK: /work
+      CROSS_AUTHZ: /authz
+      CROSS_ACS_PROTO: /acs-proto
+    volumes:
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/src/mailos-console:/src/mailos-console
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/work:/work
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/pw:/secrets/pw:ro
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/src/mailos-server/authz:/authz:ro
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/src/acs/api/proto:/acs-proto:ro
