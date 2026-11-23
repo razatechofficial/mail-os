@@ -32,7 +32,7 @@ func TestWriteCheckExpiryAndDelete(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 	f.Now = func() time.Time { return now }
-	if err := c.Write(ctx, acs.PlatformTenant, []acs.Update{
+	if _, err := c.Write(ctx, acs.PlatformTenant, []acs.Update{
 		acs.Touch(platform, "eligible_platform_auditor", acs.User(alice), time.Time{}),
 		acs.Touch(platform, "platform_auditor", acs.User(alice), now.Add(time.Hour)),
 	}, "k1"); err != nil {
@@ -67,7 +67,7 @@ func TestWriteCheckExpiryAndDelete(t *testing.T) {
 		t.Fatal("an expired activation still grants")
 	}
 	now = now.Add(-2 * time.Second)
-	if err := c.Write(ctx, acs.PlatformTenant, []acs.Update{acs.Delete(platform, "platform_auditor", acs.User(alice))}, ""); err != nil {
+	if _, err := c.Write(ctx, acs.PlatformTenant, []acs.Update{acs.Delete(platform, "platform_auditor", acs.User(alice))}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if ok, _ := c.Check(ctx, acs.PlatformTenant, platform, "view_audit", acs.User(alice)); ok {
@@ -89,15 +89,15 @@ func TestErrors(t *testing.T) {
 	if acs.Reason(err) != "TENANT_NOT_BOUND" || errors.Is(err, acs.ErrUnavailable) {
 		t.Fatalf("tenant scope: %v", err)
 	}
-	err = c.Write(ctx, acs.PlatformTenant, []acs.Update{acs.Touch(platform, "platform_owner", acs.User(alice), time.Time{})}, "")
+	_, err = c.Write(ctx, acs.PlatformTenant, []acs.Update{acs.Touch(platform, "platform_owner", acs.User(alice), time.Time{})}, "")
 	if acs.Reason(err) != "EXPIRY_REQUIRED" {
 		t.Fatalf("activation without expiry: %v", err)
 	}
-	err = c.Write(ctx, acs.PlatformTenant, []acs.Update{acs.Touch(platform, "platform_owner", acs.User(alice), time.Now().Add(9*time.Hour))}, "")
+	_, err = c.Write(ctx, acs.PlatformTenant, []acs.Update{acs.Touch(platform, "platform_owner", acs.User(alice), time.Now().Add(9*time.Hour))}, "")
 	if acs.Reason(err) != "EXPIRY_OUT_OF_RANGE" {
 		t.Fatalf("activation past the horizon: %v", err)
 	}
-	err = c.Write(ctx, acs.PlatformTenant, []acs.Update{acs.Touch(platform, "eligible_platform_owner", acs.Subject{Type: "service_account", ID: "s"}, time.Time{})}, "")
+	_, err = c.Write(ctx, acs.PlatformTenant, []acs.Update{acs.Touch(platform, "eligible_platform_owner", acs.Subject{Type: "service_account", ID: "s"}, time.Time{})}, "")
 	if acs.Reason(err) != "SUBJECT_NOT_PLATFORM" {
 		t.Fatalf("service account subject: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestErrors(t *testing.T) {
 	if _, err := c.CheckEach(ctx, acs.PlatformTenant, platform, []string{"view_overview"}, acs.User(alice)); !errors.Is(err, acs.ErrUnavailable) {
 		t.Fatalf("down, bulk: %v", err)
 	}
-	if err := c.Write(ctx, acs.PlatformTenant, []acs.Update{acs.Delete(platform, "platform_owner", acs.User(alice))}, ""); !errors.Is(err, acs.ErrUnavailable) {
+	if _, err := c.Write(ctx, acs.PlatformTenant, []acs.Update{acs.Delete(platform, "platform_owner", acs.User(alice))}, ""); !errors.Is(err, acs.ErrUnavailable) {
 		t.Fatalf("down, write: %v", err)
 	}
 }

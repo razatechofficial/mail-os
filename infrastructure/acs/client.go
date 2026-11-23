@@ -225,7 +225,8 @@ func (c *Client) ctx(ctx context.Context) (context.Context, context.CancelFunc) 
 func (c *Client) Check(ctx context.Context, scope string, res Object, perm string, sub Subject) (bool, error) {
 	cctx, cancel := c.ctx(ctx)
 	defer cancel()
-	resp, err := c.authz.Check(cctx, &acsv1.CheckRequest{Tenant: tenant(scope), Resource: res.ref(), Permission: perm, Subject: sub.ref()})
+	resp, err := c.authz.Check(cctx, &acsv1.CheckRequest{Tenant: tenant(scope), Resource: res.ref(), Permission: perm, Subject: sub.ref(),
+		Consistency: consistencyOf(ctx)})
 	if err != nil {
 		return false, mapError(ctx, err)
 	}
@@ -241,7 +242,7 @@ func (c *Client) CheckEach(ctx context.Context, scope string, res Object, perms 
 	out := make([]bool, 0, len(perms))
 	for start := 0; start < len(perms); start += maxBulk {
 		end := min(start+maxBulk, len(perms))
-		req := &acsv1.CheckBulkRequest{Tenant: tenant(scope)}
+		req := &acsv1.CheckBulkRequest{Tenant: tenant(scope), Consistency: consistencyOf(ctx)}
 		for _, p := range perms[start:end] {
 			req.Items = append(req.Items, &acsv1.CheckRequest{Resource: res.ref(), Permission: p, Subject: sub.ref()})
 		}
@@ -277,7 +278,8 @@ func (c *Client) Read(ctx context.Context, scope string, f Filter) ([]Relationsh
 	cursor := ""
 	for range maxReadPages {
 		cctx, cancel := c.ctx(ctx)
-		resp, err := c.rel.ReadRelationships(cctx, &acsv1.ReadRelationshipsRequest{Tenant: tenant(scope), Filter: filter, PageSize: 100, Cursor: cursor})
+		resp, err := c.rel.ReadRelationships(cctx, &acsv1.ReadRelationshipsRequest{Tenant: tenant(scope), Filter: filter, PageSize: 100, Cursor: cursor,
+			Consistency: consistencyOf(ctx)})
 		cancel()
 		if err != nil {
 			return nil, mapError(ctx, err)
@@ -301,9 +303,11 @@ func (c *Client) Read(ctx context.Context, scope string, f Filter) ([]Relationsh
 	return nil, fmt.Errorf("acs: read of %s returned more than %d pages", f.ResourceType, maxReadPages)
 }
 
-// Write applies updates atomically in scope. idempotencyKey, when set,
-// makes a retry within 24 h return the first result.
-func (c *Client) Write(ctx context.Context, scope string, updates []Update, idempotencyKey string) error {
+// Write applies updates atomically in scope and returns ACS's ZedToken of
+// the write, for later reads at least as fresh (AtLeastAsFresh).
+// idempotencyKey, when set, makes a retry within 24 h return the first
+// result.
+func (c *Client) Write(ctx context.Context, scope string, updates []Update, idempotencyKey string) (string, error) {
 	req := &acsv1.WriteRelationshipsRequest{Tenant: tenant(scope), IdempotencyKey: idempotencyKey}
 	for _, u := range updates {
 		op := acsv1.RelationshipUpdate_OPERATION_TOUCH
@@ -318,6 +322,30 @@ func (c *Client) Write(ctx context.Context, scope string, updates []Update, idem
 	}
 	cctx, cancel := c.ctx(ctx)
 	defer cancel()
-	_, err := c.rel.WriteRelationships(cctx, req)
-	return mapError(ctx, err)
+	resp, err := c.rel.WriteRelationships(cctx, req)
+	if err != nil {
+		return "", mapError(ctx, err)
+	}
+	return resp.GetWrittenAt().GetToken(), nil
+}
+
+type freshKey struct{}
+
+// AtLeastAsFresh makes the Check, CheckEach and Read calls made with ctx
+// answer from data at least as fresh as token (a ZedToken from Write), so
+// a role ended or granted a moment ago is seen at once. An empty token
+// leaves ACS's default (minimize_latency).
+func AtLeastAsFresh(ctx context.Context, token string) context.Context {
+	if token == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, freshKey{}, token)
+}
+
+func consistencyOf(ctx context.Context) *acsv1.Consistency {
+	tok, _ := ctx.Value(freshKey{}).(string)
+	if tok == "" {
+		return nil
+	}
+	return &acsv1.Consistency{Requirement: &acsv1.Consistency_AtLeastAsFresh{AtLeastAsFresh: &acsv1.ZedToken{Token: tok}}}
 }
