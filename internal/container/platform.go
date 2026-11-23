@@ -7,6 +7,7 @@ import (
 	"github.com/razatechofficial/mail-os/application/platform"
 	"github.com/razatechofficial/mail-os/application/platformroles"
 	"github.com/razatechofficial/mail-os/infrastructure/acs"
+	"github.com/razatechofficial/mail-os/infrastructure/cache/redis"
 	"github.com/razatechofficial/mail-os/infrastructure/jwt"
 	"github.com/razatechofficial/mail-os/infrastructure/persistence/postgres"
 	"github.com/razatechofficial/mail-os/pkg/logger"
@@ -39,7 +40,7 @@ func (c *Container) buildPlatform(context.Context) error {
 		return fmt.Errorf("acs: %w", err)
 	}
 	c.closers = append(c.closers, func() { _ = client.Close() })
-	roles := acs.Platform{Client: client}
+	roles := acs.Platform{Client: client, Tokens: redis.ZedTokens{C: c.Redis}}
 	c.PlatformGuard = middleware.PlatformGuard{ACS: roles, Audit: c.Audit}
 	approvals := jwt.NewVerifier(jwt.Config{Issuer: cfg.IAM.Issuer, JWKSURL: c.Verifier.Issuer() + approvalJWKSPath,
 		CacheTTL: cfg.IAM.JWKSCacheTTL, ClockSkew: cfg.IAM.ClockSkew, HTTPClient: c.iamHTTP})
