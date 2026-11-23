@@ -49,7 +49,10 @@ node_build() {
   waitload
   docker run --rm --name "$PROJECT-build-$name" --network host --user "$CROSS_UID:$CROSS_GID" \
     -e HOME=/tmp/home -e NEXT_TELEMETRY_DISABLED=1 -e NODE_OPTIONS=--max-old-space-size=4096 \
-    -v "$dir:/app" -w /app "$PW_IMAGE" bash -c "$cmd"
+    -v "$dir:/app" -w /app "$PW_IMAGE" bash -c "$cmd" ||
+    { echo "$name: retrying once (a registry hiccup)"; sleep 20; docker run --rm --name "$PROJECT-build-$name" --network host \
+      --user "$CROSS_UID:$CROSS_GID" -e HOME=/tmp/home -e NEXT_TELEMETRY_DISABLED=1 -e NODE_OPTIONS=--max-old-space-size=4096 \
+      -v "$dir:/app" -w /app "$PW_IMAGE" bash -c "$cmd"; }
 }
 
 build() {
