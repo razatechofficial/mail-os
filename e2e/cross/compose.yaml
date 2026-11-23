@@ -126,7 +126,7 @@ services:
     working_dir: /src/iam-server
     command: ["bash", "/cross/iam.sh", "main"]
     volumes:
-      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/src/iam-server:/src/iam-server:ro
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/src/iam-server:/src/iam-server
       - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/go:/gocache
       - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/work/iam:/work
       - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/iam:/secrets/iam:ro
@@ -150,7 +150,7 @@ services:
     working_dir: /src/iam-server
     command: ["bash", "/cross/iam.sh", "lenient"]
     volumes:
-      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/src/iam-server:/src/iam-server:ro
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/src/iam-server:/src/iam-server
       - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/work/iam:/work
       - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/iam:/secrets/iam:ro
       - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/env:/secrets/env:ro
@@ -285,7 +285,7 @@ services:
     working_dir: /src/mailos-server
     command: ["bash", "/cross/ms.sh"]
     volumes:
-      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/src/mailos-server:/src/mailos-server:ro
+      - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/src/mailos-server:/src/mailos-server
       - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/go:/gocache
       - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/work/ms:/work
       - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/ms:/secrets/ms:ro
