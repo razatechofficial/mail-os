@@ -16,6 +16,10 @@ e2e/cross/push.sh test
 e2e/cross/push.sh clean      # down, and remove the ACS image the stack built
 ```
 
+`CROSS_PASSKEY_RULE=false` (set for `up` and `test` alike) runs the IAM with
+`MFA_PLATFORM_ADMIN_PHISHING_RESISTANT=false`: a platform account with only an
+authenticator app then signs in to the Platform Console with it.
+
 On the VPS, `run.sh up|test|down|clean|all|logs [service]` from
 `$CROSS_HOME/src/mailos-server/e2e/cross` (default `CROSS_HOME=/opt/mailos-p1-test/cross`).
 The compose project is `mailos-p1-cross`; heavy steps wait while the 1-minute load is above 6.
@@ -27,7 +31,7 @@ The compose project is `mailos-p1-cross`; heavy steps wait while the 1-minute lo
 | pg | 27632 | Postgres: iam, acs, spicedb, mail_os |
 | spicedb | 27651 | one SpiceDB for the IAM and ACS |
 | redis, redis-ms | 27679, 27678 | the IAM's and ACS's Redis; MailOS's |
-| iam | 27680 | IAM server (`iam.sh main`), `MFA_PLATFORM_ADMIN_PHISHING_RESISTANT=true` |
+| iam | 27680 | IAM server (`iam.sh main`), `MFA_PLATFORM_ADMIN_PHISHING_RESISTANT=true` (`CROSS_PASSKEY_RULE`) |
 | iam-lenient | 27688 | the same IAM without the passkey rule, during setup only |
 | iam-tls | 27643 | TLS in front of the IAM (client certificates for ACS tokens) |
 | ic | 27675 | IAM console: the hosted sign-in (WebAuthn RP `localhost`) |

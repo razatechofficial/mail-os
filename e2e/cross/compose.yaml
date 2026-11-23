@@ -125,6 +125,8 @@ services:
     <<: *go
     working_dir: /src/iam-server
     command: ["bash", "/cross/iam.sh", "main"]
+    # CROSS_PASSKEY_RULE=false runs it with MFA_PLATFORM_ADMIN_PHISHING_RESISTANT off.
+    environment: {<<: *goenv, CROSS_PASSKEY_RULE: "${CROSS_PASSKEY_RULE:-true}"}
     volumes:
       - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/src/iam-server:/src/iam-server
       - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/go:/gocache
@@ -349,6 +351,7 @@ services:
       CROSS_WORK: /work
       CROSS_AUTHZ: /authz
       CROSS_ACS_PROTO: /acs-proto
+      CROSS_PASSKEY_RULE: "${CROSS_PASSKEY_RULE:-true}"
     volumes:
       - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/src/mailos-console:/src/mailos-console
       - ${CROSS_HOME:-/opt/mailos-p1-test/cross}/work:/work

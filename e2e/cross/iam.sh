@@ -19,7 +19,8 @@ mkdir -p /work/bin
 
 case "${1:-main}" in
   main)
-    echo "iam: building"
+    export MFA_PLATFORM_ADMIN_PHISHING_RESISTANT="${CROSS_PASSKEY_RULE:-true}"
+    echo "iam: building (MFA_PLATFORM_ADMIN_PHISHING_RESISTANT=$MFA_PLATFORM_ADMIN_PHISHING_RESISTANT)"
     go build -o /work/bin/ ./cmd/server ./cmd/migrate-postgres ./cmd/migrate-spicedb ./cmd/init
     /work/bin/migrate-postgres up
     # ACS's schema writer owns the shared SpiceDB: it writes its core (v3)
