@@ -57,6 +57,23 @@ type ACS struct {
 	rels        map[string]rel
 	unavailable bool
 	calls       []string
+	fresh       []string
+}
+
+// note records the ZedToken a read asked to be at least as fresh as ("" for
+// minimize_latency). The fake always answers from its newest data.
+func (a *ACS) note(c *acsv1.Consistency) {
+	a.mu.Lock()
+	a.fresh = append(a.fresh, c.GetAtLeastAsFresh().GetToken())
+	a.mu.Unlock()
+}
+
+// Freshness lists, per Check, CheckBulk and ReadRelationships call, the
+// token it asked to be at least as fresh as ("" when none).
+func (a *ACS) Freshness() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]string(nil), a.fresh...)
 }
 
 // New returns an empty fake.
@@ -186,6 +203,7 @@ func (a *ACS) Check(ctx context.Context, req *acsv1.CheckRequest) (*acsv1.CheckR
 	if err := a.enter(ctx, "Check", req.GetTenant(), req.GetResource().GetObjectType()); err != nil {
 		return nil, err
 	}
+	a.note(req.GetConsistency())
 	return &acsv1.CheckResponse{Decision: a.decide(req)}, nil
 }
 
@@ -196,6 +214,7 @@ func (a *ACS) CheckBulk(ctx context.Context, req *acsv1.CheckBulkRequest) (*acsv
 	if err := a.enter(ctx, "CheckBulk", req.GetTenant(), req.GetItems()[0].GetResource().GetObjectType()); err != nil {
 		return nil, err
 	}
+	a.note(req.GetConsistency())
 	out := &acsv1.CheckBulkResponse{}
 	for _, it := range req.GetItems() {
 		out.Items = append(out.Items, &acsv1.CheckBulkResponse_Item{Result: &acsv1.CheckBulkResponse_Item_Response{
@@ -209,6 +228,7 @@ func (a *ACS) ReadRelationships(ctx context.Context, req *acsv1.ReadRelationship
 	if err := a.enter(ctx, "ReadRelationships", req.GetTenant(), f.GetResourceType()); err != nil {
 		return nil, err
 	}
+	a.note(req.GetConsistency())
 	now := a.Now()
 	a.mu.Lock()
 	defer a.mu.Unlock()
