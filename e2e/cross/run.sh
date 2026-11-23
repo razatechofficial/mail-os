@@ -94,12 +94,14 @@ up() {
   mkdir -p "$CROSS_HOME/go" "$CROSS_HOME/work/iam" "$CROSS_HOME/work/ms" "$CROSS_HOME/work/mc" "$CROSS_HOME/work/state" \
     "$CROSS_HOME/work/results"
   waitload
-  "${DC[@]}" up -d --wait --wait-timeout 900 pg spicedb redis redis-ms iam
-  "${DC[@]}" up -d iam-tls
+  "${DC[@]}" up -d --wait --wait-timeout 300 pg spicedb redis redis-ms
+  # ACS's schema writer first, into the empty SpiceDB (its core v3), then the IAM.
   "${DC[@]}" up -d --no-deps acs-migrate-db
   job_ok acs-migrate-db
   "${DC[@]}" up -d --no-deps acs-migrate-schema
   job_ok acs-migrate-schema
+  "${DC[@]}" up -d --wait --wait-timeout 900 --no-deps iam
+  "${DC[@]}" up -d iam-tls
   "${DC[@]}" up -d --no-deps acs-core acs-applier
   ready 27692 /readyz acs-core
   "${DC[@]}" up -d --no-deps acs

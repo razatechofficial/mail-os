@@ -22,7 +22,13 @@ case "${1:-main}" in
     echo "iam: building"
     go build -o /work/bin/ ./cmd/server ./cmd/migrate-postgres ./cmd/migrate-spicedb ./cmd/init
     /work/bin/migrate-postgres up
-    /work/bin/migrate-spicedb write
+    # ACS's schema writer owns the shared SpiceDB: it writes its core (v3)
+    # into the empty SpiceDB before the IAM starts, so the IAM's own core
+    # (v2) is not written here (ACS adopts a live core only if it is its
+    # own; IAM_SPICEDB_WRITE=true restores the IAM-only order).
+    if [ "${IAM_SPICEDB_WRITE:-false}" = true ]; then
+      /work/bin/migrate-spicedb write
+    fi
     if [ ! -f /work/bootstrap.sentinel ]; then
       /work/bin/init init --non-interactive --email superadmin@iam.local --password-stdin </secrets/iam/superadmin.pw
     fi

@@ -202,9 +202,10 @@ services:
     env_file: [{path: "${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/env/acs-migrate.env"}]
     depends_on: {pg: {condition: service_healthy}}
 
-  # acs-migrate schema write: as acs_applier, ACS's core composed with the
-  # applied modules, written over the IAM's core (the IAM writes its own
-  # first, at start). acs-core starts only after it and never writes it.
+  # acs-migrate schema write: as acs_applier, ACS's core (v3) composed with
+  # the applied modules, written into the empty SpiceDB before the IAM
+  # starts (the IAM's own core is v2, which ACS does not adopt). acs-core
+  # starts only after it and never writes it.
   acs-migrate-schema:
     <<: [*acs, *acs-volumes]
     restart: "no"
@@ -214,7 +215,7 @@ services:
     env_file: [{path: "${CROSS_HOME:-/opt/mailos-p1-test/cross}/secrets/env/acs-applier.env"}]
     depends_on:
       acs-migrate-db: {condition: service_completed_successfully}
-      iam-tls: {condition: service_started}
+      spicedb: {condition: service_healthy}
 
   # acs-migrate apply loop: re-verifies each queued change's attestation
   # against the IAM's approval key set and applies it (every 2 s here).
