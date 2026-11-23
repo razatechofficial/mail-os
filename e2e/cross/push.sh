@@ -8,7 +8,7 @@
 #   IAM_SERVER_SRC   default: the IAM server's mailos-platform-plane worktree
 #   IAM_CONSOLE_SRC  default: the IAM console's mailos-platform-plane worktree
 #   ACS_SRC          default: the ACS mailos-platform-subjects worktree
-#   MAILOS_CONSOLE_SRC default: the MailOS console's platform-phase1-cross worktree
+#   MAILOS_CONSOLE_SRC default: the MailOS console's platform-phase1 worktree
 #   CROSS_VPS        default ansible@13.140.212.153
 #   CROSS_HOME       default /opt/mailos-p1-test/cross
 set -euo pipefail
@@ -17,7 +17,7 @@ PROD=$(cd "$ROOT/../../../../.." && pwd)
 IAM_SERVER_SRC=${IAM_SERVER_SRC:-$PROD/iam/server/.claude/worktrees/mailos-platform-plane}
 IAM_CONSOLE_SRC=${IAM_CONSOLE_SRC:-$PROD/iam/client/.claude/worktrees/mailos-platform-plane}
 ACS_SRC=${ACS_SRC:-$PROD/acs/server/.claude/worktrees/mailos-platform-subjects}
-MAILOS_CONSOLE_SRC=${MAILOS_CONSOLE_SRC:-$PROD/mailOS/client/.claude/worktrees/platform-phase1-cross}
+MAILOS_CONSOLE_SRC=${MAILOS_CONSOLE_SRC:-$PROD/mailOS/client/.claude/worktrees/platform-phase1}
 VPS=${CROSS_VPS:-ansible@13.140.212.153}
 CROSS_HOME=${CROSS_HOME:-/opt/mailos-p1-test/cross}
 TMP=$(mktemp -d)
