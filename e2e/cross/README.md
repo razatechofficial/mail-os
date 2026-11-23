@@ -42,6 +42,12 @@ its test-only mail sink (invitations are read from it, never sent).
 
 ## Order
 
+`run.sh up` starts the stores, then ACS's `acs-migrate db up` and `schema write`
+into the empty SpiceDB (ACS core v3), then the IAM without its own SpiceDB write
+(`IAM_SPICEDB_WRITE=false`: ACS adopts a live core only if it is exactly its own,
+and the IAM branch writes core v2), then acs-core, the applier, the gateway and the
+IAM console.
+
 `run.sh test` runs the console's Playwright project `iam-setup` (platform
 owners and accounts, the platform application, MailOS's home workspace, ACS
 registration, module, grant and platform binding, all through the IAM's API),
