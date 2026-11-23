@@ -23,9 +23,10 @@ case "${1:-main}" in
     go build -o /work/bin/ ./cmd/server ./cmd/migrate-postgres ./cmd/migrate-spicedb ./cmd/init
     /work/bin/migrate-postgres up
     # ACS's schema writer owns the shared SpiceDB: it writes its core (v3)
-    # into the empty SpiceDB before the IAM starts, so the IAM's own core
-    # (v2) is not written here (ACS adopts a live core only if it is its
-    # own; IAM_SPICEDB_WRITE=true restores the IAM-only order).
+    # into the empty SpiceDB before the IAM starts. The IAM's core is the
+    # same v3 byte for byte now (its write changes nothing), but ACS owns the
+    # shared schema, so the write stays off here (IAM_SPICEDB_WRITE=true
+    # restores the IAM-only order).
     if [ "${IAM_SPICEDB_WRITE:-false}" = true ]; then
       /work/bin/migrate-spicedb write
     fi
