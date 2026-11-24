@@ -286,3 +286,52 @@ func TestPlatformRoutesReturnNoTenantContent(t *testing.T) {
 		}
 	}
 }
+
+// The IAM's break-glass activation (ADR 0001 §3.4 rule 6): an emergency
+// account activates platform_owner alone, so the attestation carries
+// break_glass true, no approver and an end within an hour of iat. MailOS
+// applies it for the three second-approver roles only, and refuses a
+// longer window or any other role (400), changing nothing.
+func TestBreakGlassAttestation(t *testing.T) {
+	sub := uuid.NewString()
+	for _, role := range []string{"platform_owner", "platform_operator"} {
+		if s := fx.Env.PlatformRole(t, sub, role, "add", 0); s != http.StatusNoContent {
+			t.Fatalf("eligibility %s: %d", role, s)
+		}
+	}
+	anon := fx.Env.NewClient()
+	deliver := func(role string, d time.Duration, extra map[string]any) *harness.Response {
+		claims := map[string]any{"op": "mailos.role_activation", "action": "activate", "sub": sub, "role": role,
+			"activation_id": uuid.NewString(), "requested_by": sub, "break_glass": true, "active_until": time.Now().Add(d).Unix()}
+		for k, v := range extra {
+			claims[k] = v
+		}
+		return anon.Do(t, http.MethodPost, "/api/platform/v1/role-attestations", map[string]any{"attestation": fx.Env.Attestation(t, claims)})
+	}
+	c := fx.Env.Platform(t, sub)
+	for name, res := range map[string]*harness.Response{
+		"platform_operator":    deliver("platform_operator", 30*time.Minute, nil),
+		"owner for two hours":  deliver("platform_owner", 2*time.Hour, nil),
+		"break_glass a string": deliver("platform_owner", 30*time.Minute, map[string]any{"break_glass": "true"}),
+	} {
+		if res.Status != http.StatusBadRequest {
+			t.Errorf("break-glass %s = %s, want 400", name, res)
+		}
+	}
+	c.ExpectError(t, http.StatusForbidden, "FORBIDDEN", http.MethodGet, "/api/platform/v1/connectors", nil)
+
+	if res := deliver("platform_owner", 55*time.Minute, nil); res.Status != http.StatusNoContent {
+		t.Fatalf("break-glass platform_owner = %s, want 204", res)
+	}
+	var me struct {
+		Roles []struct {
+			Role      string    `json:"role"`
+			ExpiresAt time.Time `json:"expires_at"`
+		} `json:"roles"`
+	}
+	c.Expect(t, http.StatusOK, http.MethodGet, "/api/platform/v1/me", nil).Decode(t, &me)
+	if len(me.Roles) != 1 || me.Roles[0].Role != "platform_owner" || me.Roles[0].ExpiresAt.After(time.Now().Add(time.Hour)) {
+		t.Fatalf("me after break-glass: %+v", me)
+	}
+	c.Expect(t, http.StatusOK, http.MethodGet, "/api/platform/v1/connectors", nil)
+}
