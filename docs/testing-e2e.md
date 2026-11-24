@@ -44,6 +44,7 @@ docker compose -f docker-compose.test.yaml down -v
 | `IAM_AUDIENCE`, `IAM_CONSOLE_AUDIENCES` | `mailos`, `mailos-console` | The fake IAM's defaults for `aud` and `client_id` |
 | `IAM_SERVICE_CLIENT_ID`, `IAM_SERVICE_TENANT_ID`, `IAM_SERVICE_TOPICS` | `mailos-iam`, a new UUID per `up`, `iam.*` | IAM's own client, seeded as the system application of that tenant (contract §1). Every other caller is an application a test registers |
 | `ACS_ENDPOINT`, `ACS_CLIENT_ID`, `ACS_TOKEN_URL`, `ACS_INSECURE` | the fake ACS (`127.0.0.1:18184`), `mailos-acs`, the fake IAM's `/oauth/token`, `true` | The platform API's checks and role writes go to the fake ACS over plaintext gRPC with a client-credentials token |
+| `PLATFORM_CLIENT_IDS` | `mailos-platform-console` | The platform console's client, the only `azp` the platform API accepts (contract C2). The fake IAM's platform tokens carry a passkey `acr` and a recent `auth_time` unless a test asks otherwise |
 | `KEY_MANAGER_MASTER_KEY` | random per work dir | Required everywhere |
 | `MAILOS_E2E_HOOKS`, `MAILOS_E2E_HOOKS_TOKEN` | `true`, random 48 characters | Capture mail, serve `/e2e/v1` |
 | `FEATURE_PUBSUB_INGEST`, `FEATURE_AUDIT_STREAM` | `false` | There is no broker in the stack (yet) |
