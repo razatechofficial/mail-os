@@ -16,6 +16,11 @@ e2e/cross/push.sh test
 e2e/cross/push.sh clean      # down, and remove the ACS image the stack built
 ```
 
+Every container is capped at `CROSS_CPUS` CPUs (default 2; the VPS also runs
+UAT). `CROSS_PROJECT` names the compose project and the containers (default
+`mailos-p1-cross`), and heavy steps wait while the 1-minute load is above
+`CROSS_LOAD_MAX` (default 6).
+
 `CROSS_PASSKEY_RULE=false` (set for `up` and `test` alike) runs the IAM with
 `MFA_PLATFORM_ADMIN_PHISHING_RESISTANT=false`: a platform account with only an
 authenticator app then signs in to the console's platform pages with it.

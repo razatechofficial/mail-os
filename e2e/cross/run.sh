@@ -19,17 +19,19 @@ cd "$(dirname "$0")"
 export CROSS_HOME=${CROSS_HOME:-/opt/mailos-p1-test/cross}
 export CROSS_UID=${CROSS_UID:-$(id -u)} CROSS_GID=${CROSS_GID:-$(id -g)}
 export ACS_COMMIT=${ACS_COMMIT:-$(cat "$CROSS_HOME/src/acs/.commit" 2>/dev/null || echo unknown)}
-PROJECT=mailos-p1-cross
+PROJECT=${CROSS_PROJECT:-mailos-p1-cross}
 DC=(docker compose -p "$PROJECT" -f compose.yaml)
 DCA=("${DC[@]}" --profile lenient --profile mailos --profile test)
 PW_IMAGE=mcr.microsoft.com/playwright:v1.64.1-noble
 
-# waitload: heavy steps wait while the VPS's 1-minute load is above 6.
+# waitload: heavy steps wait while the VPS's 1-minute load is above
+# CROSS_LOAD_MAX (6). Every container is capped at CROSS_CPUS CPUs (2): the
+# VPS also runs UAT.
 waitload() {
   local l
   while :; do
     l=$(cut -d' ' -f1 /proc/loadavg)
-    awk "BEGIN{exit !($l < 6)}" && return 0
+    awk "BEGIN{exit !($l < ${CROSS_LOAD_MAX:-6})}" && return 0
     echo "load $l: waiting"
     sleep 30
   done
@@ -38,7 +40,7 @@ waitload() {
 secrets() {
   [ -s "$CROSS_HOME/secrets/env/ms.env" ] && return 0
   mkdir -p "$CROSS_HOME/secrets"
-  docker run --rm --name "$PROJECT-secrets" --user 0 -e HOST_UID="$CROSS_UID" -e HOST_GID="$CROSS_GID" \
+  docker run --rm --cpus "${CROSS_CPUS:-2}" --name "$PROJECT-secrets" --user 0 -e HOST_UID="$CROSS_UID" -e HOST_GID="$CROSS_GID" \
     -v "$PWD/gen-secrets.sh:/gen.sh:ro" -v "$CROSS_HOME/secrets:/out" alpine:3.22 \
     sh -c 'apk add -q --no-cache bash openssl >/dev/null && bash /gen.sh'
 }
@@ -47,10 +49,10 @@ secrets() {
 node_build() {
   local name=$1 dir=$2 cmd=$3
   waitload
-  docker run --rm --name "$PROJECT-build-$name" --network host --user "$CROSS_UID:$CROSS_GID" \
+  docker run --rm --cpus "${CROSS_CPUS:-2}" --name "$PROJECT-build-$name" --network host --user "$CROSS_UID:$CROSS_GID" \
     -e HOME=/tmp/home -e NEXT_TELEMETRY_DISABLED=1 -e NODE_OPTIONS=--max-old-space-size=4096 \
     -v "$dir:/app" -w /app "$PW_IMAGE" bash -c "$cmd" ||
-    { echo "$name: retrying once (a registry hiccup)"; sleep 20; docker run --rm --name "$PROJECT-build-$name" --network host \
+    { echo "$name: retrying once (a registry hiccup)"; sleep 20; docker run --rm --cpus "${CROSS_CPUS:-2}" --name "$PROJECT-build-$name" --network host \
       --user "$CROSS_UID:$CROSS_GID" -e HOME=/tmp/home -e NEXT_TELEMETRY_DISABLED=1 -e NODE_OPTIONS=--max-old-space-size=4096 \
       -v "$dir:/app" -w /app "$PW_IMAGE" bash -c "$cmd"; }
 }

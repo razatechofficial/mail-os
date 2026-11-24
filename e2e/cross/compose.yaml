@@ -61,6 +61,7 @@ x-acs-volumes: &acs-volumes
 
 services:
   pg:
+    cpus: ${CROSS_CPUS:-2}
     image: postgres:18.7-alpine
     network_mode: host
     command: ["postgres", "-c", "listen_addresses=127.0.0.1", "-c", "track_commit_timestamp=on", "-c", "max_connections=300"]
@@ -76,6 +77,7 @@ services:
     mem_limit: 1g
 
   spicedb-migrate:
+    cpus: ${CROSS_CPUS:-2}
     image: authzed/spicedb:v1.57.1
     network_mode: host
     command: ["datastore", "migrate", "head", "--datastore-engine=postgres"]
@@ -84,6 +86,7 @@ services:
     restart: on-failure
 
   spicedb:
+    cpus: ${CROSS_CPUS:-2}
     image: authzed/spicedb:v1.57.1
     network_mode: host
     command: ["serve", "--datastore-engine=postgres", "--grpc-addr=127.0.0.1:27651", "--http-enabled=false",
@@ -98,6 +101,7 @@ services:
     mem_limit: 512m
 
   redis:
+    cpus: ${CROSS_CPUS:-2}
     image: redis:7.4-alpine
     network_mode: host
     entrypoint: ["/bin/sh", "-c"]
@@ -111,6 +115,7 @@ services:
     mem_limit: 192m
 
   redis-ms:
+    cpus: ${CROSS_CPUS:-2}
     image: redis:7.4-alpine
     network_mode: host
     command: ["redis-server", "--bind", "127.0.0.1", "--port", "27678", "--save", "", "--appendonly", "no"]
@@ -122,6 +127,7 @@ services:
     mem_limit: 128m
 
   iam:
+    cpus: ${CROSS_CPUS:-2}
     <<: *go
     working_dir: /src/iam-server
     command: ["bash", "/cross/iam.sh", "main"]
@@ -147,6 +153,7 @@ services:
     mem_limit: 3g
 
   iam-lenient:
+    cpus: ${CROSS_CPUS:-2}
     <<: *go
     profiles: [lenient]
     working_dir: /src/iam-server
@@ -165,6 +172,7 @@ services:
     mem_limit: 1g
 
   iam-tls:
+    cpus: ${CROSS_CPUS:-2}
     image: nginx:1.27-alpine
     network_mode: host
     volumes:
@@ -174,6 +182,7 @@ services:
     mem_limit: 64m
 
   ic:
+    cpus: ${CROSS_CPUS:-2}
     <<: *node
     working_dir: /src/iam-console
     command: ["npx", "next", "start", "-H", "127.0.0.1", "-p", "27675"]
@@ -196,6 +205,7 @@ services:
     mem_limit: 1g
 
   acs-migrate-db:
+    cpus: ${CROSS_CPUS:-2}
     <<: [*acs, *acs-volumes]
     restart: "no"
     entrypoint: ["/app/acs-migrate"]
@@ -209,6 +219,7 @@ services:
   # starts (the IAM's own core is v2, which ACS does not adopt). acs-core
   # starts only after it and never writes it.
   acs-migrate-schema:
+    cpus: ${CROSS_CPUS:-2}
     <<: [*acs, *acs-volumes]
     restart: "no"
     entrypoint: ["/app/acs-migrate"]
@@ -222,6 +233,7 @@ services:
   # acs-migrate apply loop: re-verifies each queued change's attestation
   # against the IAM's approval key set and applies it (every 2 s here).
   acs-applier:
+    cpus: ${CROSS_CPUS:-2}
     <<: [*acs, *acs-volumes]
     entrypoint: ["/app/acs-migrate"]
     command: ["apply", "loop"]
@@ -231,6 +243,7 @@ services:
       acs-migrate-schema: {condition: service_completed_successfully}
 
   acs-core:
+    cpus: ${CROSS_CPUS:-2}
     <<: [*acs, *acs-volumes]
     entrypoint: ["/app/acs"]
     environment:
@@ -254,6 +267,7 @@ services:
   # The app gateway: MailOS calls it over gRPC with its client certificate
   # and an IAM token for api://acs bound to it.
   acs:
+    cpus: ${CROSS_CPUS:-2}
     <<: [*acs, *acs-volumes]
     entrypoint: ["/app/acs"]
     environment:
@@ -283,6 +297,7 @@ services:
       redis: {condition: service_healthy}
 
   ms:
+    cpus: ${CROSS_CPUS:-2}
     <<: *go
     profiles: [mailos]
     working_dir: /src/mailos-server
@@ -306,6 +321,7 @@ services:
   # client) and the platform administrator sign-in (the platform_web
   # client) on one origin (/work/mc.env from setup).
   mc:
+    cpus: ${CROSS_CPUS:-2}
     <<: *node
     profiles: [mailos]
     working_dir: /src/mailos-console
@@ -332,6 +348,7 @@ services:
 
   # Playwright: e2e/cross of the MailOS console (setup and specs).
   pw:
+    cpus: ${CROSS_CPUS:-2}
     <<: *node
     profiles: [test]
     working_dir: /src/mailos-console
