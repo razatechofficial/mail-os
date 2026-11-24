@@ -27,6 +27,7 @@ type Config struct {
 	Redis       Redis       `yaml:"redis"`
 	IAM         IAM         `yaml:"iam"`
 	ACS         ACS         `yaml:"acs"`
+	Platform    Platform    `yaml:"platform"`
 	Idempotency Idempotency `yaml:"idempotency"`
 	StepUp      StepUp      `yaml:"step_up"`
 	Kafka       Kafka       `yaml:"kafka"`
@@ -461,6 +462,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := c.ACS.validate(plaintext); err != nil {
+		return err
+	}
+	if err := c.Platform.validate(c.ACS, c.IAM.ConsoleAudiences); err != nil {
 		return err
 	}
 	if c.Idempotency.TTL < time.Hour || c.Idempotency.TTL > 7*24*time.Hour {

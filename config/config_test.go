@@ -138,7 +138,8 @@ func TestSystemApplicationDefaults(t *testing.T) {
 // plaintext only where the deployment allows it.
 func TestACS(t *testing.T) {
 	acs := map[string]string{"ACS_ENDPOINT": "acs.internal:9443", "ACS_CLIENT_ID": "mailos-acs",
-		"ACS_TOKEN_URL": "https://iam.example.com/oauth/token", "ACS_CERT_FILE": "/tls/acs.crt", "ACS_KEY_FILE": "/tls/acs.key"}
+		"ACS_TOKEN_URL": "https://iam.example.com/oauth/token", "ACS_CERT_FILE": "/tls/acs.crt", "ACS_KEY_FILE": "/tls/acs.key",
+		"PLATFORM_CLIENT_IDS": "6f1d0c2a-4b7e-4d8a-9a51-3c2e7f0b9d14"}
 	with := func(base map[string]string, set map[string]string) map[string]string {
 		out := map[string]string{}
 		for k, v := range base {
@@ -179,9 +180,51 @@ func TestACS(t *testing.T) {
 	t.Run("insecure locally", func(t *testing.T) {
 		_, err := load(t, map[string]string{"APP_ENV": "local", "CONFIG_DIR": "testdata/none", "IAM_ISSUER": "http://127.0.0.1:8080",
 			"KEY_MANAGER_MASTER_KEY": testMasterKey, "ACS_ENDPOINT": "127.0.0.1:9090", "ACS_CLIENT_ID": "mailos-acs",
-			"ACS_TOKEN_URL": "http://127.0.0.1:8080/oauth/token", "ACS_INSECURE": "true"})
+			"ACS_TOKEN_URL": "http://127.0.0.1:8080/oauth/token", "ACS_INSECURE": "true", "PLATFORM_CLIENT_IDS": "mailos-platform-console"})
 		if err != nil {
 			t.Fatal(err)
 		}
 	})
+}
+
+// The platform sign-in rule (contract C2): with the platform API on
+// (ACS_ENDPOINT), the platform console's client is required and may not
+// be a workspace console client; the sign-in may be at most 8 hours old.
+func TestPlatformSignIn(t *testing.T) {
+	acs := map[string]string{"ACS_ENDPOINT": "acs.internal:9443", "ACS_CLIENT_ID": "mailos-acs",
+		"ACS_TOKEN_URL": "https://iam.example.com/oauth/token", "ACS_CERT_FILE": "/tls/acs.crt", "ACS_KEY_FILE": "/tls/acs.key"}
+	env := func(sets ...map[string]string) map[string]string {
+		out := productionEnv()
+		for _, set := range sets {
+			for k, v := range set {
+				out[k] = v
+			}
+		}
+		return out
+	}
+	cfg, err := load(t, env())
+	if err != nil || cfg.Platform.MaxAge.Hours() != 8 || len(cfg.Platform.AllowedClients()) != 0 {
+		t.Fatalf("platform API off: %v %+v", err, cfg.Platform)
+	}
+	cfg, err = load(t, env(acs, map[string]string{"PLATFORM_CLIENT_IDS": " pc-1 , ,pc-2", "PLATFORM_AUTH_MAX_AGE": "4h"}))
+	if err != nil || strings.Join(cfg.Platform.AllowedClients(), "|") != "pc-1|pc-2" || cfg.Platform.MaxAge.Hours() != 4 {
+		t.Fatalf("configured: %v %+v", err, cfg.Platform)
+	}
+	for name, c := range map[string]struct {
+		set  map[string]string
+		want string
+	}{
+		"no client with ACS":    {map[string]string{"PLATFORM_CLIENT_IDS": ""}, "PLATFORM_CLIENT_IDS"},
+		"blank clients":         {map[string]string{"PLATFORM_CLIENT_IDS": " , "}, "PLATFORM_CLIENT_IDS"},
+		"a workspace client":    {map[string]string{"PLATFORM_CLIENT_IDS": "pc-1,Console-1", "IAM_CONSOLE_AUDIENCES": "console-1"}, "IAM_CONSOLE_AUDIENCES"},
+		"longer than a session": {map[string]string{"PLATFORM_CLIENT_IDS": "pc-1", "PLATFORM_AUTH_MAX_AGE": "9h"}, "PLATFORM_AUTH_MAX_AGE"},
+		"too short":             {map[string]string{"PLATFORM_CLIENT_IDS": "pc-1", "PLATFORM_AUTH_MAX_AGE": "30s"}, "PLATFORM_AUTH_MAX_AGE"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := load(t, env(acs, c.set))
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %v, want %q", err, c.want)
+			}
+		})
+	}
 }
