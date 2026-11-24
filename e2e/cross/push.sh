@@ -10,6 +10,7 @@
 #   ACS_SRC          default: the ACS mailos-platform-subjects worktree
 #   MAILOS_CONSOLE_SRC default: the MailOS console's platform-phase1 worktree
 #   CROSS_VPS        default ansible@13.140.212.153
+#   CROSS_PROJECT, CROSS_CPUS, CROSS_LOAD_MAX, CROSS_PASSKEY_RULE: passed to run.sh
 #   CROSS_HOME       default /opt/mailos-p1-test/cross
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -52,5 +53,10 @@ ondisk mailos-server "$ROOT"
 ondisk mailos-console "$MAILOS_CONSOLE_SRC"
 
 if [ $# -gt 0 ]; then
-  ssh "$VPS" "cd '$CROSS_HOME/src/mailos-server/e2e/cross' && CROSS_HOME='$CROSS_HOME' ./run.sh $*"
+  # run.sh's settings set here travel with it.
+  fwd=""
+  for v in CROSS_PROJECT CROSS_CPUS CROSS_LOAD_MAX CROSS_PASSKEY_RULE; do
+    [ -n "${!v:-}" ] && fwd+="$v='${!v}' "
+  done
+  ssh "$VPS" "cd '$CROSS_HOME/src/mailos-server/e2e/cross' && ${fwd}CROSS_HOME='$CROSS_HOME' ./run.sh $*"
 fi
