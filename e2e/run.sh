@@ -30,9 +30,9 @@ IAM_PORT="${MAILOS_E2E_IAM_PORT:-18190}"
 METRICS_PORT="${MAILOS_E2E_METRICS_PORT:-18182}"
 ACS_PORT="${MAILOS_E2E_ACS_PORT:-18184}"
 WORKER_METRICS_PORT="${MAILOS_E2E_WORKER_METRICS_PORT:-18183}"
+# The one MailOS console (workspace and platform sign-in) its Playwright
+# suite runs; both OIDC clients redirect to it, on their own callback paths.
 CONSOLE_ORIGIN="${MAILOS_E2E_CONSOLE_ORIGIN:-http://localhost:3200}"
-# The platform console (CONSOLE_PLANE=platform) its Playwright suite runs.
-PLATFORM_CONSOLE_ORIGIN="${MAILOS_E2E_PLATFORM_CONSOLE_ORIGIN:-http://localhost:3201}"
 PKGS="${MAILOS_E2E_PKGS:-./e2e/...}"
 BASE_URL="http://127.0.0.1:${HTTP_PORT}"
 IAM_URL="http://127.0.0.1:${IAM_PORT}"
@@ -111,7 +111,7 @@ ACS_CLIENT_ID=$ACS_CLIENT
 ACS_TOKEN_URL=$IAM_URL/oauth/token
 ACS_INSECURE=true
 KEY_MANAGER_MASTER_KEY=$(cat "$k/master.key")
-CORS_ORIGINS=$CONSOLE_ORIGIN,$PLATFORM_CONSOLE_ORIGIN
+CORS_ORIGINS=$CONSOLE_ORIGIN
 FEATURE_PUBSUB_INGEST=false
 FEATURE_AUDIT_STREAM=false
 FEATURE_RAW_HTML_BLOCKS=true
@@ -173,7 +173,7 @@ up() {
     -oidc-client-id "$OIDC_CLIENT" -oidc-client-secret-file "$WORK/keys/oidc-client.secret" \
     -oidc-redirect-uris "$CONSOLE_ORIGIN/api/auth/callback" -oidc-post-logout-uris "$CONSOLE_ORIGIN/" \
     -platform-oidc-client-id "$PLATFORM_OIDC_CLIENT" -platform-oidc-client-secret-file "$WORK/keys/platform-oidc-client.secret" \
-    -platform-oidc-redirect-uris "$PLATFORM_CONSOLE_ORIGIN/api/auth/callback" -platform-oidc-post-logout-uris "$PLATFORM_CONSOLE_ORIGIN/" \
+    -platform-oidc-redirect-uris "$CONSOLE_ORIGIN/api/auth/platform/callback" -platform-oidc-post-logout-uris "$CONSOLE_ORIGIN/" \
     -acs-client-id "$ACS_CLIENT" -mailos-url "$BASE_URL"
   wait_http "fake IAM" "$IAM_URL/.well-known/openid-configuration" "$WORK/fakeiam.pid" "$WORK/fakeiam.log"
 
