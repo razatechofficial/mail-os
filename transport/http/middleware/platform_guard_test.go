@@ -24,7 +24,7 @@ func guarded(t *testing.T) (*fakeiam.IAM, *fakeacs.ACS, acs.Platform, *gin.Engin
 	log := &auditLog{}
 	g := PlatformGuard{ACS: roles, Audit: log}
 	r := gin.New()
-	api := r.Group("/api/platform/v1", (&PlatformAuth{Verifier: jwt.NewVerifier(jwt.Config{Issuer: iam.Issuer, Audience: "mailos"})}).Required())
+	api := r.Group("/api/platform/v1", (&PlatformAuth{Verifier: jwt.NewVerifier(jwt.Config{Issuer: iam.Issuer, Audience: "mailos"}), SignIn: consoleSignIn}).Required())
 	ok := func(c *gin.Context) { c.JSON(200, gin.H{"success": true}) }
 	api.GET("/tenants", g.Require(platformrole.ViewTenants), ok)
 	api.GET("/keys", g.Require(platformrole.ManageKeys), ok)
@@ -80,7 +80,7 @@ func TestPlatformGuardFailsClosed(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	iam, _ := fakeiam.NewServer(t)
 	r := gin.New()
-	r.Group("/api/platform/v1", (&PlatformAuth{Verifier: jwt.NewVerifier(jwt.Config{Issuer: iam.Issuer, Audience: "mailos"})}).Required()).
+	r.Group("/api/platform/v1", (&PlatformAuth{Verifier: jwt.NewVerifier(jwt.Config{Issuer: iam.Issuer, Audience: "mailos"}), SignIn: consoleSignIn}).Required()).
 		GET("/tenants", PlatformGuard{}.Require(platformrole.ViewTenants), func(c *gin.Context) { c.Status(200) })
 	if w := call(r, "GET", "/api/platform/v1/tenants", iam.PlatformToken(fakeiam.PlatformUser{})); w.Code != 503 {
 		t.Fatalf("no ACS: %d", w.Code)
