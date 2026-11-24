@@ -208,3 +208,81 @@ func TestPlatformTenantsAreAggregatesOnly(t *testing.T) {
 	// Support sees tenants, not connectors or templates.
 	c.ExpectError(t, http.StatusForbidden, "FORBIDDEN", http.MethodGet, "/api/platform/v1/templates", nil)
 }
+
+// The platform sign-in rule (contract C2): the running server accepts only
+// the platform console's tokens (azp), from a passkey sign-in (acr) no
+// older than 8 hours (auth_time). A weak or old sign-in gets 401 with the
+// RFC 9470 challenge, so the console signs in to the platform again; a
+// token for another client is invalid.
+func TestPlatformSignInRule(t *testing.T) {
+	sub := uuid.NewString()
+	for _, a := range []string{"add", "activate"} {
+		if s := fx.Env.PlatformRole(t, sub, "platform_auditor", a, 600); s != http.StatusNoContent {
+			t.Fatalf("%s: %d", a, s)
+		}
+	}
+	with := func(extra map[string]any) *harness.Client {
+		return fx.Env.NewClient().WithBearer(fx.Env.PlatformToken(t, sub, extra))
+	}
+	with(map[string]any{"auth_time": time.Now().Add(-7 * time.Hour).Unix()}).
+		Expect(t, http.StatusOK, http.MethodGet, "/api/platform/v1/connectors", nil)
+
+	for name, extra := range map[string]map[string]any{
+		"authenticator app sign-in": {"acr": "urn:iam:acr:mfa", "amr": []string{"otp", "mfa"}},
+		"password sign-in":          {"acr": "urn:iam:acr:password", "amr": []string{"pwd"}},
+		"no acr":                    {"acr": nil},
+		"9-hour-old sign-in":        {"auth_time": time.Now().Add(-9 * time.Hour).Unix()},
+		"no auth_time":              {"auth_time": nil},
+	} {
+		c := with(extra)
+		for _, r := range platformRoutes {
+			res := c.ExpectError(t, http.StatusUnauthorized, "INSUFFICIENT_USER_AUTHENTICATION", r.method, r.path, nil)
+			ch := res.Header.Get("WWW-Authenticate")
+			if !strings.Contains(ch, `error="insufficient_user_authentication"`) ||
+				!strings.Contains(ch, `acr_values="urn:iam:acr:phishing-resistant"`) || !strings.Contains(ch, `max_age="28800"`) {
+				t.Errorf("%s on %s %s: challenge %q", name, r.method, r.path, ch)
+			}
+		}
+	}
+	for name, extra := range map[string]map[string]any{
+		"another platform application": {"azp": "another-platform-app", "client_id": "another-platform-app"},
+		"no azp":                       {"azp": nil},
+		"client_id not its azp":        {"client_id": "another-platform-app"},
+	} {
+		c := with(extra)
+		for _, r := range platformRoutes {
+			res := c.ExpectError(t, http.StatusUnauthorized, "UNAUTHORIZED", r.method, r.path, nil)
+			if ch := res.Header.Get("WWW-Authenticate"); !strings.Contains(ch, `error="invalid_token"`) {
+				t.Errorf("%s on %s %s: challenge %q", name, r.method, r.path, ch)
+			}
+		}
+	}
+}
+
+// ADR 0001 rule A4 (until the lockbox ships): no platform route returns
+// tenant content. A message sent in a tenant, with a unique subject, body
+// and recipient, appears on no platform route, whatever role reads it.
+func TestPlatformRoutesReturnNoTenantContent(t *testing.T) {
+	op, _ := fx.NewUser(t, operator)
+	box := fx.Env.NewMailbox("a4")
+	subject := "A4 secret subject " + harness.Unique()
+	bodyText := "a4 secret body " + harness.Unique()
+	op.Expect(t, http.StatusCreated, http.MethodPost, "/api/v1/messages/send", map[string]any{"to_email": box.Address,
+		"subject": subject, "html_body": "<p>" + bodyText + "</p>", "text_body": bodyText})
+
+	sub := uuid.NewString()
+	for _, a := range []string{"add", "activate"} {
+		if s := fx.Env.PlatformRole(t, sub, "platform_owner", a, 600); s != http.StatusNoContent {
+			t.Fatalf("%s: %d", a, s)
+		}
+	}
+	c := fx.Env.Platform(t, sub)
+	for _, r := range platformRoutes {
+		res := c.Expect(t, http.StatusOK, r.method, r.path, nil)
+		for _, needle := range []string{subject, bodyText, box.Address} {
+			if strings.Contains(string(res.Body), needle) {
+				t.Errorf("%s %s shows tenant content %q", r.method, r.path, needle)
+			}
+		}
+	}
+}
