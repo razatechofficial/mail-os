@@ -1,6 +1,6 @@
 #!/bin/bash
-# The cross-repo end-to-end test of MailOS Phase 1 slice 1 (a platform
-# administrator signs in to the MailOS Platform Console) with the real IAM,
+# The cross-repo end-to-end test of MailOS Phase 1 slice 1 (platform and
+# workspace administrators sign in to the one MailOS console) with the real IAM,
 # IAM console, ACS, MailOS server and MailOS console. Runs on the test VPS
 # from $CROSS_HOME/src/mailos-server/e2e/cross (push.sh puts the sources
 # there); every port is 127.0.0.1:276xx; compose project mailos-p1-cross.

@@ -1,9 +1,9 @@
 # Cross-repo e2e: MailOS Phase 1 slice 1
 
-A platform administrator signs in to the MailOS Platform Console, with the
-real components: IAM server, IAM console (hosted sign-in), ACS, MailOS server
-and the MailOS console in its platform plane. The Playwright side lives in the
-console repo under `e2e/cross/`.
+A platform administrator and a workspace administrator sign in to the one
+MailOS console, each through their own sign-in, with the real components: IAM
+server, IAM console (hosted sign-in), ACS, MailOS server and the MailOS
+console. The Playwright side lives in the console repo under `e2e/cross/`.
 
 ## Run
 
@@ -18,7 +18,7 @@ e2e/cross/push.sh clean      # down, and remove the ACS image the stack built
 
 `CROSS_PASSKEY_RULE=false` (set for `up` and `test` alike) runs the IAM with
 `MFA_PLATFORM_ADMIN_PHISHING_RESISTANT=false`: a platform account with only an
-authenticator app then signs in to the Platform Console with it.
+authenticator app then signs in to the console's platform pages with it.
 
 On the VPS, `run.sh up|test|down|clean|all|logs [service]` from
 `$CROSS_HOME/src/mailos-server/e2e/cross` (default `CROSS_HOME=/opt/mailos-p1-test/cross`).
@@ -37,7 +37,7 @@ The compose project is `mailos-p1-cross`; heavy steps wait while the 1-minute lo
 | ic | 27675 | IAM console: the hosted sign-in (WebAuthn RP `localhost`) |
 | acs-core, acs | 27691, 27690 | ACS core (the IAM's) and app gateway (MailOS's) |
 | ms | 27681 | MailOS server (`ms.sh`) |
-| mc | 27685 | MailOS console, `CONSOLE_PLANE=platform` |
+| mc | 27685 | MailOS console: workspace client (`/api/auth/callback`) and platform client (`/api/auth/platform/callback`) |
 | pw | | Playwright (`e2e/cross` of the console) |
 
 `gen-secrets.sh` makes a test CA, certificates and every secret under

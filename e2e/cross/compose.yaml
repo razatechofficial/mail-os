@@ -13,7 +13,7 @@
 #   ic                   the IAM console: the hosted sign-in, 27675
 #   acs-*                ACS: migrate db, schema write, acs-core 27691, applier, gateway 27690
 #   ms                   the MailOS server (ms.sh), 27681      profile mailos
-#   mc                   the MailOS Platform Console, 27685    profile mailos
+#   mc                   the MailOS console (both planes), 27685 profile mailos
 #   pw                   Playwright (setup and specs)          profile test
 name: mailos-p1-cross
 
@@ -302,8 +302,9 @@ services:
       start_period: 300s
     mem_limit: 2g
 
-  # The MailOS console in its platform plane (CONSOLE_PLANE=platform), its
-  # OIDC client the IAM's platform_web connection (/work/mc.env from setup).
+  # The one MailOS console: the workspace sign-in (the tenant oidc_web
+  # client) and the platform administrator sign-in (the platform_web
+  # client) on one origin (/work/mc.env from setup).
   mc:
     <<: *node
     profiles: [mailos]
@@ -314,7 +315,6 @@ services:
       HOME: /tmp/home
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
-      CONSOLE_PLANE: platform
       APP_URL: http://localhost:27685
       IAM_ISSUER: http://127.0.0.1:27680
       OAUTH_SCOPES: openid profile email offline_access
