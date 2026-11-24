@@ -43,6 +43,10 @@ const (
 	CodeRateLimited      = "RATE_LIMITED"
 	CodeInternal         = "INTERNAL_SERVER_ERROR"
 	CodeUnavailable      = "SERVICE_UNAVAILABLE"
+
+	// CodeInsufficientUserAuthentication is a platform token whose sign-in
+	// is too weak or too old (401, RFC 9470): sign in to the platform again.
+	CodeInsufficientUserAuthentication = "INSUFFICIENT_USER_AUTHENTICATION"
 )
 
 // ── sentinel errors ───────────────────────────────────────────────────────
