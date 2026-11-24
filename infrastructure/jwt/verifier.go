@@ -318,7 +318,8 @@ func (v *Verifier) Principal(ctx context.Context, raw string) (access.Principal,
 // (/api/platform/v1, contract C2) and returns the platform account it
 // names. The token's aud is exactly mailos-platform (a string or a
 // one-element array); it names a person (sub a user UUID, never a client);
-// it carries no tenant or organization claim and no act. Every other token,
+// it carries no tenant or organization claim and no act; it names its
+// client as azp (a client_id beside it must agree). Every other token,
 // tenant user, service, lockbox operator, is refused. Roles are not read
 // from the token: ACS decides.
 func (v *Verifier) PlatformPrincipal(ctx context.Context, raw string) (access.Principal, error) {
@@ -341,6 +342,18 @@ func (v *Verifier) PlatformPrincipal(ctx context.Context, raw string) (access.Pr
 	if uuid.Validate(p.Subject) != nil {
 		return access.Principal{}, invalid("platform token sub is not a user UUID")
 	}
+	// The IAM names a platform application's client as azp (contract C2);
+	// the client is read from it alone, and a client_id beside it must
+	// agree. Which clients the platform plane accepts is the sign-in
+	// rule's (access.PlatformSignIn).
+	azp := String(claims, "azp")
+	if azp == "" {
+		return access.Principal{}, invalid("a platform token names no azp")
+	}
+	if cid := String(claims, "client_id"); cid != "" && !strings.EqualFold(cid, azp) {
+		return access.Principal{}, invalid("platform token client_id %q is not its azp %q", cid, azp)
+	}
+	p.ClientID = azp
 	p.Subject = strings.ToLower(p.Subject)
 	p.Kind = access.KindPlatform
 	return p, nil

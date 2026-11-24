@@ -264,7 +264,9 @@ func (f *IAM) PlatformToken(u PlatformUser) string {
 		u.ClientID = PlatformConsoleClient
 	}
 	claims := map[string]any{
-		"iss": f.Issuer, "sub": u.Subject, "aud": PlatformAudience, "client_id": u.ClientID,
+		// The IAM names the client twice: client_id as the console sent
+		// it, azp as the platform application's client (contract C2).
+		"iss": f.Issuer, "sub": u.Subject, "aud": PlatformAudience, "client_id": u.ClientID, "azp": u.ClientID,
 		"iat": now.Unix(), "exp": now.Add(10 * time.Minute).Unix(), "jti": uuid.NewString(),
 		"auth_time": now.Add(-u.AuthAge).Unix(), "acr": u.ACR, "amr": []string{"hwk", "user"},
 		"sid": uuid.NewString(), "scope": "openid profile email",

@@ -197,7 +197,8 @@ func TestPlanesMatrix(t *testing.T) {
 	person := "0d6f3a7e-5b1c-4c55-9f61-2f8f1c9b6a11"
 	claims := func(kv ...any) map[string]any {
 		c := map[string]any{"iss": iam.Issuer, "sub": person, "iat": now.Unix(), "exp": now.Add(time.Minute).Unix(),
-			"client_id": "mailos-platform-console", "acr": access.ACRPhishingResistant, "auth_time": now.Unix()}
+			"client_id": "mailos-platform-console", "azp": "mailos-platform-console", "acr": access.ACRPhishingResistant,
+			"auth_time": now.Unix()}
 		for i := 0; i < len(kv); i += 2 {
 			if kv[i+1] == nil {
 				delete(c, kv[i].(string))
@@ -221,6 +222,10 @@ func TestPlanesMatrix(t *testing.T) {
 		{"platform user", sign(claims("aud", "mailos-platform")), platformPlane},
 		{"platform user, aud array", sign(claims("aud", []string{"mailos-platform"})), platformPlane},
 		{"platform user, DPoP-bound", sign(claims("aud", "mailos-platform", "cnf", map[string]any{"jkt": "thumb"})), platformPlane},
+		{"platform user, azp only", sign(claims("aud", "mailos-platform", "client_id", nil)), platformPlane},
+		{"platform user, client_id in another case", sign(claims("aud", "mailos-platform", "client_id", "MAILOS-PLATFORM-CONSOLE")), platformPlane},
+		{"platform token without azp", sign(claims("aud", "mailos-platform", "azp", nil)), none},
+		{"platform token, client_id not its azp", sign(claims("aud", "mailos-platform", "client_id", "other-app")), none},
 		{"platform aud with tid", sign(claims("aud", "mailos-platform", "tid", tenant)), none},
 		{"platform aud with tenant_id", sign(claims("aud", "mailos-platform", "tenant_id", tenant)), none},
 		{"platform aud with empty tid", sign(claims("aud", "mailos-platform", "tid", "")), none},
