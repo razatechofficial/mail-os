@@ -53,11 +53,13 @@ func (m *memReplay) Seen(_ context.Context, key string) (bool, error) {
 type auditLog struct {
 	mu      sync.Mutex
 	actions []string
+	metas   []map[string]any
 }
 
-func (a *auditLog) Append(_ context.Context, _, _, action string, _ map[string]any) error {
+func (a *auditLog) Append(_ context.Context, _, _, action string, meta map[string]any) error {
 	a.mu.Lock()
 	a.actions = append(a.actions, action)
+	a.metas = append(a.metas, meta)
 	a.mu.Unlock()
 	return nil
 }
@@ -351,5 +353,100 @@ func TestEndWithoutActivateAndUnattributedRemoval(t *testing.T) {
 		"eligibility_id": uuid.NewString(), "requested_by": "", "approved_by": ""}
 	if _, err := e.svc.Apply(ctx, e.iam.Attestation(remove)); err != nil {
 		t.Fatalf("removal without requester or approver: %v", err)
+	}
+}
+
+// breakGlass is the IAM's emergency activation: break_glass true, no
+// approver, active_until within an hour of iat.
+func breakGlass(role platformrole.Role, d time.Duration, extra map[string]any) map[string]any {
+	c := activation(role, d, map[string]any{"break_glass": true})
+	delete(c, "approved_by")
+	for k, v := range extra {
+		c[k] = v
+	}
+	return c
+}
+
+// A break-glass activation of a second-approver role (owner, template
+// publisher, key custodian) is applied without an approver for at most an
+// hour, and MailOS's audit entry says it was break-glass.
+func TestBreakGlassActivation(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	for _, r := range []platformrole.Role{platformrole.Owner, platformrole.TemplatePublisher, platformrole.KeyCustodian} {
+		if _, err := e.svc.Apply(ctx, e.iam.Attestation(eligibility(r, "add", uuid.NewString()))); err != nil {
+			t.Fatal(err)
+		}
+		res, err := e.svc.Apply(ctx, e.iam.Attestation(breakGlass(r, 59*time.Minute, nil)))
+		if err != nil {
+			t.Fatalf("%s: %v", r, err)
+		}
+		if !res.BreakGlass || res.ApprovedBy != "" {
+			t.Fatalf("%s: %+v", r, res.Attestation)
+		}
+		e.audit.mu.Lock()
+		last, meta := e.audit.actions[len(e.audit.actions)-1], e.audit.metas[len(e.audit.metas)-1]
+		e.audit.mu.Unlock()
+		if last != "platform_role.activated" || meta["break_glass"] != true || meta["role"] != string(r) {
+			t.Fatalf("%s audit: %s %v", r, last, meta)
+		}
+	}
+	if !e.allowed(t, platformrole.ManageKeys) || !e.allowed(t, platformrole.PublishTemplates) {
+		t.Fatal("break-glass activations not in ACS")
+	}
+	// An ordinary activation's audit entry does not say break_glass.
+	if _, err := e.svc.Apply(ctx, e.iam.Attestation(eligibility(platformrole.Operator, "add", uuid.NewString()))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Apply(ctx, e.iam.Attestation(activation(platformrole.Operator, time.Hour, nil))); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := e.audit.metas[len(e.audit.metas)-1]["break_glass"]; has {
+		t.Fatalf("ordinary activation audited as break-glass: %v", e.audit.metas[len(e.audit.metas)-1])
+	}
+}
+
+// break_glass is refused for every other role, past an hour, on anything
+// but an activation, and when it is not a boolean; break_glass false keeps
+// the second-approver rule.
+func TestBreakGlassRefusals(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	now := time.Now()
+	for _, r := range []platformrole.Role{platformrole.Owner, platformrole.Operator} {
+		if _, err := e.svc.Apply(ctx, e.iam.Attestation(eligibility(r, "add", uuid.NewString()))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := len(e.acs.Calls())
+	bad := map[string]map[string]any{
+		"operator":                 {"role": string(platformrole.Operator)},
+		"support":                  {"role": string(platformrole.Support)},
+		"auditor":                  {"role": string(platformrole.Auditor)},
+		"template editor":          {"role": string(platformrole.TemplateEditor)},
+		"longer than an hour":      {"active_until": now.Add(time.Hour + 2*time.Minute).Unix()},
+		"four hours":               {"active_until": now.Add(4*time.Hour - time.Minute).Unix()},
+		"not a boolean":            {"break_glass": "true"},
+		"false, no approver":       {"break_glass": false},
+		"on an end":                {"action": "end", "active_until": nil},
+		"on an eligibility":        {"op": platformroles.OpEligibility, "action": "add", "eligibility_id": uuid.NewString(), "activation_id": nil},
+		"false, self-approved":     {"break_glass": false, "approved_by": requester},
+		"longer, with an approver": {"approved_by": approver, "active_until": now.Add(2 * time.Hour).Unix()},
+	}
+	for name, extra := range bad {
+		c := breakGlass(platformrole.Owner, 30*time.Minute, nil)
+		for k, v := range extra {
+			if v == nil {
+				delete(c, k)
+				continue
+			}
+			c[k] = v
+		}
+		if _, err := e.svc.Apply(ctx, e.iam.Attestation(c)); apperrors.KindOf(err) != apperrors.KindBadRequest {
+			t.Errorf("%s: %v, want bad request", name, err)
+		}
+	}
+	if calls := e.acs.Calls(); len(calls) != before {
+		t.Fatalf("ACS called for refused break-glass attestations: %v", calls[before:])
 	}
 }

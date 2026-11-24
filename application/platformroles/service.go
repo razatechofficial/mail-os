@@ -46,6 +46,10 @@ const (
 	ActionRemove   = "remove"
 )
 
+// BreakGlassMaxActivation bounds an emergency activation: active_until is
+// at most this long after the attestation's iat (ADR 0001 §3.4 rule 6).
+const BreakGlassMaxActivation = time.Hour
+
 // closedFor is how long a closed record is remembered: longer than any
 // attestation for it can live.
 const closedFor = MaxLifetime + 5*time.Minute
@@ -107,8 +111,11 @@ type Attestation struct {
 	RecordID    string
 	RequestedBy string
 	ApprovedBy  string
-	IssuedAt    time.Time
-	ExpiresAt   time.Time
+	// BreakGlass marks the IAM's emergency activation of a role that
+	// otherwise needs a second approver: no approver, at most an hour.
+	BreakGlass bool
+	IssuedAt   time.Time
+	ExpiresAt  time.Time
 }
 
 // Result is what Apply did.
@@ -209,6 +216,16 @@ func (s *Service) Verify(ctx context.Context, raw string) (Attestation, error) {
 			return Attestation{}, err
 		}
 	}
+	switch bg := claims["break_glass"].(type) {
+	case nil:
+	case bool:
+		a.BreakGlass = bg
+	default:
+		return Attestation{}, badRequest("break_glass must be a boolean")
+	}
+	if a.BreakGlass && (a.Op != OpActivation || a.Action != ActionActivate) {
+		return Attestation{}, badRequest("break_glass applies to an activation only")
+	}
 	if a.Action != ActionActivate {
 		return a, nil
 	}
@@ -224,6 +241,18 @@ func (s *Service) Verify(ctx context.Context, raw string) (Attestation, error) {
 	a.ActiveUntil = until
 	if a.RequestedBy == "" {
 		return Attestation{}, badRequest("an activation needs requested_by")
+	}
+	if a.BreakGlass {
+		// An emergency activation (the IAM's break-glass accounts): only a
+		// role that otherwise needs a second approver, and for at most an
+		// hour from the IAM's signature.
+		if !role.NeedsSecondApprover() {
+			return Attestation{}, badRequest("break_glass is not accepted for %s", role)
+		}
+		if until.Sub(a.IssuedAt) > BreakGlassMaxActivation {
+			return Attestation{}, badRequest("a break-glass activation of %s lasts at most %s", role, BreakGlassMaxActivation)
+		}
+		return a, nil
 	}
 	if role.NeedsSecondApprover() && (a.ApprovedBy == "" || a.ApprovedBy == a.RequestedBy) {
 		return Attestation{}, badRequest("%s needs a second approver who is not the requester", role)
@@ -322,6 +351,13 @@ func (s *Service) record(ctx context.Context, a Attestation, replayed bool) {
 		"requested_by": a.RequestedBy, "approved_by": a.ApprovedBy}
 	if !a.ActiveUntil.IsZero() {
 		meta["active_until"] = a.ActiveUntil.UTC().Format(time.RFC3339)
+	}
+	if a.BreakGlass {
+		meta["break_glass"] = true
+		if !replayed {
+			logger.SecurityWarn("break-glass activation of a MailOS platform role", logger.String("role", string(a.Role)),
+				logger.String("subject", a.Subject), logger.String("activation_id", a.RecordID))
+		}
 	}
 	if replayed {
 		meta["unchanged"] = "the record was already closed"
