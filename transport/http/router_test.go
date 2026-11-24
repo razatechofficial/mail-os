@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -35,7 +36,8 @@ func (planeVerifier) PlatformPrincipal(_ context.Context, raw string) (access.Pr
 	if raw != "platform" {
 		return access.Principal{}, errRefused
 	}
-	return access.Principal{Kind: access.KindPlatform, Subject: "0d6f3a7e-5b1c-4c55-9f61-2f8f1c9b6a11"}, nil
+	return access.Principal{Kind: access.KindPlatform, Subject: "0d6f3a7e-5b1c-4c55-9f61-2f8f1c9b6a11", ClientID: "pc",
+		ACR: access.PlatformACR, AuthTime: time.Now()}, nil
 }
 
 type okTenants struct{}
@@ -58,7 +60,7 @@ func planesRouter(t *testing.T) *gin.Engine {
 	v := planeVerifier{}
 	return NewRouter(&config.Config{}, Deps{
 		Auth:         &middleware.Auth{Verifier: v, Tenants: okTenants{}},
-		PlatformAuth: &middleware.PlatformAuth{Verifier: v},
+		PlatformAuth: &middleware.PlatformAuth{Verifier: v, SignIn: access.PlatformSignIn{ClientIDs: []string{"pc"}}},
 		Platform:     allPlatformRoutes(),
 		Public:       allPublicRoutes(),
 	}, allRoutes()...)
